@@ -207,9 +207,8 @@ fn write_short(
     sent: usize,
     body: &[u8],
 ) -> std::io::Result<()> {
-    let head = format!(
-        "HTTP/1.1 200 OK\r\nContent-Length: {declared}\r\nConnection: close\r\n\r\n"
-    );
+    let head =
+        format!("HTTP/1.1 200 OK\r\nContent-Length: {declared}\r\nConnection: close\r\n\r\n");
     stream.write_all(head.as_bytes())?;
     stream.write_all(&body[..sent])?;
     stream.flush()
