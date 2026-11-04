@@ -213,7 +213,7 @@ fn require(data: &[u8], span: Span, path: &[&[u8; 4]], what: &str) -> Result<Spa
         Error::Parse(format!(
             "mp4: {what} has no {} box",
             path.iter()
-                .map(|kind| String::from_utf8_lossy(kind).into_owned())
+                .map(|kind| String::from_utf8_lossy(*kind).into_owned())
                 .collect::<Vec<_>>()
                 .join("/")
         ))

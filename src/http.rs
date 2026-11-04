@@ -183,7 +183,7 @@ impl Http {
             for (name, value) in headers {
                 request = request.header(*name, *value);
             }
-            request.accept("application/json")
+            request.header("accept", "application/json")
         })?;
         if response.status() == StatusCode::NOT_FOUND {
             return Ok(None);
