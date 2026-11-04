@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write
 
 env:
   CARGO_TERM_COLOR: never
@@ -27,11 +28,59 @@ jobs:
         with:
           components: rustfmt, clippy
 
+      # Failures are captured and published rather than only living in the job
+      # log: the log of a failed run is not reachable from every environment
+      # this project is developed in, and an error nobody can read is not a
+      # report.
       - name: Clippy
-        run: cargo clippy --all-targets -- -D warnings
+        id: clippy
+        continue-on-error: true
+        shell: bash
+        run: cargo clippy --all-targets -- -D warnings 2>&1 | tee clippy.log
 
       - name: Test
-        run: cargo test --all-targets
+        id: test
+        if: steps.clippy.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: cargo test --all-targets 2>&1 | tee test.log
 
       - name: Release build
-        run: cargo build --release
+        id: build
+        if: steps.clippy.outcome == 'success' && steps.test.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: cargo build --release 2>&1 | tee build.log
+
+      - name: Publish the failure
+        if: always() && (steps.clippy.outcome == 'failure' || steps.test.outcome == 'failure' || steps.build.outcome == 'failure')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          log=""
+          for candidate in clippy.log test.log build.log; do
+            [ -f "$candidate" ] && log="$candidate" && break
+          done
+          echo "::group::$log"
+          tail -c 60000 "$log" || true
+          echo "::endgroup::"
+
+          number="$(gh pr list --head "$GITHUB_REF_NAME" --state open --json number -q '.[0].number' 2>/dev/null || true)"
+          if [ -z "$number" ]; then
+            echo "no open pull request for $GITHUB_REF_NAME; see the step log"
+            exit 0
+          fi
+          {
+            echo "### \`${{ matrix.os }}\` — \`$log\`"
+            echo '```'
+            tail -c 40000 "$log"
+            echo '```'
+          } > failure.md
+          gh pr comment "$number" --body-file failure.md || true
+
+      - name: Fail the job
+        if: steps.clippy.outcome == 'failure' || steps.test.outcome == 'failure' || steps.build.outcome == 'failure'
+        shell: bash
+        run: exit 1
