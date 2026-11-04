@@ -55,8 +55,22 @@ pub struct Http {
     verbose: u8,
 }
 
+/// rustls refuses to guess between crypto providers, and reqwest is built with
+/// `rustls-tls-webpki-roots-no-provider` on purpose: the choice is made here.
+/// Without this call a build where more than one provider is reachable panics
+/// with "No provider set" the first time a TLS connection is opened.
+fn install_crypto_provider() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        // An error only means something else in the process got there first,
+        // which is the same outcome.
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    });
+}
+
 impl Http {
     pub fn new(retries: u32, timeout_secs: u64, verbose: u8) -> Result<Http> {
+        install_crypto_provider();
         let client = Client::builder()
             .user_agent(UA_DESKTOP)
             .connect_timeout(Duration::from_secs(timeout_secs.clamp(1, 30)))
