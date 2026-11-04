@@ -36,9 +36,8 @@ pub fn extract(http: &Http, url: &Url, raw: &str) -> Result<Media> {
     // one, which `status_id` cannot do on its own.
     let id = if id.is_empty() {
         let resolved = http.resolve(raw)?;
-        status_id(&Url::parse(&resolved)?).ok_or_else(|| {
-            Error::Usage(format!("{raw} does not lead to a post"))
-        })?
+        status_id(&Url::parse(&resolved)?)
+            .ok_or_else(|| Error::Usage(format!("{raw} does not lead to a post")))?
     } else {
         id
     };
@@ -90,7 +89,9 @@ pub fn extract(http: &Http, url: &Url, raw: &str) -> Result<Media> {
             if let Some(duration_ms) = uint(detail, &["video_info", "duration_millis"]) {
                 media.duration = Some(duration_ms / 1000);
             }
-            for (variant_index, variant) in list(detail, &["video_info", "variants"]).iter().enumerate() {
+            for (variant_index, variant) in
+                list(detail, &["video_info", "variants"]).iter().enumerate()
+            {
                 let content_type = text(variant, &["content_type"]).unwrap_or_default();
                 let Some(variant_url) = text(variant, &["url"]) else {
                     continue;

@@ -123,8 +123,12 @@ pub struct Format {
 impl Format {
     pub fn label(&self) -> String {
         if self.height > 0 {
-            format!("{}p{}", self.height, if self.fps > 30 { self.fps } else { 0 })
-                .replace("p0", "p")
+            format!(
+                "{}p{}",
+                self.height,
+                if self.fps > 30 { self.fps } else { 0 }
+            )
+            .replace("p0", "p")
         } else {
             "audio".to_string()
         }
@@ -204,10 +208,16 @@ mod tests {
 
     #[test]
     fn recognises_the_three_sites() {
-        assert_eq!(site("https://www.youtube.com/watch?v=x"), Some(Site::YouTube));
+        assert_eq!(
+            site("https://www.youtube.com/watch?v=x"),
+            Some(Site::YouTube)
+        );
         assert_eq!(site("https://youtu.be/x"), Some(Site::YouTube));
         assert_eq!(site("https://m.youtube.com/watch?v=x"), Some(Site::YouTube));
-        assert_eq!(site("https://www.tiktok.com/@a/video/1"), Some(Site::TikTok));
+        assert_eq!(
+            site("https://www.tiktok.com/@a/video/1"),
+            Some(Site::TikTok)
+        );
         assert_eq!(site("https://vm.tiktok.com/ZM/"), Some(Site::TikTok));
         assert_eq!(site("https://x.com/u/status/1"), Some(Site::X));
         assert_eq!(site("https://mobile.twitter.com/u/status/1"), Some(Site::X));

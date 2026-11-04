@@ -77,7 +77,10 @@ impl Pen {
 }
 
 fn environment_allows() -> bool {
-    if std::env::var_os("NO_COLOR").map(|v| !v.is_empty()).unwrap_or(false) {
+    if std::env::var_os("NO_COLOR")
+        .map(|v| !v.is_empty())
+        .unwrap_or(false)
+    {
         return false;
     }
     if let Some(force) = std::env::var_os("CLICOLOR_FORCE") {

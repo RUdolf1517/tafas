@@ -140,7 +140,11 @@ mod tests {
 
     #[test]
     fn the_default_stem_carries_the_id() {
-        let mut media = Media::new(Site::YouTube, "dQw4w9WgXcQ".into(), "https://example".into());
+        let mut media = Media::new(
+            Site::YouTube,
+            "dQw4w9WgXcQ".into(),
+            "https://example".into(),
+        );
         media.title = "A Video".into();
         assert_eq!(stem(&media, None), "A Video [dQw4w9WgXcQ]");
         assert_eq!(stem(&media, Some("mine")), "mine");
@@ -154,7 +158,11 @@ mod tests {
 
     #[test]
     fn a_very_long_title_is_bounded() {
-        let mut media = Media::new(Site::YouTube, "dQw4w9WgXcQ".into(), "https://example".into());
+        let mut media = Media::new(
+            Site::YouTube,
+            "dQw4w9WgXcQ".into(),
+            "https://example".into(),
+        );
         media.title = "я".repeat(400);
         let name = stem(&media, None);
         assert!(name.len() <= MAX_STEM_BYTES + 20, "{} bytes", name.len());

@@ -150,7 +150,9 @@ fn children(data: &[u8], from: usize, to: usize) -> Result<Vec<Span>> {
             0 => (8usize, (to - at) as u64),
             1 => {
                 if at + 16 > to {
-                    return Err(Error::Parse(format!("mp4: truncated 64-bit header at {at}")));
+                    return Err(Error::Parse(format!(
+                        "mp4: truncated 64-bit header at {at}"
+                    )));
                 }
                 (16usize, be_u64(data, at + 8)?)
             }
@@ -304,7 +306,8 @@ fn scan(path: &Path) -> Result<Source> {
             path.display()
         )));
     }
-    let moov = moov.ok_or_else(|| Error::Parse(format!("mp4: {} has no moov box", path.display())))?;
+    let moov =
+        moov.ok_or_else(|| Error::Parse(format!("mp4: {} has no moov box", path.display())))?;
 
     Ok(Source {
         ftyp,
@@ -484,11 +487,8 @@ pub fn remux(video: &Path, audio: &Path, out: &Path) -> Result<MuxReport> {
             }
             traks_written += 1;
             let new_id = traks_written as u32;
-            movie_duration = movie_duration.max(scale(
-                header.duration,
-                header.timescale,
-                movie.timescale,
-            ));
+            movie_duration =
+                movie_duration.max(scale(header.duration, header.timescale, movie.timescale));
 
             let base = payload.len();
             payload.extend_from_slice(raw);
@@ -618,7 +618,11 @@ pub fn remux(video: &Path, audio: &Path, out: &Path) -> Result<MuxReport> {
             movie_duration.min(u32::MAX as u64) as u32,
         )?;
     } else {
-        put_u64(&mut payload, mvhd_base + shift(movie.duration_at), movie_duration)?;
+        put_u64(
+            &mut payload,
+            mvhd_base + shift(movie.duration_at),
+            movie_duration,
+        )?;
     }
     put_u32(
         &mut payload,
@@ -917,46 +921,34 @@ mod tests {
         stco[4..8].copy_from_slice(b"stco");
         stco[12..16].copy_from_slice(&1u32.to_be_bytes()); // entry count
 
-        let stbl = bx(
-            b"stbl",
-            &{
-                let mut body = Vec::new();
-                body.extend_from_slice(&stsd);
-                body.extend_from_slice(&stts);
-                body.extend_from_slice(&stsc);
-                body.extend_from_slice(&stsz);
-                body.extend_from_slice(&stco);
-                body
-            },
-        );
-        let minf = bx(
-            b"minf",
-            &{
-                let mut body = Vec::new();
-                body.extend_from_slice(&bx(b"vmhd", &full(&[0u8; 8])));
-                body.extend_from_slice(&stbl);
-                body
-            },
-        );
-        let mdia = bx(
-            b"mdia",
-            &{
-                let mut body = Vec::new();
-                body.extend_from_slice(&mdhd);
-                body.extend_from_slice(&hdlr);
-                body.extend_from_slice(&minf);
-                body
-            },
-        );
-        let trak = bx(
-            b"trak",
-            &{
-                let mut body = Vec::new();
-                body.extend_from_slice(&tkhd);
-                body.extend_from_slice(&mdia);
-                body
-            },
-        );
+        let stbl = bx(b"stbl", &{
+            let mut body = Vec::new();
+            body.extend_from_slice(&stsd);
+            body.extend_from_slice(&stts);
+            body.extend_from_slice(&stsc);
+            body.extend_from_slice(&stsz);
+            body.extend_from_slice(&stco);
+            body
+        });
+        let minf = bx(b"minf", &{
+            let mut body = Vec::new();
+            body.extend_from_slice(&bx(b"vmhd", &full(&[0u8; 8])));
+            body.extend_from_slice(&stbl);
+            body
+        });
+        let mdia = bx(b"mdia", &{
+            let mut body = Vec::new();
+            body.extend_from_slice(&mdhd);
+            body.extend_from_slice(&hdlr);
+            body.extend_from_slice(&minf);
+            body
+        });
+        let trak = bx(b"trak", &{
+            let mut body = Vec::new();
+            body.extend_from_slice(&tkhd);
+            body.extend_from_slice(&mdia);
+            body
+        });
 
         let mut mvhd = vec![0u8; 108];
         mvhd[0..4].copy_from_slice(&108u32.to_be_bytes());
@@ -965,15 +957,12 @@ mod tests {
         mvhd[24..28].copy_from_slice(&1000u32.to_be_bytes()); // duration
         mvhd[104..108].copy_from_slice(&2u32.to_be_bytes()); // next track id
 
-        let moov = bx(
-            b"moov",
-            &{
-                let mut body = Vec::new();
-                body.extend_from_slice(&mvhd);
-                body.extend_from_slice(&trak);
-                body
-            },
-        );
+        let moov = bx(b"moov", &{
+            let mut body = Vec::new();
+            body.extend_from_slice(&mvhd);
+            body.extend_from_slice(&trak);
+            body
+        });
 
         let mut file = Vec::new();
         file.extend_from_slice(&ftyp);
@@ -1038,8 +1027,14 @@ mod tests {
         assert_eq!(verified.bytes, std::fs::metadata(&out).unwrap().len());
 
         let written = std::fs::read(&out).unwrap();
-        assert!(find_bytes(&written, &video_payload).is_some(), "video payload lost");
-        assert!(find_bytes(&written, &audio_payload).is_some(), "audio payload lost");
+        assert!(
+            find_bytes(&written, &video_payload).is_some(),
+            "video payload lost"
+        );
+        assert!(
+            find_bytes(&written, &audio_payload).is_some(),
+            "audio payload lost"
+        );
         // moov first: a player can read the index before the payload.
         assert!(find_bytes(&written, b"moov").unwrap() < find_bytes(&written, b"mdat").unwrap());
 

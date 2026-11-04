@@ -16,7 +16,8 @@ pub const UA_DESKTOP: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWeb
 /// The InnerTube clients identify themselves with their own user agents; these
 /// two are the strings those clients actually send.
 pub const UA_ANDROID: &str = "com.google.android.youtube/19.44.38 (Linux; U; Android 14) gzip";
-pub const UA_IOS: &str = "com.google.ios.youtube/19.45.4 (iPhone16,2; U; CPU iOS 18_1_0 like Mac OS X;)";
+pub const UA_IOS: &str =
+    "com.google.ios.youtube/19.45.4 (iPhone16,2; U; CPU iOS 18_1_0 like Mac OS X;)";
 
 /// A JSON response larger than this is not a page we can use; it is a mistake
 /// or a machine-generated flood, and reading it into memory is the attack.
@@ -171,7 +172,12 @@ impl Http {
     /// A JSON document from a GET. `Ok(None)` means the endpoint answered 404,
     /// which two of the three sites use to mean "this post is gone" rather than
     /// "your request is broken".
-    pub fn get_json_opt(&self, label: &str, url: &str, headers: &[(&str, &str)]) -> Result<Option<Value>> {
+    pub fn get_json_opt(
+        &self,
+        label: &str,
+        url: &str,
+        headers: &[(&str, &str)],
+    ) -> Result<Option<Value>> {
         let response = self.execute(label, || {
             let mut request = self.client.get(url);
             for (name, value) in headers {
@@ -203,7 +209,10 @@ impl Http {
         let payload = serde_json::to_string(body)
             .map_err(|e| Error::Internal(format!("could not encode the {label} request: {e}")))?;
         let response = self.execute(label, || {
-            let mut request = self.client.post(url).header("content-type", "application/json");
+            let mut request = self
+                .client
+                .post(url)
+                .header("content-type", "application/json");
             for (name, value) in headers {
                 request = request.header(*name, *value);
             }

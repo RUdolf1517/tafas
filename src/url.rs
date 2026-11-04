@@ -67,7 +67,11 @@ impl Url {
         Ok(Url {
             scheme: scheme_lower,
             authority: authority.to_ascii_lowercase(),
-            path: if path.is_empty() { "/".into() } else { path.into() },
+            path: if path.is_empty() {
+                "/".into()
+            } else {
+                path.into()
+            },
             query: query.into(),
         })
     }

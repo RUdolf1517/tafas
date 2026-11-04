@@ -29,7 +29,8 @@ use crate::url::Url;
 /// the gap when the page could not be fetched at all.
 const FALLBACK_API_KEY: &str = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8";
 
-const UA_ANDROID_VR: &str = "com.google.android.apps.youtube.vr.oculus/1.60.19 (Linux; U; Android 12; GB) gzip";
+const UA_ANDROID_VR: &str =
+    "com.google.android.apps.youtube.vr.oculus/1.60.19 (Linux; U; Android 12; GB) gzip";
 
 /// Consent and locale cookies. Without them a European request is answered with
 /// the consent interstitial, which contains no player response at all.
@@ -84,7 +85,8 @@ pub fn extract(http: &Http, url: &Url, raw: &str) -> Result<Media> {
         }
     }
 
-    let endpoint = format!("https://www.youtube.com/youtubei/v1/player?key={api_key}&prettyPrint=false");
+    let endpoint =
+        format!("https://www.youtube.com/youtubei/v1/player?key={api_key}&prettyPrint=false");
     for (name, user_agent, context) in clients() {
         let body = json!({
             "context": context,
@@ -394,7 +396,10 @@ fn video_id(url: &Url) -> Option<String> {
 /// here means a typo is a usage error before a request is made, instead of a
 /// 404 from a URL that was assembled from garbage.
 fn plausible_id(id: &str) -> bool {
-    id.len() == 11 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    id.len() == 11
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
 /// Reads a `"key":"value"` pair out of the page's inline state, for the two
@@ -422,12 +427,30 @@ mod tests {
 
     #[test]
     fn finds_the_id_in_every_url_shape() {
-        assert_eq!(id("https://www.youtube.com/watch?v=dQw4w9WgXcQ").as_deref(), Some("dQw4w9WgXcQ"));
-        assert_eq!(id("https://youtu.be/dQw4w9WgXcQ?t=10").as_deref(), Some("dQw4w9WgXcQ"));
-        assert_eq!(id("https://www.youtube.com/shorts/dQw4w9WgXcQ").as_deref(), Some("dQw4w9WgXcQ"));
-        assert_eq!(id("https://www.youtube.com/embed/dQw4w9WgXcQ").as_deref(), Some("dQw4w9WgXcQ"));
-        assert_eq!(id("https://www.youtube.com/live/dQw4w9WgXcQ").as_deref(), Some("dQw4w9WgXcQ"));
-        assert_eq!(id("https://music.youtube.com/watch?v=dQw4w9WgXcQ").as_deref(), Some("dQw4w9WgXcQ"));
+        assert_eq!(
+            id("https://www.youtube.com/watch?v=dQw4w9WgXcQ").as_deref(),
+            Some("dQw4w9WgXcQ")
+        );
+        assert_eq!(
+            id("https://youtu.be/dQw4w9WgXcQ?t=10").as_deref(),
+            Some("dQw4w9WgXcQ")
+        );
+        assert_eq!(
+            id("https://www.youtube.com/shorts/dQw4w9WgXcQ").as_deref(),
+            Some("dQw4w9WgXcQ")
+        );
+        assert_eq!(
+            id("https://www.youtube.com/embed/dQw4w9WgXcQ").as_deref(),
+            Some("dQw4w9WgXcQ")
+        );
+        assert_eq!(
+            id("https://www.youtube.com/live/dQw4w9WgXcQ").as_deref(),
+            Some("dQw4w9WgXcQ")
+        );
+        assert_eq!(
+            id("https://music.youtube.com/watch?v=dQw4w9WgXcQ").as_deref(),
+            Some("dQw4w9WgXcQ")
+        );
     }
 
     #[test]
@@ -531,7 +554,10 @@ mod tests {
     #[test]
     fn reads_an_inline_string() {
         let page = r#"<script>{"INNERTUBE_API_KEY":"KEY123","x":1}</script>"#;
-        assert_eq!(inline_string(page, "INNERTUBE_API_KEY").as_deref(), Some("KEY123"));
+        assert_eq!(
+            inline_string(page, "INNERTUBE_API_KEY").as_deref(),
+            Some("KEY123")
+        );
         assert_eq!(inline_string(page, "MISSING"), None);
     }
 }

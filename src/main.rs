@@ -45,7 +45,10 @@ fn main() -> ExitCode {
         return ExitCode::from(2);
     }
     if args.format.is_some() && args.urls.len() > 1 {
-        usage(&args, "--format selects one stream and needs exactly one URL");
+        usage(
+            &args,
+            "--format selects one stream and needs exactly one URL",
+        );
         return ExitCode::from(2);
     }
 

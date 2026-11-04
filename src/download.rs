@@ -262,7 +262,10 @@ fn announce(item: &Item, options: &Options) {
 
 /// Returns false when stdout is a closed pipe.
 pub fn write_stdout(text: &str) -> bool {
-    match io::stdout().write_all(text.as_bytes()).and_then(|()| io::stdout().flush()) {
+    match io::stdout()
+        .write_all(text.as_bytes())
+        .and_then(|()| io::stdout().flush())
+    {
         Ok(()) => true,
         Err(error) if error.kind() == io::ErrorKind::BrokenPipe => false,
         Err(_) => false,
@@ -350,16 +353,15 @@ fn stream_to_stdout(
     printer: &Printer,
     item: &mut Item,
 ) -> Result<Status> {
-    let format = match plan {
-        Plan::Single(format) | Plan::Audio(format) => format.clone(),
-        _ => {
-            return Err(Error::Usage(
+    let format =
+        match plan {
+            Plan::Single(format) | Plan::Audio(format) => format.clone(),
+            _ => return Err(Error::Usage(
                 "-o - writes one stream: this selection needs two streams or a remux, so give a \
                  file name instead"
                     .into(),
-            ))
-        }
-    };
+            )),
+        };
     let url = format
         .url
         .clone()
@@ -461,23 +463,22 @@ fn fetch_plan(
                 human_bytes(video_bytes),
                 human_bytes(audio_bytes)
             ));
-            let mux_result = mux::remux(&video_part, &audio_part, &muxed_part)
-                .and_then(|report| {
-                    let verified = mux::verify(&muxed_part)?;
-                    if !verified.has_handler("vide") || !verified.has_handler("soun") {
-                        return Err(Error::Verify(format!(
-                            "{}: the remuxed file is missing a track (found {})",
-                            muxed_part.display(),
-                            verified
-                                .tracks
-                                .iter()
-                                .map(|track| track.handler.clone())
-                                .collect::<Vec<_>>()
-                                .join(", ")
-                        )));
-                    }
-                    Ok(report)
-                });
+            let mux_result = mux::remux(&video_part, &audio_part, &muxed_part).and_then(|report| {
+                let verified = mux::verify(&muxed_part)?;
+                if !verified.has_handler("vide") || !verified.has_handler("soun") {
+                    return Err(Error::Verify(format!(
+                        "{}: the remuxed file is missing a track (found {})",
+                        muxed_part.display(),
+                        verified
+                            .tracks
+                            .iter()
+                            .map(|track| track.handler.clone())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )));
+                }
+                Ok(report)
+            });
 
             let report = match mux_result {
                 Ok(report) => report,
@@ -687,7 +688,10 @@ fn open_part(path: &Path, append: bool) -> Result<File> {
         }
     }
     if append {
-        OpenOptions::new().append(true).open(path).map_err(Error::Io)
+        OpenOptions::new()
+            .append(true)
+            .open(path)
+            .map_err(Error::Io)
     } else {
         File::create(path).map_err(Error::Io)
     }
@@ -780,7 +784,9 @@ fn print_formats(media: &Media, printer: &Printer) -> Result<()> {
         media.id,
         media.display_title()
     ));
-    out.push_str("  id                          kind    container  codec               quality   size\n");
+    out.push_str(
+        "  id                          kind    container  codec               quality   size\n",
+    );
     for format in &media.formats {
         let kind = match format.kind {
             crate::model::StreamKind::Muxed => "muxed",
@@ -812,7 +818,12 @@ fn print_formats(media: &Media, printer: &Printer) -> Result<()> {
         ));
     }
     for (index, image) in media.images.iter().enumerate() {
-        out.push_str(&format!("  image-{:<20}  photo  {:<8}  {:<18}\n", index + 1, image.extension, ""));
+        out.push_str(&format!(
+            "  image-{:<20}  photo  {:<8}  {:<18}\n",
+            index + 1,
+            image.extension,
+            ""
+        ));
     }
     if media.formats.is_empty() && media.images.is_empty() {
         out.push_str("  (no streams)\n");
@@ -828,7 +839,10 @@ fn truncate(text: &str, max: usize) -> String {
     if text.chars().count() <= max {
         text.to_string()
     } else {
-        text.chars().take(max.saturating_sub(1)).chain(['…']).collect()
+        text.chars()
+            .take(max.saturating_sub(1))
+            .chain(['…'])
+            .collect()
     }
 }
 
@@ -933,11 +947,7 @@ mod tests {
     fn the_stdout_target_is_stderr_free() {
         let mut options = Options::default();
         options.output = Some(PathBuf::from("-"));
-        let media = Media::new(
-            crate::model::Site::X,
-            "20".into(),
-            "https://example".into(),
-        );
+        let media = Media::new(crate::model::Site::X, "20".into(), "https://example".into());
         let format = Format {
             id: "1".into(),
             kind: crate::model::StreamKind::Muxed,

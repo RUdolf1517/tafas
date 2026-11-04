@@ -64,12 +64,17 @@ pub fn extract(http: &Http, url: &Url, raw: &str) -> Result<Media> {
                             }
                             notes.push("web page: the item has no media URL".into());
                         } else {
-                            let status = text(&value, &["__DEFAULT_SCOPE__", "webapp.video-detail", "statusMsg"])
-                                .unwrap_or_else(|| "no itemInfo in the page".into());
+                            let status = text(
+                                &value,
+                                &["__DEFAULT_SCOPE__", "webapp.video-detail", "statusMsg"],
+                            )
+                            .unwrap_or_else(|| "no itemInfo in the page".into());
                             notes.push(format!("web page: {status}"));
                         }
                     }
-                    Err(error) => notes.push(format!("web page: the inline data did not parse ({error})")),
+                    Err(error) => {
+                        notes.push(format!("web page: the inline data did not parse ({error})"))
+                    }
                 }
             } else {
                 notes.push("web page: no inline state (verification wall?)".into());
@@ -115,7 +120,10 @@ fn aweme_id(url: &Url) -> Option<String> {
             }
         }
     }
-    segments.last().filter(|s| digits(s)).map(|s| (*s).to_string())
+    segments
+        .last()
+        .filter(|s| digits(s))
+        .map(|s| (*s).to_string())
 }
 
 fn digits(value: &str) -> bool {
@@ -124,12 +132,7 @@ fn digits(value: &str) -> bool {
 
 /// The mobile feed: one GET, one JSON object, same fields as the page under
 /// different names.
-fn mobile_feed(
-    http: &Http,
-    id: &str,
-    page: &str,
-    headers: &[(String, String)],
-) -> Result<Media> {
+fn mobile_feed(http: &Http, id: &str, page: &str, headers: &[(String, String)]) -> Result<Media> {
     let endpoint = format!(
         "https://api22-normal-c-useast2a.tiktokv.com/aweme/v1/feed/?aweme_id={id}&version_code=190500&app_name=trill&channel=googleplay&device_platform=android&aid=1180"
     );
@@ -158,7 +161,8 @@ fn from_item(item: &Value, id: &str, page: &str, headers: &[(String, String)]) -
     let mut media = Media::new(Site::TikTok, id.to_string(), page.to_string());
 
     media.title = text(item, &["desc"]).unwrap_or_default();
-    media.uploader = text(item, &["author", "uniqueId"]).or_else(|| text(item, &["author", "unique_id"]));
+    media.uploader =
+        text(item, &["author", "uniqueId"]).or_else(|| text(item, &["author", "unique_id"]));
     media.duration = uint(item, &["video", "duration"]);
 
     let mut candidates: Vec<(String, Option<u64>)> = Vec::new();
@@ -172,7 +176,10 @@ fn from_item(item: &Value, id: &str, page: &str, headers: &[(String, String)]) -
     }
     for entry in list(item, &["video", "bitrateInfo"]) {
         let bitrate = uint(entry, &["Bitrate"]).or_else(|| uint(entry, &["bit_rate"]));
-        for url in url_list(entry, &["PlayAddr"]).into_iter().chain(url_list(entry, &["play_addr"])) {
+        for url in url_list(entry, &["PlayAddr"])
+            .into_iter()
+            .chain(url_list(entry, &["play_addr"]))
+        {
             candidates.push((url, bitrate));
         }
     }
@@ -192,7 +199,8 @@ fn from_item(item: &Value, id: &str, page: &str, headers: &[(String, String)]) -
             height: uint(item, &["video", "height"]).unwrap_or(0) as u32,
             fps: 0,
             bitrate: bitrate.unwrap_or(0),
-            bytes: uint(item, &["video", "dataSize"]).or_else(|| uint(item, &["video", "data_size"])),
+            bytes: uint(item, &["video", "dataSize"])
+                .or_else(|| uint(item, &["video", "data_size"])),
             url: Some(url),
             headers: headers.to_vec(),
             source: "tiktok",
@@ -279,7 +287,8 @@ mod tests {
         assert!(media
             .formats
             .iter()
-            .any(|f| f.url.as_deref() == Some("https://cdn.example/hd.mp4") && f.bitrate == 2_000_000));
+            .any(|f| f.url.as_deref() == Some("https://cdn.example/hd.mp4")
+                && f.bitrate == 2_000_000));
         assert!(media.formats.iter().all(|f| f.kind == StreamKind::Muxed));
     }
 

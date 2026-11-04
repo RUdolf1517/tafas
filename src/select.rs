@@ -59,7 +59,11 @@ pub enum Plan {
     /// Two ISO-BMFF streams that become one file.
     Pair { video: Format, audio: Format },
     /// Two streams written next to each other, because they cannot be joined.
-    Separate { video: Format, audio: Option<Format>, why: Option<String> },
+    Separate {
+        video: Format,
+        audio: Option<Format>,
+        why: Option<String>,
+    },
     /// Sound only.
     Audio(Format),
     /// Still images.
@@ -125,7 +129,11 @@ impl Plan {
                     video.container_name(),
                     audio.codec_or_container()
                 ),
-                None => format!("{} {} (no audio track)", video.label(), video.container_name()),
+                None => format!(
+                    "{} {} (no audio track)",
+                    video.label(),
+                    video.container_name()
+                ),
             },
             Plan::Audio(format) => format!("{} audio", format.codec_or_container()),
             Plan::Images(images) => format!("{} image(s)", images.len()),
@@ -235,8 +243,8 @@ pub fn choose(media: &Media, options: &Options) -> Result<Plan> {
         .filter(|format| format.kind == StreamKind::Video)
         .collect();
 
-    let chosen_video = pick_video(&video_only, options.quality)
-        .or_else(|| pick_video(&videos, options.quality));
+    let chosen_video =
+        pick_video(&video_only, options.quality).or_else(|| pick_video(&videos, options.quality));
 
     let Some(video) = chosen_video else {
         return Err(Error::Unsupported(format!(
@@ -310,11 +318,7 @@ fn pick_video(candidates: &[&Format], quality: Quality) -> Option<Format> {
         return None;
     }
     let scored = |format: &Format| -> (u32, u64, u8) {
-        (
-            format.height,
-            format.bitrate,
-            codec_rank(&format.codec),
-        )
+        (format.height, format.bitrate, codec_rank(&format.codec))
     };
 
     match quality {
@@ -369,7 +373,14 @@ mod tests {
     use super::*;
     use crate::model::Site;
 
-    fn format(id: &str, kind: StreamKind, container: Container, codec: &str, height: u32, bitrate: u64) -> Format {
+    fn format(
+        id: &str,
+        kind: StreamKind,
+        container: Container,
+        codec: &str,
+        height: u32,
+        bitrate: u64,
+    ) -> Format {
         Format {
             id: id.into(),
             kind,
@@ -405,10 +416,38 @@ mod tests {
     fn dash(media: &Media) -> Vec<Format> {
         let _ = media;
         vec![
-            format("137", StreamKind::Video, Container::Mp4, "avc1.640028", 1080, 4_000_000),
-            format("136", StreamKind::Video, Container::Mp4, "avc1.4d401f", 720, 2_000_000),
-            format("140", StreamKind::Audio, Container::Mp4, "mp4a.40.2", 0, 128_000),
-            format("251", StreamKind::Audio, Container::Webm, "opus", 0, 160_000),
+            format(
+                "137",
+                StreamKind::Video,
+                Container::Mp4,
+                "avc1.640028",
+                1080,
+                4_000_000,
+            ),
+            format(
+                "136",
+                StreamKind::Video,
+                Container::Mp4,
+                "avc1.4d401f",
+                720,
+                2_000_000,
+            ),
+            format(
+                "140",
+                StreamKind::Audio,
+                Container::Mp4,
+                "mp4a.40.2",
+                0,
+                128_000,
+            ),
+            format(
+                "251",
+                StreamKind::Audio,
+                Container::Webm,
+                "opus",
+                0,
+                160_000,
+            ),
         ]
     }
 

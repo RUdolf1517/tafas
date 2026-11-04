@@ -275,14 +275,21 @@ mod tests {
 
     #[test]
     fn no_color_overrides_the_colour_choice() {
-        let args = Args::parse_from(["tafas", "--color", "always", "--no-color", "https://youtu.be/dQw4w9WgXcQ"]);
+        let args = Args::parse_from([
+            "tafas",
+            "--color",
+            "always",
+            "--no-color",
+            "https://youtu.be/dQw4w9WgXcQ",
+        ]);
         assert_eq!(args.color(), Choice::Never);
     }
 
     #[test]
     fn an_invalid_quality_is_a_usage_error() {
-        let error = Args::try_parse_from(["tafas", "--quality", "huge", "https://youtu.be/dQw4w9WgXcQ"])
-            .unwrap_err();
+        let error =
+            Args::try_parse_from(["tafas", "--quality", "huge", "https://youtu.be/dQw4w9WgXcQ"])
+                .unwrap_err();
         assert_eq!(error.exit_code(), 2);
     }
 
@@ -290,6 +297,9 @@ mod tests {
     fn no_arguments_prints_help_and_exits_two() {
         let error = Args::try_parse_from(["tafas"]).unwrap_err();
         assert_eq!(error.exit_code(), 2);
-        assert_eq!(error.kind(), clap::error::ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand);
+        assert_eq!(
+            error.kind(),
+            clap::error::ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand
+        );
     }
 }
