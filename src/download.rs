@@ -892,8 +892,10 @@ mod tests {
     fn a_missing_directory_is_created_for_the_output() {
         let dir = std::env::temp_dir().join(format!("tafas-target-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
+        // A path that does not exist and has no trailing slash names a file, so
+        // the slash is what makes this a directory.
         let options = Options {
-            output: Some(dir.clone()),
+            output: Some(format!("{}/", dir.display()).into()),
             ..Options::default()
         };
 

@@ -271,6 +271,9 @@ fn scan(path: &Path) -> Result<Source> {
 
         match &kind {
             b"ftyp" => {
+                // The header has already been consumed; rewind so the stored
+                // bytes are the whole box, header included.
+                reader.seek(SeekFrom::Start(pos))?;
                 let mut bytes = vec![0u8; size as usize];
                 reader.read_exact(&mut bytes)?;
                 ftyp = bytes;
@@ -281,6 +284,7 @@ fn scan(path: &Path) -> Result<Source> {
                         "mp4: more than one moov box; not a shape this build remuxes".into(),
                     ));
                 }
+                reader.seek(SeekFrom::Start(pos))?;
                 let mut bytes = vec![0u8; size as usize];
                 reader.read_exact(&mut bytes)?;
                 moov = Some(bytes);

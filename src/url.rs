@@ -28,7 +28,22 @@ impl Url {
 
         let (scheme, rest) = match raw.find("://") {
             Some(i) => (&raw[..i], &raw[i + 3..]),
-            None => ("https", raw),
+            None => {
+                // `javascript:alert(1)` carries no `//`, but it does carry a
+                // scheme. A host may keep a port after its colon and nothing
+                // else, so any other colon means this is not a bare host.
+                if let Some(i) = raw.find(':') {
+                    let port = raw[i + 1..].split('/').next().unwrap_or("");
+                    let port_like = !port.is_empty() && port.chars().all(|c| c.is_ascii_digit());
+                    if !port_like {
+                        return Err(Error::Usage(format!(
+                            "unsupported URL scheme '{}': tafas speaks http and https",
+                            &raw[..i]
+                        )));
+                    }
+                }
+                ("https", raw)
+            }
         };
         let scheme_lower = scheme.to_ascii_lowercase();
         if scheme_lower != "http" && scheme_lower != "https" {

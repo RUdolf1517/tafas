@@ -222,19 +222,18 @@ fn from_item(item: &Value, id: &str, page: &str, headers: &[(String, String)]) -
 
 /// Reads `{"<key>": {"urlList": [...]}}` or `{"<key>": {"url_list": [...]}}`.
 fn url_list(value: &Value, path: &[&str]) -> Vec<String> {
-    let mut joined = path.to_vec();
-    joined.push("urlList");
-    let mut urls: Vec<String> = list(value, &joined)
-        .iter()
-        .filter_map(|v| v.as_str().map(str::to_string))
-        .collect();
-    joined.pop();
-    joined.push("url_list");
-    urls.extend(
-        list(value, &joined)
-            .iter()
-            .filter_map(|v| v.as_str().map(str::to_string)),
-    );
+    let mut urls = Vec::new();
+    // The web payload says `urlList`, the app payload says `UrlList`, and older
+    // responses say `url_list`. All three carry the same array of strings.
+    for key in ["urlList", "UrlList", "url_list"] {
+        let mut joined = path.to_vec();
+        joined.push(key);
+        urls.extend(
+            list(value, &joined)
+                .iter()
+                .filter_map(|v| v.as_str().map(str::to_string)),
+        );
+    }
     urls
 }
 
