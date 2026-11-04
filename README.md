@@ -11,7 +11,7 @@
 [![rust](https://img.shields.io/badge/rust-1.82%2B-dea584?style=flat-square)](https://www.rust-lang.org/)
 [![license](https://img.shields.io/badge/license-MIT-0b3d91?style=flat-square)](LICENSE)
 
-[Install](#install) · [Usage](#usage) · [Sites](#sites) · [Why tafas](#why-tafas) · [Guarantees](#guarantees) · [Docs](#documentation)
+[Install](#install) · [Usage](#usage) · [Sites](#sites) · [Why tafas](#why-tafas) · [Docs](#documentation)
 
 </div>
 
@@ -148,26 +148,12 @@ ciphers, HLS-only posts — is one table away in
 | **Resume is not an afterthought** | `--resume` (the default) continues a `.part` with a range request, notices a server that ignores `Range`, and starts over rather than writing the beginning twice. |
 | **The terminal is the interface** | No config file, no daemon, no environment variables of its own, no state on disk between runs. Every decision is an argument, so the command you ran yesterday is the command that runs today. |
 
-## Guarantees
-
-| Class | Meaning | Where it applies |
-| --- | --- | --- |
-| **G1 — byte count** | The file on disk is exactly as long as the server said, or it is not renamed into place | every stream download |
-| **G2 — structural** | The remuxed file is re-read from disk; both tracks must be present, every chunk offset must point inside an `mdat`, and every track must have samples | every remux |
-| **G3 — no re-encoding** | Frames and samples are copied verbatim; only container metadata is rewritten | every remux |
-| **G4 — explicit refusal** | Anything not reachable is a named failure with a reason, never a truncated file and never a silent skip | every extractor |
-
-A failure in G1 or G2 exits **4**, because either means tafas wrote something it
-does not trust. The verification method, and where it is weaker than it looks,
-is in [docs/guarantees.md](docs/guarantees.md).
-
 ## Documentation
 
 | Document | Contents |
 | --- | --- |
 | [cli](docs/cli.md) | Flags, exit codes, JSON schema, colour and progress, stdout discipline |
 | [extractors](docs/extractors.md) | Per-site routes, the exact refusals, and why each one is a refusal |
-| [guarantees](docs/guarantees.md) | The four guarantee classes and how each is verified |
 | [safety](docs/safety.md) | Atomic commit, resume, path handling, TLS, redirects, limits |
 | [dependencies](docs/dependencies.md) | Every dependency, why it exists, its licence, and where the C code is |
 | [releases](docs/releases.md) · [roadmap](docs/roadmap.md) | Versioning policy, artifacts, channels · what is planned and what is not |
@@ -179,13 +165,17 @@ is in [docs/guarantees.md](docs/guarantees.md).
 Hebrew **תפס** (*tafas*): to catch, to seize, to hold on to.
 
 It is what you do with a stream that exists only for as long as the page is
-open. The word carries no promise about the file's future — that is the job of
-the guarantees above.
+open. The word carries no promise about the file's future: what tafas checks
+before it renames a file, and where that check is weaker than it looks, is
+written down in [docs/guarantees.md](docs/guarantees.md) rather than implied by
+a slogan.
 
 Written by AI. Directed by [RUdolf1517](https://github.com/RUdolf1517) ·
 [rudolfzinovev@protonmail.com](mailto:rudolfzinovev@protonmail.com)
 
 ## License
 
-[MIT](LICENSE). Dependency licences: `cargo deny` in CI, and the reasoning for
-each dependency in [docs/dependencies.md](docs/dependencies.md).
+[MIT](LICENSE). Dependency licences are checked with `cargo deny` against
+[`deny.toml`](deny.toml) when a release is cut; the reasoning for each
+dependency, and the rule for adding one, is in
+[docs/dependencies.md](docs/dependencies.md).

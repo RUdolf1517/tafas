@@ -124,7 +124,7 @@ the word "verified". The parts that are genuinely independent:
   never a half-written destination.
 
 A future version may add an independent demuxer as a dev-dependency for tests
-(see [roadmap](roadmap.md) §4). Until then, this paragraph is the honest version
+(see [roadmap](roadmap.md) §6). Until then, this paragraph is the honest version
 of the claim.
 
 ## 7. What is deliberately absent

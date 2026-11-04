@@ -76,7 +76,11 @@ Additionally:
 - no new `unsafe` (the crate forbids it);
 - no `Command::new` — this binary runs no other program, and
   `tests/packaging.rs` enforces it;
-- no dependency added "to save lines of code".
+- no dependency added "to save lines of code";
+- no dependency written in anything but Rust unless it can be neither written here
+  nor replaced by a Rust crate ([docs/dependencies.md §0](docs/dependencies.md#0-the-rule)).
+  `ring` is the one exception the project has made, and the reason is written
+  down, not inherited.
 
 ---
 

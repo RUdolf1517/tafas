@@ -84,7 +84,7 @@ written to return an error rather than index out of bounds — which is what a f
 target would be asserting.
 
 A fuzz target is planned with the independent-demuxer work in
-[roadmap §3](roadmap.md#3-v03--beyond-the-edge). Until then, the parser tests
+[roadmap §3](roadmap.md#3-v03--reach-and-the-parts-that-are-not-a-url). Until then, the parser tests
 include truncated and padded inputs explicitly.
 
 ## 7. CI

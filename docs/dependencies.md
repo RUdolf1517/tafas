@@ -2,13 +2,29 @@
 
 Related: [releases](releases.md) · [safety](safety.md)
 
-Every dependency answers six questions: what it does, why this project cannot do
-it in less code than it costs, what it drags in, which licence it carries, what
-happens when it is wrong, and what it costs in binary size. A dependency that
-cannot answer all six is not added.
+## 0. The rule
 
-`cargo deny` checks licences, banned crates, sources and advisories on every
-push. The list below is the reasoning; the CI job is the enforcement.
+**A dependency may be written in something other than Rust only if this project
+cannot write it itself, or if no Rust equivalent exists.**
+
+Both halves are deliberately narrow. "It is faster", "it is what everyone uses"
+and "it has a Rust wrapper" are not on the list. In practice the rule allows
+exactly two things in this repository: `ring`, because constant-time elliptic
+curve code is the one kind of program that must not be hand-written, and the C
+runtime libc hands every binary anyway. Everything else — argument parsing, HTTP,
+JSON, the muxer, the extractors — is Rust, and if a job needs code nobody has
+written in Rust yet, the answer is to write it here rather than to link a
+compiler toolchain into a static binary.
+
+Every dependency, Rust or not, also answers six questions: what it does, why this
+project cannot do it in less code than it costs, what it drags in, which licence
+it carries, what happens when it is wrong, and what it costs in binary size. A
+dependency that cannot answer all six is not added.
+
+`cargo deny` (`deny.toml`: licences, banned crates, sources, advisories) runs when
+a release is cut and whenever the lockfile moves, alongside `cargo audit`. It is
+not a per-commit job: advisory databases move independently of this repository,
+and a badge turning red at 03:00 is not a test.
 
 ---
 
@@ -114,6 +130,12 @@ file-scoped copyleft and does not affect the licence of this crate.
 | `ring` | C and assembly, vendored | **yes** |
 | libc (static musl) | C, linked by the toolchain | **yes**, on Linux |
 
+`ring` is here under §0: reimplementing P-256, AES-GCM and the constant-time
+discipline around them is not a downloader's job, and a hand-written version
+would be the least trustworthy code in the repository. libc arrives with the
+toolchain and cannot be removed from a static binary. Neither is a choice this
+project made for convenience.
+
 There is no `libav*`, no OpenSSL, no `libcurl`, no `ffmpeg` and no Python. A
 build from source needs a C compiler for `ring`; the released binaries do not.
 
@@ -121,6 +143,9 @@ build from source needs a C compiler for `ring`; the released binaries do not.
 
 Open an issue first. A pull request that adds one is expected to contain:
 
+0. the §0 answer: **could this be written here, and is there a Rust crate that
+   already does it?** A non-Rust dependency that fails that question is refused
+   before anything else is read;
 1. an entry in this table with all six answers;
 2. the licence and whether it is already in the allow-list;
 3. the **measured** binary-size delta (`cargo build --release` before and after,

@@ -95,7 +95,7 @@ that matter:
 There is no `--cookies` flag. That is a deliberate boundary of v0.1.0, not an
 oversight: a cookie jar turns a stateless command into something that can act as
 a logged-in account, and that decision (and its failure modes) is on the
-[roadmap](roadmap.md#3-not-planned-for-v01) rather than smuggled in.
+[roadmap §7](roadmap.md#7-what-will-not-happen) rather than smuggled in.
 
 ### 2.5 Live streams
 
