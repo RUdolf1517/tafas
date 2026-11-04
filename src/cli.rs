@@ -33,7 +33,7 @@ Exit codes:
   2  invalid usage; nothing was requested
   3  fatal error; the run could not be completed
   4  an output file failed verification — this is a bug, not bad luck
- 130  interrupted (SIGINT); a .part file may remain, and --resume continues it
+ 130  interrupted (SIGINT); a .part file may remain and the next run picks it up
 
 stdout is data: the written path, one per line. stderr is everything else.
 A closed stdout pipe ends the run quietly and successfully.";

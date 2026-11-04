@@ -1,17 +1,17 @@
-.\\" tafas(1) — manual page. Kept in the repository and installed by the .deb, the
-.\\" .rpm, the Homebrew formula and the release archives. `tests/packaging.rs`
-.\\" fails when an option in `tafas --help` is missing here, so this page cannot
-.\\" drift into describing a different program.
+.\" tafas(1) — manual page. Kept in the repository and installed by the .deb, the
+.\" .rpm, the Homebrew formula and the release archives. `tests/packaging.rs`
+.\" fails when an option in `tafas --help` is missing here, so this page cannot
+.\" drift into describing a different program.
 .TH TAFAS 1 "2026-11-04" "tafas 0.1.0" "User Commands"
 .SH NAME
-tafas \\- capture a video from YouTube, TikTok or X as one playable MP4
+tafas \- capture a video from YouTube, TikTok or X as one playable MP4
 .SH SYNOPSIS
 .B tafas
-[\\fIOPTIONS\\fR] \\fIURL\\fR...
+[\fIOPTIONS\fR] \fIURL\fR...
 .br
 .B tafas
-\\fB\\-\\-list\\-formats\\fR | \\fB\\-\\-capabilities\\fR | \\fB\\-\\-info\\fR |
-\\fB\\-\\-completions\\fR \\fI SHELL\\fR | \\fB\\-\\-man\\fR | \\fB\\-\\-help\\fR | \\fB\\-\\-version\\fR
+\fB\-\-list\-formats\fR | \fB\-\-capabilities\fR | \fB\-\-info\fR |
+\fB\-\-completions\fR \fI SHELL\fR | \fB\-\-man\fR | \fB\-\-help\fR | \fB\-\-version\fR
 .SH DESCRIPTION
 .B tafas
 reads a page, picks a stream, downloads it and writes one file. When a site
@@ -30,22 +30,22 @@ closed stdout pipe ends the run quietly and successfully.
 A file is written through a temporary
 .I <target>.part
 beside the destination and renamed into place only after its byte count has been
-checked \\- and, for a remuxed file, after its structure has been re-read from
+checked \- and, for a remuxed file, after its structure has been re-read from
 disk. An interrupted run leaves the
 .I .part
 file behind; the next run continues it when the server supports range requests.
 .SH SUPPORTED SITES
 .TP
 .B YouTube
-Watch pages, \\fByoutu.be\\fR short links, \\fB/shorts/\\fR, \\fB/embed/\\fR and
-\\fB/live/\\fR URLs. The watch page's inlined player response is read first; when
+Watch pages, \fByoutu.be\fR short links, \fB/shorts/\fR, \fB/embed/\fR and
+\fB/live/\fR URLs. The watch page's inlined player response is read first; when
 that yields nothing, the InnerTube JSON API is asked through a fixed chain of
-clients (\\fBandroid_vr\\fR, \\fBios\\fR, \\fBandroid\\fR, the embedded TV client,
-\\fBweb\\fR). Formats that arrive signature-protected are dropped rather than
+clients (\fBandroid_vr\fR, \fBios\fR, \fBandroid\fR, the embedded TV client,
+\fBweb\fR). Formats that arrive signature-protected are dropped rather than
 deciphered, and a page that demands a sign-in check is a refusal.
 .TP
 .B TikTok
-Video and photo posts, including \\fBvm.tiktok.com\\fR and \\fBvt.tiktok.com\\fR
+Video and photo posts, including \fBvm.tiktok.com\fR and \fBvt.tiktok.com\fR
 short links. The page's rehydration document is read first, the mobile feed
 second. The version without a watermark is preferred when the page offers both.
 .TP
@@ -56,93 +56,93 @@ half the players cannot open.
 .SH OPTIONS
 .SS Destination
 .TP
-.B \\-o, \\-\\-output \\fIPATH\\fR
+.B \-o, \-\-output \fIPATH\fR
 Output file, or directory when more than one URL is given. A trailing slash
-forces the directory reading. \\fB\\-\\fR writes a single stream to stdout, which
+forces the directory reading. \fB\-\fR writes a single stream to stdout, which
 is refused for anything that needs a remux.
 .TP
-.B \\-\\-name \\fINAME\\fR
-Use this name stem instead of \\fI<title> [<id>]\\fR.
+.B \-\-name \fINAME\fR
+Use this name stem instead of \fI<title> [<id>]\fR.
 .TP
-.B \\-\\-overwrite
+.B \-\-overwrite
 Replace an existing file. Without it an existing destination is an error, and
 nothing is fetched.
 .SS Selection
 .TP
-.B \\-Q, \\-\\-quality \\fIQUALITY\\fR
-\\fBbest\\fR (default), \\fBworst\\fR, or a height such as \\fB720p\\fR. A height is a
+.B \-Q, \-\-quality \fIQUALITY\fR
+\fBbest\fR (default), \fBworst\fR, or a height such as \fB720p\fR. A height is a
 ceiling: when nothing that small exists, the smallest available stream is taken.
 .TP
-.B \\-\\-audio\\-only
-Take the audio stream alone, as \\fBm4a\\fR when the site offers one.
+.B \-\-audio\-only
+Take the audio stream alone, as \fBm4a\fR when the site offers one.
 .TP
-.B \\-\\-format \\fIID\\fR
-Fetch exactly this stream, using an id printed by \\fB\\-\\-list\\-formats\\fR.
+.B \-\-format \fIID\fR
+Fetch exactly this stream, using an id printed by \fB\-\-list\-formats\fR.
 Requires one URL.
 .TP
-.B \\-\\-no\\-mux
+.B \-\-no\-mux
 Keep picture and sound in separate files; never remux.
 .TP
-.B \\-\\-list\\-formats
+.B \-\-list\-formats
 Print every stream of each URL and stop. Nothing is downloaded.
 .SS Transfer
 .TP
-.B \\-\\-no\\-resume
-Do not continue an interrupted download. By default a \\fI.part\\fR file is
+.B \-\-no\-resume
+Do not continue an interrupted download. By default a \fI.part\fR file is
 continued with a range request.
 .TP
-.B \\-\\-retries \\fIN\\fR
-Retries for one failed request (default 3). Transport errors, \\fB429\\fR and
-\\fB5xx\\fR are retried with a growing delay; other \\fB4xx\\fR responses are not.
+.B \-\-retries \fIN\fR
+Retries for one failed request (default 3). Transport errors, \fB429\fR and
+\fB5xx\fR are retried with a growing delay; other \fB4xx\fR responses are not.
 .TP
-.B \\-\\-timeout \\fISECS\\fR
+.B \-\-timeout \fISECS\fR
 Deadline for one metadata request (default 60). A media transfer has no total
 deadline.
 .TP
-.B \\-j, \\-\\-jobs \\fIN\\fR
-How many URLs to work on at once (default 1; \\fB0\\fR means four).
+.B \-j, \-\-jobs \fIN\fR
+How many URLs to work on at once (default 1; \fB0\fR means four).
 .SS Output
 .TP
-.B \\-n, \\-\\-dry\\-run
+.B \-n, \-\-dry\-run
 Print what would be fetched, in which shape, and where, then stop.
 .TP
-.B \\-\\-json
-One JSON object per item on stdout. The schema is described in \\fIdocs/cli.md\\fR.
+.B \-\-json
+One JSON object per item on stdout. The schema is described in \fIdocs/cli.md\fR.
 .TP
-.B \\-q, \\-\\-quiet
+.B \-q, \-\-quiet
 Errors only. The written path is still printed to stdout, because it is data.
 .TP
-.B \\-\\-no\\-progress
+.B \-\-no\-progress
 Never draw the progress line.
 .TP
-.B \\-\\-color \\fIWHEN\\fR
-\\fBauto\\fR (default), \\fBalways\\fR, \\fBnever\\fR.
+.B \-\-color \fIWHEN\fR
+\fBauto\fR (default), \fBalways\fR, \fBnever\fR.
 .TP
-.B \\-\\-no\\-color
-Same as \\fB\\-\\-color never\\fR.
+.B \-\-no\-color
+Same as \fB\-\-color never\fR.
 .TP
-.B \\-v, \\-\\-verbose
+.B \-v, \-\-verbose
 Log requests and decisions on stderr. Repeatable.
 .SS Informational
 .TP
-.B \\-\\-completions \\fISHELL\\fR
+.B \-\-completions \fISHELL\fR
 Print a completion script for bash, zsh, fish, powershell or elvish, generated
 from the live parser.
 .TP
-.B \\-\\-man
+.B \-\-man
 Print this manual page in groff source and exit.
 .TP
-.B \\-\\-capabilities
+.B \-\-capabilities
 Print a JSON description of what this build can do. Read-only: it makes no
 request and touches no file.
 .TP
-.B \\-i, \\-\\-info
+.B \-i, \-\-info
 Print the version, the supported sites and the standing defaults.
 .TP
-.B \\-\\-help
+.B \-\-help
 Print the option summary and exit.
 .TP
-.B \\-\\-version
+.B \-\-version
 Print the version and exit.
 .SH EXIT STATUS
 .TP
@@ -159,15 +159,15 @@ Invalid usage. Nothing was requested.
 A fatal error: the run could not be completed.
 .TP
 .B 4
-A written file failed verification. This is a bug in \\fBtafas\\fR.
+A written file failed verification. This is a bug in \fBtafas\fR.
 .TP
 .B 130
-Interrupted. A \\fI.part\\fR file may remain; the next run continues it.
+Interrupted. A \fI.part\fR file may remain; the next run continues it.
 .SH ENVIRONMENT
 .TP
 .B NO_COLOR, CLICOLOR, CLICOLOR_FORCE, TERM
-Decide whether colour is used when \\fB\\-\\-color auto\\fR is in effect, in that
-order of precedence. \\fBTERM=dumb\\fR disables colour.
+Decide whether colour is used when \fB\-\-color auto\fR is in effect, in that
+order of precedence. \fBTERM=dumb\fR disables colour.
 .TP
 .B HTTPS_PROXY, HTTP_PROXY, NO_PROXY
 Honoured by the HTTP client.
@@ -183,5 +183,5 @@ The two halves of a remux, present only while it is running or after a failure.
 .BR ffmpeg (1)
 .SH BUGS
 Signature-protected YouTube formats and HLS-only X posts are refused rather than
-worked around; \\fIdocs/extractors.md\\fR states exactly what is and is not
+worked around; \fIdocs/extractors.md\fR states exactly what is and is not
 supported. Report bugs at https://github.com/RUdolf1517/tafas/issues.
