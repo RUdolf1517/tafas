@@ -168,14 +168,10 @@ fn handle_connection(mut stream: TcpStream, routes: &[Route]) -> std::io::Result
     // Failures are counted per process, not per route, which is enough for a
     // retry test: the second request finds the counter exhausted.
     static FAILURES: AtomicUsize = AtomicUsize::new(0);
-    let body = {
-        let mut body = route.body.clone();
-        if route.truncate_by > 0 {
-            let keep = body.len().saturating_sub(route.truncate_by);
-            body.truncate(keep);
-        }
-        body
-    };
+    // `truncate_by` keeps the declared length honest and cuts the bytes sent,
+    // which is what a connection dropped mid-transfer actually looks like.
+    let body = route.body.clone();
+    let sent = body.len().saturating_sub(route.truncate_by);
 
     let already = FAILURES.load(Ordering::SeqCst);
     if already < route.fail_first {
@@ -198,8 +194,25 @@ fn handle_connection(mut stream: TcpStream, routes: &[Route]) -> std::io::Result
             // A range past the end is what a finished file looks like.
             write_response(&mut stream, 416, "Range Not Satisfiable", b"", None)
         }
+        _ if route.truncate_by > 0 => write_short(&mut stream, body.len(), sent, &body),
         _ => write_response(&mut stream, 200, "OK", &body, None),
     }
+}
+
+/// Declares `declared` bytes and sends only `sent`, then closes: a transfer
+/// that ends early, which is what the caller's length check exists for.
+fn write_short(
+    stream: &mut TcpStream,
+    declared: usize,
+    sent: usize,
+    body: &[u8],
+) -> std::io::Result<()> {
+    let head = format!(
+        "HTTP/1.1 200 OK\r\nContent-Length: {declared}\r\nConnection: close\r\n\r\n"
+    );
+    stream.write_all(head.as_bytes())?;
+    stream.write_all(&body[..sent])?;
+    stream.flush()
 }
 
 fn write_response(
