@@ -700,13 +700,11 @@ fn open_part(path: &Path, append: bool) -> Result<File> {
 /// Renames a finished temporary into place, after checking that nothing is
 /// going to be replaced silently.
 fn commit(part: &Path, target: &Path, overwrite: bool) -> Result<()> {
-    if target.exists() {
-        if !overwrite {
-            return Err(Error::Refused(format!(
-                "{} already exists; pass --overwrite to replace it",
-                target.display()
-            )));
-        }
+    if target.exists() && !overwrite {
+        return Err(Error::Refused(format!(
+            "{} already exists; pass --overwrite to replace it",
+            target.display()
+        )));
     }
     fs::rename(part, target).map_err(|e| {
         Error::Io(io::Error::new(
@@ -894,8 +892,10 @@ mod tests {
     fn a_missing_directory_is_created_for_the_output() {
         let dir = std::env::temp_dir().join(format!("tafas-target-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        let mut options = Options::default();
-        options.output = Some(dir.clone());
+        let options = Options {
+            output: Some(dir.clone()),
+            ..Options::default()
+        };
 
         let media = Media::new(
             crate::model::Site::YouTube,
@@ -945,8 +945,10 @@ mod tests {
 
     #[test]
     fn the_stdout_target_is_stderr_free() {
-        let mut options = Options::default();
-        options.output = Some(PathBuf::from("-"));
+        let options = Options {
+            output: Some(PathBuf::from("-")),
+            ..Options::default()
+        };
         let media = Media::new(crate::model::Site::X, "20".into(), "https://example".into());
         let format = Format {
             id: "1".into(),

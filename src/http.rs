@@ -59,7 +59,7 @@ impl Http {
     pub fn new(retries: u32, timeout_secs: u64, verbose: u8) -> Result<Http> {
         let client = Client::builder()
             .user_agent(UA_DESKTOP)
-            .connect_timeout(Duration::from_secs(timeout_secs.min(30).max(1)))
+            .connect_timeout(Duration::from_secs(timeout_secs.clamp(1, 30)))
             // Redirects are followed here rather than by hand: `t.co` and
             // `vm.tiktok.com` are pure redirectors and the extractors need the
             // final URL. The limit is reqwest's default ten, made explicit.
