@@ -1030,6 +1030,17 @@ mod tests {
         std::fs::write(&video, one_track_mp4(b"vide", &video_payload)).unwrap();
         std::fs::write(&audio, one_track_mp4(b"soun", &audio_payload)).unwrap();
 
+        // The fixture has to point at its own payload, or the remux refuses it
+        // before doing anything interesting.
+        let bytes = std::fs::read(&video).unwrap();
+        let stco = find_bytes(&bytes, b"stco").expect("stco in the fixture");
+        let entry = be_u32(&bytes, stco + 12).unwrap() as usize;
+        assert!(
+            entry > stco && entry < bytes.len(),
+            "stco at {stco}, entry {entry}, file {} bytes",
+            bytes.len()
+        );
+
         let report = remux(&video, &audio, &out).unwrap();
         assert_eq!(report.video_tracks, 1);
         assert_eq!(report.audio_tracks, 1);
