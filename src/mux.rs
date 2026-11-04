@@ -912,8 +912,10 @@ mod tests {
         mdhd[20..24].copy_from_slice(&1000u32.to_be_bytes()); // timescale
         mdhd[24..28].copy_from_slice(&1000u32.to_be_bytes()); // duration
 
+        // `full` adds the version and flags, so the handler type sits four
+        // bytes into the body and eight bytes into the box's payload.
         let mut hdlr_body = vec![0u8; 20];
-        hdlr_body[8..12].copy_from_slice(handler);
+        hdlr_body[4..8].copy_from_slice(handler);
         let hdlr = bx(b"hdlr", &full(&hdlr_body));
 
         let mut stsd_body = vec![0u8; 4];
