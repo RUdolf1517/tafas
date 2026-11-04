@@ -527,7 +527,10 @@ pub fn remux(video: &Path, audio: &Path, out: &Path) -> Result<MuxReport> {
                     )));
                 }
                 tables.push(OffsetTable {
-                    entries_at: base + entries_at,
+                    // `entries_at` is absolute inside the source `moov`, while
+                    // the patch below runs against the new payload, so the
+                    // track's own start comes back out.
+                    entries_at: base + (entries_at - trak_span.start),
                     count,
                     width,
                     source: index,
