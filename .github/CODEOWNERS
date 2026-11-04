@@ -1,0 +1,12 @@
+# Review ownership. The repository is small enough that one owner reviews
+# everything; the entries below name who must approve a change to a file whose
+# rules are stricter than the general code style.
+
+* @RUdolf1517
+
+# These files define promises rather than behaviour, and a change to one is a
+# change to the contract users rely on.
+/docs/guarantees.md @RUdolf1517
+/docs/extractors.md @RUdolf1517
+/docs/safety.md     @RUdolf1517
+/SECURITY.md        @RUdolf1517

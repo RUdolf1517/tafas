@@ -355,7 +355,7 @@ fn stream_to_stdout(
 ) -> Result<Status> {
     let format =
         match plan {
-            Plan::Single(format) | Plan::Audio(format) => format.clone(),
+            Plan::Single(format) | Plan::Audio(format) => Format::clone(format),
             _ => return Err(Error::Usage(
                 "-o - writes one stream: this selection needs two streams or a remux, so give a \
                  file name instead"

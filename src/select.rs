@@ -197,11 +197,11 @@ pub fn choose(media: &Media, options: &Options) -> Result<Plan> {
                 ))
             })?;
         return match format.kind {
-            StreamKind::Muxed => Ok(Plan::Single(format.clone())),
-            StreamKind::Audio => Ok(Plan::Audio(format.clone())),
+            StreamKind::Muxed => Ok(Plan::Single(Format::clone(format))),
+            StreamKind::Audio => Ok(Plan::Audio(Format::clone(format))),
             StreamKind::Video => {
                 let audio = best_audio(&playable);
-                Ok(join(format.clone(), audio, options.no_mux))
+                Ok(join(Format::clone(format), audio, options.no_mux))
             }
         };
     }
@@ -325,11 +325,11 @@ fn pick_video(candidates: &[&Format], quality: Quality) -> Option<Format> {
         Quality::Best => candidates
             .iter()
             .max_by_key(|format| scored(format))
-            .map(|format| (*format).clone()),
+            .map(|format| Format::clone(*format)),
         Quality::Worst => candidates
             .iter()
             .min_by_key(|format| scored(format))
-            .map(|format| (*format).clone()),
+            .map(|format| Format::clone(*format)),
         Quality::Height(height) => {
             let fitting: Vec<&&Format> = candidates
                 .iter()
@@ -347,7 +347,7 @@ fn pick_video(candidates: &[&Format], quality: Quality) -> Option<Format> {
                 .iter()
                 .filter(|format| format.height > 0)
                 .min_by_key(|format| (format.height, format.bitrate))
-                .map(|format| (*format).clone())
+                .map(|format| Format::clone(*format))
         }
     }
 }
