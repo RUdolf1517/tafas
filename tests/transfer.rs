@@ -114,12 +114,12 @@ fn a_range_past_the_end_is_reported_as_restarted() {
 }
 
 #[test]
-fn a_short_body_is_visible_in_the_declared_total() {
+fn a_body_shorter_than_its_content_length_is_an_error_that_keeps_the_part() {
     let payload = body(4_000);
     let server = TestServer::start(vec![Route::truncated("/v.mp4", &payload, 500)]);
 
     let mut sink = Vec::new();
-    let report = http()
+    let error = http()
         .download(
             "media",
             &server.url("/v.mp4"),
@@ -128,14 +128,14 @@ fn a_short_body_is_visible_in_the_declared_total() {
             0,
             &mut |_| {},
         )
-        .expect("download");
+        .expect_err("a body shorter than its Content-Length is not a complete file");
 
-    // The server declared the full length in Content-Length, so the caller's
-    // byte-count check (the one that decides whether to rename) fails. That is
-    // the whole point of comparing them.
-    assert_eq!(report.total, Some(payload.len() as u64));
-    assert_eq!(report.written, (payload.len() - 500) as u64);
-    assert_ne!(report.total, Some(report.written));
+    // The transport notices the shortfall rather than handing back a file that
+    // is quietly missing its tail, and what did arrive stays in the caller's
+    // sink so a resume can build on it.
+    assert!(matches!(error, tafas::error::Error::Io(_)), "{error}");
+    assert!(!sink.is_empty(), "the bytes that arrived were thrown away");
+    assert!(sink.len() < payload.len());
 }
 
 #[test]
