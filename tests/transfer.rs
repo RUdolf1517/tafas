@@ -204,7 +204,7 @@ fn a_partial_sink_keeps_what_was_written_when_the_transfer_fails() {
     impl Write for Failing {
         fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
             if self.bytes >= self.fail_after {
-                return Err(std::io::Error::new(std::io::ErrorKind::Other, "disk full"));
+                return Err(std::io::Error::other("disk full"));
             }
             self.bytes += buf.len();
             Ok(buf.len())

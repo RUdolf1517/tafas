@@ -194,7 +194,7 @@ fn handle_connection(mut stream: TcpStream, routes: &[Route]) -> std::io::Result
             let slice = &body[start as usize..];
             write_partial(&mut stream, slice, start, body.len() as u64)
         }
-        Some(start) if route.support_range => {
+        Some(_) if route.support_range => {
             // A range past the end is what a finished file looks like.
             write_response(&mut stream, 416, "Range Not Satisfiable", b"", None)
         }
