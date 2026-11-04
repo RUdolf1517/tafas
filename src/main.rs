@@ -15,7 +15,7 @@ use tafas::cli::Args;
 use tafas::download::{self, write_stdout};
 use tafas::report::RESULT_SCHEMA_VERSION;
 use tafas::sites::SITES;
-use tafas::style::{self, Choice, Pen};
+use tafas::style::{self, Pen};
 
 fn main() -> ExitCode {
     // Installing the provider explicitly is what makes the dependency choice
