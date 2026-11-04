@@ -527,10 +527,10 @@ pub fn remux(video: &Path, audio: &Path, out: &Path) -> Result<MuxReport> {
                     )));
                 }
                 tables.push(OffsetTable {
-                    // `entries_at` is absolute inside the source `moov`, while
-                    // the patch below runs against the new payload, so the
-                    // track's own start comes back out.
-                    entries_at: base + (entries_at - trak_span.start),
+                    // `children` reports positions through the slice it was
+                    // given, so `entries_at` is already relative to this trak
+                    // and only the trak's place in the new payload is added.
+                    entries_at: base + entries_at,
                     count,
                     width,
                     source: index,
@@ -1035,8 +1035,12 @@ mod tests {
         assert_eq!(report.audio_tracks, 1);
 
         let verified = verify(&out).unwrap();
-        assert!(verified.has_handler("vide"));
-        assert!(verified.has_handler("soun"));
+        let handlers: Vec<&str> = verified
+            .tracks
+            .iter()
+            .map(|track| track.handler.as_str())
+            .collect();
+        assert_eq!(handlers, ["vide", "soun"]);
         assert_eq!(verified.sample_total(), 2);
         assert_eq!(verified.bytes, std::fs::metadata(&out).unwrap().len());
 
