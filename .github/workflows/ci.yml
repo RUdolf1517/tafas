@@ -59,30 +59,33 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -uo pipefail
-          log=""
-          for candidate in clippy.log test.log build.log; do
-            [ -f "$candidate" ] && log="$candidate" && break
+          # Only the steps that actually failed: a passing clippy log would
+          # otherwise be published under a failing test's name.
+          : > failure.md
+          for pair in "clippy:${{ steps.clippy.outcome }}" "test:${{ steps.test.outcome }}" "build:${{ steps.build.outcome }}"; do
+            name="${pair%%:*}"
+            outcome="${pair##*:}"
+            [ "$outcome" = "failure" ] || continue
+            log="${name}.log"
+            [ -f "$log" ] || continue
+            # Cargo's own progress lines are removed: a log where the errors are
+            # buried under 200 "Downloaded" lines is a log nobody reads.
+            grep -vE "^ *(Downloading|Downloaded|Compiling|Checking|Updating|Adding|Locking)" "$log" \
+              | tail -n 120 > "failure-$name.txt" || true
+            {
+              echo "### \`${{ matrix.os }}\` — \`$name\`"
+              echo '```'
+              cat "failure-$name.txt"
+              echo '```'
+            } >> failure.md
           done
-          echo "::group::$log"
-          tail -c 60000 "$log" || true
-          echo "::endgroup::"
 
+          cat failure.md
           number="$(gh pr list --head "$GITHUB_REF_NAME" --state open --json number -q '.[0].number' 2>/dev/null || true)"
           if [ -z "$number" ]; then
             echo "no open pull request for $GITHUB_REF_NAME; see the step log"
             exit 0
           fi
-          # Cargo's own progress lines are removed before publishing: a log
-          # where the errors are buried under 200 "Downloaded" lines is a log
-          # nobody reads.
-          grep -vE "^ *(Downloading|Downloaded|Compiling|Checking|Updating|Adding|Locking)" "$log" \
-            | tail -n 150 > failure-summary.txt || true
-          {
-            echo "### \`${{ matrix.os }}\` — \`$log\`"
-            echo '```'
-            cat failure-summary.txt
-            echo '```'
-          } > failure.md
           gh pr comment "$number" --body-file failure.md || true
 
       - name: Fail the job
