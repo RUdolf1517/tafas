@@ -543,6 +543,11 @@ pub fn remux(video: &Path, audio: &Path, out: &Path) -> Result<MuxReport> {
     let moov_size = 8u64
         .checked_add(payload.len() as u64)
         .ok_or_else(|| Error::Limit("mp4: the movie header is too large".into()))?;
+    if moov_size > u32::MAX as u64 {
+        return Err(Error::Limit(
+            "mp4: the movie header does not fit in a 32-bit box size".into(),
+        ));
+    }
     let ftyp_len = out_ftyp.len() as u64;
 
     let video_payload_len = payload_len(&video_source);

@@ -1,0 +1,102 @@
+# Testing
+
+Related: [guarantees](guarantees.md) · [CONTRIBUTING](../CONTRIBUTING.md)
+
+```console
+$ cargo test --all-targets
+$ cargo clippy --all-targets -- -D warnings
+$ cargo fmt --all -- --check
+```
+
+## 1. The rule that shapes everything
+
+**No test touches the network.** Not because a request is hard, but because a
+test whose result depends on today's YouTube is a test that fails for reasons the
+person running it cannot fix. The three extractors are tested against documents
+they were designed to read, and the transfer layer is tested against a socket
+this repository opens and closes itself.
+
+## 2. Layers
+
+| Layer | Where | What it proves |
+| --- | --- | --- |
+| unit | `#[cfg(test)]` in each module | URL parsing and rejection, title sanitising, format classification, selection rules, box parsing and patching, exit-code mapping, colour precedence |
+| remux | `src/mux.rs` tests | a synthetic two-file remux produces one file with both tracks, both payloads intact, `moov` first, and `verify` accepting it |
+| end-to-end | `tests/cli.rs` | the real binary, spawned, against a local HTTP server this test starts on `127.0.0.1:0` |
+| packaging | `tests/packaging.rs` | every option in `--help` appears in `man/tafas.1`; no `Command::new` in `src/`; the capability document is valid JSON |
+
+Fixtures are **built by code**, never committed. A reviewer can read what a test
+feeds the binary, and adding a case is writing a constructor rather than adding a
+binary blob nobody can diff. That is the same rule tzim uses, for the same
+reason.
+
+## 3. The remux fixture
+
+`src/mux.rs` builds a one-track MP4 in about a hundred lines: `ftyp`, `moov`
+(`mvhd`, `trak` with `tkhd`, `mdhd`, `hdlr`, `minf`/`stbl` with the five tables a
+player needs), then `mdat`. The `stco` entry is patched to the real payload
+offset after the layout is known, exactly as the writer does it.
+
+The payloads are recognisable byte patterns (`0..100` for video, `0xBB` for
+audio), so the test can assert what a checksum cannot: that the exact bytes
+survived the remux and are findable in the output.
+
+## 4. What the end-to-end tests cover
+
+| Test | Expectation |
+| --- | --- |
+| a page with a progressive MP4 | one file, correct bytes, correct name, exit 0 |
+| the same run with `--json` | one object, `status: "downloaded"`, `schema: 1` on stdout and nothing else |
+| an existing destination | exit 1, nothing fetched, the original untouched |
+| the same with `--overwrite` | replaced |
+| a page that returns 500 three times | retries, then exit 1 with `reason: "http"` |
+| `--dry-run` | no request for media, `status: "planned"` |
+| `--list-formats` | the stream table on stdout, no media request |
+| an interrupted transfer (`--resume`) | the `.part` continues with a `Range` header, byte count still exact |
+| a server that ignores `Range` | the file restarts rather than doubling its beginning |
+| a body shorter than `Content-Length` | exit 4, no destination, `.part` kept |
+| a closed stdout pipe | exit 0, no panic, no error text |
+
+The local server is a few dozen lines of `std::net::TcpListener`: it parses the
+request line and headers, answers a canned body, and can be told to fail a given
+number of times first. It exists so that the resume and retry paths are tested
+against a real socket rather than a mock.
+
+## 5. Not covered, and said so
+
+- **The real sites.** A test that logged into TikTok would be a test that breaks
+  on a Tuesday. Extraction is verified by the shape of the documents it reads and
+  by the refusal paths; a page that has changed produces a refusal, and a bug
+  report with that refusal in it is the mechanism that fixes it.
+- **Actual playback.** No test decodes a frame. `verify` checks the container,
+  not the codec (see [guarantees §2](guarantees.md#2-g2--structural-verification)).
+- **Windows ACLs and case-insensitive collisions.** The name sanitiser is tested;
+  the filesystem below it is not.
+- **HTTP/2-specific behaviour.** The client speaks both; the fixture server
+  speaks HTTP/1.1.
+
+## 6. Fuzzing
+
+The parsers worth fuzzing are the two that read bytes from someone else:
+`mux::scan`/`verify` (ISO-BMFF) and `sites::json_after` (brace matching). Both are
+pure functions over a slice, both are `#![forbid(unsafe_code)]`, and both are
+written to return an error rather than index out of bounds — which is what a fuzz
+target would be asserting.
+
+A fuzz target is planned with the independent-demuxer work in
+[roadmap §3](roadmap.md#3-v03--beyond-the-edge). Until then, the parser tests
+include truncated and padded inputs explicitly.
+
+## 7. CI
+
+| Job | What it runs |
+| --- | --- |
+| `test (ubuntu, macos, windows)` | `cargo clippy -D warnings`, `cargo test --all-targets`, `cargo build --release` |
+| `msrv` | `cargo build --release` on the declared minimum (1.82) |
+| `packaging` | `cargo test --test packaging` |
+| `deny` | licences, banned crates, sources, advisories |
+| `format` | `cargo fmt` plus `cargo generate-lockfile`, committed back to the branch |
+
+`format` exists because this project is partly written in an environment without
+a Rust toolchain: a contributor whose environment cannot run `cargo` still gets a
+formatted branch and a resolved lockfile, from CI, on the branch they pushed.
