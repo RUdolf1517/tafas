@@ -72,10 +72,15 @@ jobs:
             echo "no open pull request for $GITHUB_REF_NAME; see the step log"
             exit 0
           fi
+          # Cargo's own progress lines are removed before publishing: a log
+          # where the errors are buried under 200 "Downloaded" lines is a log
+          # nobody reads.
+          grep -vE "^ *(Downloading|Downloaded|Compiling|Checking|Updating|Adding|Locking)" "$log" \
+            | tail -n 150 > failure-summary.txt || true
           {
             echo "### \`${{ matrix.os }}\` — \`$log\`"
             echo '```'
-            tail -c 40000 "$log"
+            cat failure-summary.txt
             echo '```'
           } > failure.md
           gh pr comment "$number" --body-file failure.md || true
