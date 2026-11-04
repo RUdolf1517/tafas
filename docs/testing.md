@@ -89,14 +89,25 @@ include truncated and padded inputs explicitly.
 
 ## 7. CI
 
-| Job | What it runs |
-| --- | --- |
-| `test (ubuntu, macos, windows)` | `cargo clippy -D warnings`, `cargo test --all-targets`, `cargo build --release` |
-| `msrv` | `cargo build --release` on the declared minimum (1.82) |
-| `packaging` | `cargo test --test packaging` |
-| `deny` | licences, banned crates, sources, advisories |
-| `format` | `cargo fmt` plus `cargo generate-lockfile`, committed back to the branch |
+| Workflow | Job | What it runs |
+| --- | --- | --- |
+| `ci.yml` | `test (ubuntu, macos, windows)` | `cargo clippy --all-targets -D warnings`, `cargo test --all-targets`, `cargo build --release` |
+| `format.yml` | `format` | `cargo fmt` plus `cargo generate-lockfile`, committed back to the branch |
+| `release.yml` | `build (five targets)` | `cargo build --release --locked`, archives, `SHA256SUMS`, packages |
+
+Three platforms, one job each, because the failures this project has actually had
+were platform-shaped: a path joined with `\`, a file renamed while a reader held
+it open, a crypto provider that one target could not pick. The `packaging` checks
+run inside the same `cargo test --all-targets` invocation; they need no job of
+their own because they are ordinary tests.
 
 `format` exists because this project is partly written in an environment without
 a Rust toolchain: a contributor whose environment cannot run `cargo` still gets a
 formatted branch and a resolved lockfile, from CI, on the branch they pushed.
+
+The declared floor, `rust-version = "1.82"` in `Cargo.toml`, is not a per-commit
+job. A transitive dependency can raise the real floor without a line of this
+repository changing, so the floor is re-checked when the lockfile moves and again
+when a release is cut, where `cargo deny check` (see `deny.toml`) and
+`cargo audit` run in the same pass. A red badge on a dependency's release page is
+not something a three-platform matrix should be asked to detect.

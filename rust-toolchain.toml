@@ -1,0 +1,8 @@
+# The toolchain CI uses. `stable`, not a pinned version: the floor this project
+# promises is `rust-version` in `Cargo.toml`, and a pinned channel would turn
+# every rustup update into a repository change. The components are the two the
+# workflows run, so a fresh clone can reproduce a failing lint locally.
+[toolchain]
+channel = "stable"
+components = ["rustfmt", "clippy"]
+profile = "minimal"
