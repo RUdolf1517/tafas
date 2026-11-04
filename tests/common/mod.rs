@@ -143,7 +143,10 @@ fn handle_connection(mut stream: TcpStream, routes: &[Route]) -> std::io::Result
         if line.is_empty() {
             break;
         }
-        if let Some(value) = line.strip_prefix("Range: ").or_else(|| line.strip_prefix("range: ")) {
+        if let Some(value) = line
+            .strip_prefix("Range: ")
+            .or_else(|| line.strip_prefix("range: "))
+        {
             if let Some(spec) = value.strip_prefix("bytes=") {
                 if let Some(start) = spec.split('-').next() {
                     range_start = start.trim().parse::<u64>().ok();
@@ -177,7 +180,13 @@ fn handle_connection(mut stream: TcpStream, routes: &[Route]) -> std::io::Result
     let already = FAILURES.load(Ordering::SeqCst);
     if already < route.fail_first {
         FAILURES.store(already + 1, Ordering::SeqCst);
-        return write_response(&mut stream, 500, "Internal Server Error", b"try again", None);
+        return write_response(
+            &mut stream,
+            500,
+            "Internal Server Error",
+            b"try again",
+            None,
+        );
     }
 
     match range_start {

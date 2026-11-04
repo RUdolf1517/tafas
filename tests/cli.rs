@@ -91,9 +91,13 @@ fn json_failures_are_one_object_on_stdout() {
 fn capabilities_is_read_only_json() {
     let output = tafas(&["--capabilities"]);
     assert_eq!(code(&output), 0);
-    let value: serde_json::Value = serde_json::from_str(stdout(&output).trim()).expect("valid JSON");
+    let value: serde_json::Value =
+        serde_json::from_str(stdout(&output).trim()).expect("valid JSON");
     assert_eq!(value["capabilities_schema_version"], 1);
-    assert_eq!(value["external_binaries"].as_array().expect("array").len(), 0);
+    assert_eq!(
+        value["external_binaries"].as_array().expect("array").len(),
+        0
+    );
     assert_eq!(value["muxing"]["reencode"], false);
 }
 

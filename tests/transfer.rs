@@ -29,7 +29,14 @@ fn a_complete_body_arrives_byte_for_byte() {
     let mut sink = Vec::new();
 
     let report = http()
-        .download("media", &server.url("/v.mp4"), &[], &mut sink, 0, &mut |_| {})
+        .download(
+            "media",
+            &server.url("/v.mp4"),
+            &[],
+            &mut sink,
+            0,
+            &mut |_| {},
+        )
         .expect("download");
 
     assert_eq!(sink, payload);
@@ -113,7 +120,14 @@ fn a_short_body_is_visible_in_the_declared_total() {
 
     let mut sink = Vec::new();
     let report = http()
-        .download("media", &server.url("/v.mp4"), &[], &mut sink, 0, &mut |_| {})
+        .download(
+            "media",
+            &server.url("/v.mp4"),
+            &[],
+            &mut sink,
+            0,
+            &mut |_| {},
+        )
         .expect("download");
 
     // The server declared the full length in Content-Length, so the caller's
@@ -131,7 +145,14 @@ fn a_failing_server_is_retried_and_then_succeeds() {
 
     let mut sink = Vec::new();
     let report = http()
-        .download("media", &server.url("/v.mp4"), &[], &mut sink, 0, &mut |_| {})
+        .download(
+            "media",
+            &server.url("/v.mp4"),
+            &[],
+            &mut sink,
+            0,
+            &mut |_| {},
+        )
         .expect("the retry should have succeeded");
 
     assert_eq!(sink, payload);
@@ -143,7 +164,14 @@ fn a_missing_path_is_an_unsupported_error_rather_than_a_silent_empty_file() {
     let server = TestServer::start(vec![Route::ok("/v.mp4", b"x")]);
     let mut sink = Vec::new();
     let error = http()
-        .download("media", &server.url("/nope.mp4"), &[], &mut sink, 0, &mut |_| {})
+        .download(
+            "media",
+            &server.url("/nope.mp4"),
+            &[],
+            &mut sink,
+            0,
+            &mut |_| {},
+        )
         .expect_err("404 must not be treated as success");
     assert!(matches!(error, tafas::error::Error::Unsupported(_)));
     assert!(sink.is_empty());
@@ -194,7 +222,14 @@ fn a_partial_sink_keeps_what_was_written_when_the_transfer_fails() {
     };
 
     let error = http()
-        .download("media", &server.url("/v.mp4"), &[], &mut sink, 0, &mut |_| {})
+        .download(
+            "media",
+            &server.url("/v.mp4"),
+            &[],
+            &mut sink,
+            0,
+            &mut |_| {},
+        )
         .expect_err("a write failure must surface");
     assert!(matches!(error, tafas::error::Error::Io(_)));
 }
