@@ -182,7 +182,7 @@ fn track_offsets(tracks: &[Track], payload_at: u64) -> Vec<u64> {
 fn track_duration(track: &Track) -> u64 {
     match samples_layout(track) {
         Layout::Uniform { count, delta } => count.saturating_mul(delta),
-        Layout::Timed { deltas, .. } => deltas.iter().sum(),
+        Layout::Timed { deltas, .. } => deltas.iter().map(|delta| u64::from(*delta)).sum(),
     }
 }
 
@@ -218,13 +218,17 @@ fn samples_layout(track: &Track) -> Layout {
         .iter()
         .map(|sample| sample.dts.or(sample.pts).unwrap_or(0))
         .collect();
-    let mut deltas = Vec::with_capacity(times.len());
+    let mut deltas: Vec<u32> = Vec::with_capacity(times.len());
     for (index, time) in times.iter().enumerate() {
-        let delta = match times.get(index + 1) {
+        let delta: u64 = match times.get(index + 1) {
             Some(next) if next > time => next - time,
             // The last sample, or a timestamp that did not advance: reuse the
             // previous step, which is what a player assumes anyway.
-            _ => deltas.last().copied().unwrap_or(1).max(1),
+            _ => deltas
+                .last()
+                .map(|last| u64::from(*last))
+                .unwrap_or(1)
+                .max(1),
         };
         deltas.push(u32::try_from(delta).unwrap_or(u32::MAX));
     }
