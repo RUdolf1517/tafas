@@ -229,19 +229,28 @@ impl Master {
     }
 }
 
+/// The `EXT-X-STREAM-INF` attributes that a variant needs, held between the tag
+/// and the URI line that follows it.
+struct VariantAttributes {
+    bandwidth: u64,
+    width: u32,
+    height: u32,
+    codecs: Option<String>,
+    audio_group: Option<String>,
+}
+
 fn parse(text: &str, base: &Url) -> Result<Playlist> {
     let mut saw_header = false;
 
     let mut variants: Vec<Variant> = Vec::new();
     let mut renditions: Vec<Rendition> = Vec::new();
     // The attribute set of the last `EXT-X-STREAM-INF`, waiting for its URI.
-    let mut pending_variant: Option<(u64, u32, u32, Option<String>, Option<String>)> = None;
+    let mut pending_variant: Option<VariantAttributes> = None;
 
     let mut segments: Vec<Segment> = Vec::new();
     let mut target_duration = 0u64;
     let mut end_list = false;
     let mut playlist_type: Option<PlaylistType> = None;
-    let mut media_sequence = 0u64;
     let mut current_map: Option<InitSection> = None;
     let mut current_key: Option<Key> = None;
     let mut pending_duration: Option<f64> = None;
@@ -270,13 +279,13 @@ fn parse(text: &str, base: &Url) -> Result<Playlist> {
         if let Some(rest) = line.strip_prefix("#EXT-X-STREAM-INF:") {
             let attributes = attributes(rest);
             let (width, height) = resolution(&attributes);
-            pending_variant = Some((
-                number(&attributes, "BANDWIDTH").unwrap_or(0),
+            pending_variant = Some(VariantAttributes {
+                bandwidth: number(&attributes, "BANDWIDTH").unwrap_or(0),
                 width,
                 height,
-                value(&attributes, "CODECS").map(str::to_string),
-                value(&attributes, "AUDIO").map(str::to_string),
-            ));
+                codecs: value(&attributes, "CODECS").map(str::to_string),
+                audio_group: value(&attributes, "AUDIO").map(str::to_string),
+            });
             continue;
         }
         if let Some(rest) = line.strip_prefix("#EXT-X-MEDIA:") {
@@ -399,8 +408,7 @@ fn parse(text: &str, base: &Url) -> Result<Playlist> {
             continue;
         }
         if let Some(rest) = line.strip_prefix("#EXT-X-MEDIA-SEQUENCE:") {
-            media_sequence = parse_u64(rest)?;
-            next_sequence = media_sequence;
+            next_sequence = parse_u64(rest)?;
             continue;
         }
         if let Some(rest) = line.strip_prefix("#EXT-X-PLAYLIST-TYPE:") {
@@ -427,14 +435,14 @@ fn parse(text: &str, base: &Url) -> Result<Playlist> {
         // A URI line: either a variant or a segment, depending on what came
         // before it.
         let uri = base.join(line)?;
-        if let Some((bandwidth, width, height, codecs, audio_group)) = pending_variant.take() {
+        if let Some(pending) = pending_variant.take() {
             variants.push(Variant {
                 uri,
-                bandwidth,
-                width,
-                height,
-                codecs,
-                audio_group,
+                bandwidth: pending.bandwidth,
+                width: pending.width,
+                height: pending.height,
+                codecs: pending.codecs,
+                audio_group: pending.audio_group,
             });
             continue;
         }
