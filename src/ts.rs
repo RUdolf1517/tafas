@@ -37,11 +37,15 @@ pub struct Demuxed {
 
 impl Demuxed {
     pub fn video(&self) -> Option<&Track> {
-        self.tracks.iter().find(|track| track.kind == TrackKind::Video)
+        self.tracks
+            .iter()
+            .find(|track| track.kind == TrackKind::Video)
     }
 
     pub fn audio(&self) -> Option<&Track> {
-        self.tracks.iter().find(|track| track.kind == TrackKind::Audio)
+        self.tracks
+            .iter()
+            .find(|track| track.kind == TrackKind::Audio)
     }
 }
 
@@ -406,7 +410,9 @@ fn avc_track(mut stream: Pending) -> Result<Option<Track>> {
                 _ => {}
             }
             if unit.len() > u32::MAX as usize {
-                return Err(Error::Limit("an H.264 NAL unit is larger than 4 GiB".into()));
+                return Err(Error::Limit(
+                    "an H.264 NAL unit is larger than 4 GiB".into(),
+                ));
             }
             out.extend_from_slice(&(unit.len() as u32).to_be_bytes());
             out.extend_from_slice(unit);
@@ -432,9 +438,9 @@ fn avc_track(mut stream: Pending) -> Result<Option<Track>> {
                 .into(),
         )
     })?;
-    let pps = stream.pps.ok_or_else(|| {
-        Error::Parse("the video stream carried an SPS but no PPS".into())
-    })?;
+    let pps = stream
+        .pps
+        .ok_or_else(|| Error::Parse("the video stream carried an SPS but no PPS".into()))?;
     let avcc = build_avcc(&sps, &pps)?;
     Ok(Some(Track {
         kind: TrackKind::Video,
@@ -492,9 +498,9 @@ fn aac_track(mut stream: Pending) -> Result<Option<Track>> {
     if samples.is_empty() {
         return Ok(None);
     }
-    let config = stream.aac.ok_or_else(|| {
-        Error::Parse("the audio stream carried no complete ADTS frame".into())
-    })?;
+    let config = stream
+        .aac
+        .ok_or_else(|| Error::Parse("the audio stream carried no complete ADTS frame".into()))?;
     Ok(Some(Track {
         kind: TrackKind::Audio,
         codec: Codec::Aac(config),
@@ -515,9 +521,7 @@ fn aac_config(profile: u8, frequency_index: u8, channels: u8) -> Result<AacConfi
         ))
     })?;
     if channels == 0 {
-        return Err(Error::Parse(
-            "ADTS frame declares zero channels".into(),
-        ));
+        return Err(Error::Parse("ADTS frame declares zero channels".into()));
     }
     // AudioSpecificConfig: 5 bits of object type, 4 of frequency index, 4 of
     // channel configuration, then three zero flags. Thirteen bits, two bytes.
@@ -645,7 +649,7 @@ mod tests {
         section[0] = 0x02; // table_id: program map
         section[1] = 0xb0;
         section[2] = 0x17; // section_length
-        // program_info_length is zero, bytes 10 and 11
+                           // program_info_length is zero, bytes 10 and 11
         section.push(0x1b); // H.264
         section.push(0xe0 | ((video_pid >> 8) as u8 & 0x1f));
         section.push(video_pid as u8);
@@ -677,7 +681,10 @@ mod tests {
         out.push(0x80); // marker, no scrambling
         out.push(if dts.is_some() { 0xc0 } else { 0x80 });
         out.push(if dts.is_some() { 10 } else { 5 });
-        out.extend_from_slice(&timestamp_bytes(if dts.is_some() { 0x30 } else { 0x20 }, pts));
+        out.extend_from_slice(&timestamp_bytes(
+            if dts.is_some() { 0x30 } else { 0x20 },
+            pts,
+        ));
         if let Some(dts) = dts {
             out.extend_from_slice(&timestamp_bytes(0x10, dts));
         }
@@ -765,7 +772,11 @@ mod tests {
         let audio = demuxed.audio().unwrap();
         assert_eq!(audio.timescale, 44_100);
         assert_eq!(audio.samples.len(), 1);
-        assert_eq!(audio.samples[0].data, vec![0x21, 0x10, 0x05], "ADTS stripped");
+        assert_eq!(
+            audio.samples[0].data,
+            vec![0x21, 0x10, 0x05],
+            "ADTS stripped"
+        );
         let Codec::Aac(config) = &audio.codec else {
             panic!("AAC produces an AudioSpecificConfig");
         };
@@ -781,7 +792,10 @@ mod tests {
         let mut payload = Vec::new();
         payload.extend_from_slice(&adts_frame(2, 4, 2, &[0x01, 0x02]));
         payload.extend_from_slice(&adts_frame(2, 4, 2, &[0x03, 0x04]));
-        let stream = stream(&pes(0xe0, 0, None, &video_unit()), &pes(0xc0, 0, None, &payload));
+        let stream = stream(
+            &pes(0xe0, 0, None, &video_unit()),
+            &pes(0xc0, 0, None, &payload),
+        );
         let demuxed = match demux(&stream) {
             Ok(demuxed) => demuxed,
             Err(error) => panic!("{error}"),
@@ -807,7 +821,10 @@ mod tests {
     fn a_stream_without_a_program_table_is_refused() {
         let data = packet(481, true, 0, &pes(0xe0, 0, None, &video_unit()));
         let error = demux(&data).unwrap_err();
-        assert!(error.is_parse() || matches!(error, Error::Unsupported(_)), "{error}");
+        assert!(
+            error.is_parse() || matches!(error, Error::Unsupported(_)),
+            "{error}"
+        );
     }
 
     #[test]
