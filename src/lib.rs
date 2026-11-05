@@ -13,6 +13,7 @@ pub mod error;
 pub mod hls;
 pub mod http;
 pub mod model;
+pub mod mp4write;
 pub mod mux;
 pub mod names;
 pub mod progress;
