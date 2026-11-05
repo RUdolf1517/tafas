@@ -287,7 +287,9 @@ fn parse(text: &str, base: &Url) -> Result<Playlist> {
                 _ => None,
             };
             if let Some(kind) = kind {
-                let group = value(&attributes, "GROUP-ID").unwrap_or_default().to_string();
+                let group = value(&attributes, "GROUP-ID")
+                    .unwrap_or_default()
+                    .to_string();
                 let uri = match value(&attributes, "URI") {
                     Some(uri) => Some(base.join(uri)?),
                     None => None,
@@ -327,11 +329,7 @@ fn parse(text: &str, base: &Url) -> Result<Playlist> {
                 Encryption::Aes128 => {
                     let uri = match value(&attributes, "URI") {
                         Some(uri) => base.join(uri)?,
-                        None => {
-                            return Err(Error::Parse(
-                                "AES-128 key block without a URI".into(),
-                            ))
-                        }
+                        None => return Err(Error::Parse("AES-128 key block without a URI".into())),
                     };
                     let iv = match value(&attributes, "IV") {
                         Some(iv) => Some(parse_iv(iv)?),
@@ -390,9 +388,10 @@ fn parse(text: &str, base: &Url) -> Result<Playlist> {
         if let Some(rest) = line.strip_prefix("#EXTINF:") {
             // `#EXTINF:9.009,title`
             let value = rest.split(',').next().unwrap_or(rest).trim();
-            pending_duration = Some(value.parse::<f64>().map_err(|_| {
-                Error::Parse(format!("EXTINF duration '{value}' is not a number"))
-            })?);
+            pending_duration =
+                Some(value.parse::<f64>().map_err(|_| {
+                    Error::Parse(format!("EXTINF duration '{value}' is not a number"))
+                })?);
             continue;
         }
         if let Some(rest) = line.strip_prefix("#EXT-X-TARGETDURATION:") {
@@ -583,13 +582,17 @@ fn byte_range(text: &str) -> Result<(Option<u64>, u64)> {
 }
 
 fn parse_u64(text: &str) -> Result<u64> {
-    text.trim().trim_matches('"').parse().map_err(|_| {
-        Error::Parse(format!("playlist value '{text}' is not a number"))
-    })
+    text.trim()
+        .trim_matches('"')
+        .parse()
+        .map_err(|_| Error::Parse(format!("playlist value '{text}' is not a number")))
 }
 
 fn parse_iv(text: &str) -> Result<[u8; 16]> {
-    let hex = text.trim().trim_start_matches("0x").trim_start_matches("0X");
+    let hex = text
+        .trim()
+        .trim_start_matches("0x")
+        .trim_start_matches("0X");
     if hex.len() != 32 {
         return Err(Error::Parse(format!(
             "IV '{text}' is not 128 bits of hexadecimal"
@@ -805,10 +808,7 @@ main.mp4
     fn quoted_commas_do_not_split_an_attribute_list() {
         let attributes = attributes("BANDWIDTH=1,CODECS=\"avc1.4d401e,mp4a.40.2\",RESOLUTION=1x1");
         assert_eq!(attributes.len(), 3);
-        assert_eq!(
-            value(&attributes, "CODECS"),
-            Some("avc1.4d401e,mp4a.40.2")
-        );
+        assert_eq!(value(&attributes, "CODECS"), Some("avc1.4d401e,mp4a.40.2"));
         assert_eq!(value(&attributes, "RESOLUTION"), Some("1x1"));
     }
 }

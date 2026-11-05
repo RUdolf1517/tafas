@@ -138,10 +138,7 @@ impl Url {
             return Url::parse(reference);
         }
         if reference.starts_with('/') {
-            return Url::parse(&format!(
-                "{}://{}{reference}",
-                self.scheme, self.authority
-            ));
+            return Url::parse(&format!("{}://{}{reference}", self.scheme, self.authority));
         }
         if let Some(query) = reference.strip_prefix('?') {
             let mut joined = self.clone();
@@ -314,11 +311,15 @@ mod tests {
             "https://cdn.example.com/root/seg3.ts"
         );
         assert_eq!(
-            base.join("https://elsewhere.example/seg4.ts").unwrap().to_string(),
+            base.join("https://elsewhere.example/seg4.ts")
+                .unwrap()
+                .to_string(),
             "https://elsewhere.example/seg4.ts"
         );
         assert_eq!(
-            base.join("//elsewhere.example/seg5.ts").unwrap().to_string(),
+            base.join("//elsewhere.example/seg5.ts")
+                .unwrap()
+                .to_string(),
             "https://elsewhere.example/seg5.ts"
         );
     }
