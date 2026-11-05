@@ -10,6 +10,7 @@
 pub mod cli;
 pub mod download;
 pub mod error;
+pub mod hls;
 pub mod http;
 pub mod model;
 pub mod mux;

@@ -125,4 +125,8 @@ impl Error {
     pub fn is_usage(&self) -> bool {
         matches!(self, Error::Usage(_))
     }
+
+    pub fn is_parse(&self) -> bool {
+        matches!(self, Error::Parse(_))
+    }
 }

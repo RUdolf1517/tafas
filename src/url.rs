@@ -1,3 +1,5 @@
+use std::fmt;
+
 use crate::error::{Error, Result};
 
 /// A URL split into the four parts tafas actually needs.
@@ -118,6 +120,59 @@ impl Url {
             .collect::<Vec<_>>()
     }
 
+    /// Resolves a reference the way a playlist or a page means it: absolute,
+    /// protocol-relative, root-relative, or relative to the current directory.
+    ///
+    /// Dot segments are removed. That is not cosmetic: an HLS playlist that
+    /// says `../seg1.ts` is common, and a path that keeps the dots is a request
+    /// the CDN answers with a 404 rather than an error this program can explain.
+    pub fn join(&self, reference: &str) -> Result<Url> {
+        let reference = reference.trim();
+        if reference.is_empty() {
+            return Err(Error::Parse("empty reference in a playlist".into()));
+        }
+        if reference.starts_with("//") {
+            return Url::parse(&format!("{}:{reference}", self.scheme));
+        }
+        if reference.contains("://") {
+            return Url::parse(reference);
+        }
+        if reference.starts_with('/') {
+            return Url::parse(&format!(
+                "{}://{}{reference}",
+                self.scheme, self.authority
+            ));
+        }
+        if let Some(query) = reference.strip_prefix('?') {
+            let mut joined = self.clone();
+            joined.query = query.to_string();
+            return Ok(joined);
+        }
+        if reference.starts_with('#') {
+            return Ok(self.clone());
+        }
+
+        // A relative path is resolved against the directory the base path names,
+        // not against the base path itself: `/a/b.m3u8` + `c.ts` is `/a/c.ts`.
+        let directory = match self.path.rfind('/') {
+            Some(index) => &self.path[..=index],
+            None => "/",
+        };
+        let mut combined = String::with_capacity(directory.len() + reference.len());
+        combined.push_str(directory);
+        combined.push_str(reference);
+        let (path, query) = match combined.find('?') {
+            Some(index) => (&combined[..index], &combined[index + 1..]),
+            None => (combined.as_str(), ""),
+        };
+        Ok(Url {
+            scheme: self.scheme.clone(),
+            authority: self.authority.clone(),
+            path: normalise_path(path),
+            query: query.to_string(),
+        })
+    }
+
     pub fn query_param(&self, name: &str) -> Option<String> {
         for pair in self.query.split('&') {
             let (key, value) = match pair.find('=') {
@@ -130,6 +185,38 @@ impl Url {
         }
         None
     }
+}
+
+impl fmt::Display for Url {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}://{}{}", self.scheme, self.authority, self.path)?;
+        if !self.query.is_empty() {
+            write!(f, "?{}", self.query)?;
+        }
+        Ok(())
+    }
+}
+
+/// Collapses `.` and `..` segments. Percent escapes are copied through
+/// untouched, because a path segment is not a query string and `%2e` is not `.`.
+fn normalise_path(path: &str) -> String {
+    let trailing = path.ends_with('/');
+    let mut parts: Vec<&str> = Vec::new();
+    for part in path.split('/') {
+        match part {
+            "" | "." => {}
+            ".." => {
+                parts.pop();
+            }
+            other => parts.push(other),
+        }
+    }
+    let mut out = String::from("/");
+    out.push_str(&parts.join("/"));
+    if trailing && !parts.is_empty() {
+        out.push('/');
+    }
+    out
 }
 
 /// Decodes `%XX` and `+`. Deliberately total: a malformed escape is passed
@@ -209,6 +296,47 @@ mod tests {
         assert_eq!(u.host(), Some("x.com"));
         assert_eq!(u.path, "/p");
         assert_eq!(u.query, "");
+    }
+
+    #[test]
+    fn joins_a_relative_reference_against_its_directory() {
+        let base = Url::parse("https://cdn.example.com/videos/index.m3u8?token=1").unwrap();
+        assert_eq!(
+            base.join("seg1.ts").unwrap().to_string(),
+            "https://cdn.example.com/videos/seg1.ts"
+        );
+        assert_eq!(
+            base.join("../other/seg2.ts").unwrap().to_string(),
+            "https://cdn.example.com/other/seg2.ts"
+        );
+        assert_eq!(
+            base.join("/root/seg3.ts").unwrap().to_string(),
+            "https://cdn.example.com/root/seg3.ts"
+        );
+        assert_eq!(
+            base.join("https://elsewhere.example/seg4.ts").unwrap().to_string(),
+            "https://elsewhere.example/seg4.ts"
+        );
+        assert_eq!(
+            base.join("//elsewhere.example/seg5.ts").unwrap().to_string(),
+            "https://elsewhere.example/seg5.ts"
+        );
+    }
+
+    #[test]
+    fn a_join_keeps_the_base_query_only_when_it_asked_for_it() {
+        let base = Url::parse("https://cdn.example.com/a/b.m3u8?token=1").unwrap();
+        let joined = base.join("c.ts").unwrap();
+        assert_eq!(joined.query, "");
+        let requery = base.join("?token=2").unwrap();
+        assert_eq!(requery.path, "/a/b.m3u8");
+        assert_eq!(requery.query, "token=2");
+    }
+
+    #[test]
+    fn a_join_rejects_an_empty_reference() {
+        let base = Url::parse("https://cdn.example.com/a.m3u8").unwrap();
+        assert!(base.join("   ").unwrap_err().is_parse());
     }
 
     #[test]
