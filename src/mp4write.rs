@@ -63,7 +63,7 @@ pub fn write(tracks: &[Track], dimensions: (u32, u32), out: &Path) -> Result<Wri
         }
     }
 
-    let durations: Vec<u64> = tracks.iter().map(|track| track_duration(track)).collect();
+    let durations: Vec<u64> = tracks.iter().map(track_duration).collect();
     let movie_duration = tracks
         .iter()
         .zip(&durations)
