@@ -386,9 +386,12 @@ fn build_trak(
     }
     minf.extend_from_slice(&build_dinf());
     minf.extend_from_slice(&build_stbl(track, payload_at)?);
-    mdia.extend_from_slice(&full(b"minf", 0, 0, &minf));
+    // `minf` and `mdia` are plain containers: no version, no flags. Wrapping
+    // them the way a full box is wrapped shifts every box after them by four
+    // bytes, which is exactly the kind of error a reader notices first.
+    mdia.extend_from_slice(&bx(b"minf", &minf));
 
-    trak.extend_from_slice(&full(b"mdia", 0, 0, &mdia));
+    trak.extend_from_slice(&bx(b"mdia", &mdia));
     Ok(bx(b"trak", &trak))
 }
 
