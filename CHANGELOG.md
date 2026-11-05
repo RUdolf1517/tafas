@@ -24,12 +24,18 @@ version; adding a site, a flag or a container is minor. The policy is in
   frames split out with the `AudioSpecificConfig` an `esds` box needs. HEVC,
   MPEG audio and AC-3 are refused by name rather than written with a guessed
   codec record.
+- **An MP4 writer for those tracks** (`src/mp4write.rs`). `ftyp`, `moov` first,
+  one `mdat`: `avc1`+`avcC`, `mp4a`+`esds`, `stts` from decode times, `ctts` only
+  when presentation and decode times differ, `stss` for keyframes. The finished
+  file is read back by the remuxer's own verifier before the caller hears about
+  it.
 - **`Url::join`**, with dot-segment removal: playlist URIs are relative far more
   often than they are absolute, and `../` is common.
 
-HLS is not yet reachable from the command line: the writer that turns demuxed
-tracks into an MP4, and the wiring that makes `--quality` apply to a variant
-list, are the next step. Nothing in this section changes any existing flag.
+HLS is not yet reachable from the command line: the fetch pipeline (master
+playlist → variant → media playlist → segments → demux → write) and the wiring
+that makes `--quality` apply to a variant list are the next step. Nothing in
+this section changes any existing flag.
 
 ## [0.1.0] - 2026-11-04
 
