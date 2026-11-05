@@ -520,7 +520,7 @@ fn build_avc1(avcc: &[u8]) -> Vec<u8> {
     body.extend_from_slice(&1u16.to_be_bytes()); // frame count
     let mut compressor = [0u8; 32];
     compressor[0] = 4;
-    compressor[1..5].copy_from_slice(b"tafas");
+    compressor[1..6].copy_from_slice(b"tafas");
     body.extend_from_slice(&compressor);
     body.extend_from_slice(&0x0018u16.to_be_bytes()); // depth
     body.extend_from_slice(&0xffffu16.to_be_bytes()); // pre_defined
