@@ -27,8 +27,8 @@ thumbnails, live streams, more than three sites.
 
 | Item | Why it is next |
 | --- | --- |
-| **HLS demuxer** (`.m3u8` → MP4) | The single largest hole. Every X post that only offers a playlist, every TikTok livestream replay, and most of the sites on the v0.3 list speak HLS first. MPEG-TS to ISO-BMFF without re-encoding: PAT/PMT, PES, access-unit boundaries, a sample table built from PTS/DTS, and `EXT-X-MAP` init segments for the fMP4 variant. |
-| **Encrypted HLS segments** (`EXT-X-KEY`) | Falls out of the above: AES-128-CBC is in `ring`, which is already in the graph for TLS. No new dependency, no new C. |
+| **HLS demuxer** (`.m3u8` → MP4) — *playlist parsing and TS demuxing are in; the MP4 writer and the wiring are next* | The single largest hole. Every X post that only offers a playlist, every TikTok livestream replay, and most of the sites on the v0.3 list speak HLS first. MPEG-TS to ISO-BMFF without re-encoding: PAT/PMT, PES, access-unit boundaries, a sample table built from PTS/DTS, and `EXT-X-MAP` init segments for the fMP4 variant. |
+| **Encrypted HLS segments** (`EXT-X-KEY`) | Falls out of the above, with one correction to an earlier draft of this page: `ring` does **not** expose CBC, only AEAD modes, so AES-128-CBC decryption needs the pure-Rust `aes`/`cbc` crates (RustCrypto). Rust dependencies are not the thing §0 of [dependencies](dependencies.md) is about, so the rule is satisfied without an argument. |
 | **`--cookies FILE`** | Age-gated YouTube, private X posts, TikTok that refuses a session. Netscape format only, read once, never logged, never written back. Still no sign-in flow. |
 | **Playlists and channels** | `--playlist-items 1-5,9`, with the per-item independence the URL list already has: one dead video must not stop the other nine. |
 | **`--write-info-json`, `--write-thumbnail`, `--write-subs`, `--sub-langs`** | Four flags that remove the main remaining reason to reach for `yt-dlp`. Sidecar files only; muxing a subtitle track into MP4 is v0.3. |

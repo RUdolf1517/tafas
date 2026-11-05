@@ -11,6 +11,26 @@ version; adding a site, a flag or a container is minor. The policy is in
 
 ## [Unreleased]
 
+### Added
+
+- **HLS playlist parsing** (`src/hls.rs`). Master and media playlists, variant
+  selection by height and bandwidth, `EXT-X-MAP` initialisation sections,
+  `EXT-X-BYTERANGE` in both the absolute and the continue-from-the-last form,
+  `EXT-X-KEY` with AES-128 keys (including the implicit IV that most playlists
+  omit), and `EXT-X-MEDIA` audio renditions. A playlist without `EXT-X-ENDLIST`
+  is refused with a reason: there is no finished recording to write.
+- **MPEG-TS demuxing** (`src/ts.rs`). PAT and PMT, PES reassembly per PID,
+  Annex B to AVCC with the SPS and PPS hoisted into an `avcC` record, ADTS
+  frames split out with the `AudioSpecificConfig` an `esds` box needs. HEVC,
+  MPEG audio and AC-3 are refused by name rather than written with a guessed
+  codec record.
+- **`Url::join`**, with dot-segment removal: playlist URIs are relative far more
+  often than they are absolute, and `../` is common.
+
+HLS is not yet reachable from the command line: the writer that turns demuxed
+tracks into an MP4, and the wiring that makes `--quality` apply to a variant
+list, are the next step. Nothing in this section changes any existing flag.
+
 ## [0.1.0] - 2026-11-04
 
 The first release. Everything below is new, and the boundaries are as much a
