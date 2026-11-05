@@ -400,10 +400,13 @@ fn avc_track(mut stream: Pending) -> Result<Option<Track>> {
                 // Access unit delimiter, SPS, PPS and filler are not samples;
                 // SPS and PPS are hoisted into the avcC record below.
                 7 => {
+                    // Hoisted into the avcC record, not repeated in the sample.
                     stream.sps.get_or_insert_with(|| unit.to_vec());
+                    continue;
                 }
                 8 => {
                     stream.pps.get_or_insert_with(|| unit.to_vec());
+                    continue;
                 }
                 9 | 12 => continue,
                 5 => keyframe = true,
