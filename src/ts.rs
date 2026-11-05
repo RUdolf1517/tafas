@@ -606,23 +606,25 @@ mod tests {
     use super::*;
 
     fn packet(pid: u16, unit_start: bool, counter: u8, payload: &[u8]) -> Vec<u8> {
-        let mut out = vec![0u8; PACKET];
-        out[0] = SYNC;
-        out[1] = (if unit_start { 0x40 } else { 0x00 }) | ((pid >> 8) as u8 & 0x1f);
-        out[2] = pid as u8;
-        out[3] = 0x10 | (counter & 0x0f); // payload only
-        let length = payload.len().min(PACKET - 4);
-        out[4..4 + length].copy_from_slice(&payload[..length]);
-        // Stuff the rest with an adaptation field so the packet stays exactly
-        // 188 bytes: the last four bytes are the field's length and flags.
-        if length < PACKET - 4 {
-            out[3] = 0x30 | (counter & 0x0f); // adaptation field and payload
-            let stuffing = PACKET - 4 - length;
-            out[4] = (stuffing - 1) as u8;
-            if stuffing > 1 {
-                out[5] = 0x00;
+        assert!(payload.len() <= PACKET - 4, "a packet holds 184 payload bytes");
+        let mut out = Vec::with_capacity(PACKET);
+        out.push(SYNC);
+        out.push((if unit_start { 0x40 } else { 0x00 }) | ((pid >> 8) as u8 & 0x1f));
+        out.push(pid as u8);
+        let stuffing = PACKET - 4 - payload.len();
+        if stuffing == 0 {
+            out.push(0x10 | (counter & 0x0f)); // payload only
+        } else {
+            out.push(0x30 | (counter & 0x0f)); // adaptation field and payload
+            let field_length = stuffing - 1;
+            out.push(field_length as u8);
+            if field_length > 0 {
+                out.push(0x00); // flags: nothing to signal
+                out.resize(out.len() + field_length - 1, 0xff);
             }
         }
+        out.extend_from_slice(payload);
+        assert_eq!(out.len(), PACKET);
         out
     }
 
