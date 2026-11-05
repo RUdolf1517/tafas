@@ -77,7 +77,9 @@ pub fn write(tracks: &[Track], dimensions: (u32, u32), out: &Path) -> Result<Wri
     // with the real offset, is cheaper to read than an in-place patch and just
     // as exact: no table changes size when an offset changes.
     let placeholder = build_moov(tracks, &durations, dimensions, movie_duration, &[])?;
-    let payload_at = ftyp.len() as u64 + placeholder.len() as u64 + 8;
+    // `ftyp`, then the `moov` header and payload, then the `mdat` header: the
+    // payload starts after all three.
+    let payload_at = ftyp.len() as u64 + 8 + placeholder.len() as u64 + 8;
     let offsets = track_offsets(tracks, payload_at);
     let moov = build_moov(tracks, &durations, dimensions, movie_duration, &offsets)?;
     if moov.len() != placeholder.len() {
