@@ -107,7 +107,8 @@ pub fn write(tracks: &[Track], dimensions: (u32, u32), out: &Path) -> Result<Wri
     let file = File::create(out)?;
     let mut writer = BufWriter::with_capacity(1 << 20, file);
     writer.write_all(&ftyp)?;
-    writer.write_all(&(moov.len() as u32).to_be_bytes())?;
+    // `build_moov` returns the payload; the box's own size counts its header.
+    writer.write_all(&((moov.len() as u32) + 8).to_be_bytes())?;
     writer.write_all(b"moov")?;
     writer.write_all(&moov)?;
     writer.write_all(&((payload as u32) + 8).to_be_bytes())?;
