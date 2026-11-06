@@ -71,6 +71,10 @@ pub struct Args {
     #[arg(long)]
     pub audio_only: bool,
 
+    /// Write a <name>.info.json beside each file: what was chosen, and from what
+    #[arg(long)]
+    pub write_info_json: bool,
+
     /// Exact stream id to fetch, as printed by --list-formats
     #[arg(long, value_name = "ID")]
     pub format: Option<String>,
@@ -196,6 +200,7 @@ impl Args {
             multiple: self.urls.len() > 1,
             quality: self.quality,
             audio_only: self.audio_only,
+            write_info_json: self.write_info_json,
             format: self.format.clone(),
             no_mux: self.no_mux,
             overwrite: self.overwrite,

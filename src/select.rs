@@ -143,14 +143,7 @@ impl Plan {
 
 impl Format {
     fn container_name(&self) -> &'static str {
-        match self.container {
-            Container::Mp4 => "mp4",
-            Container::Webm => "webm",
-            Container::Ts => "ts",
-            Container::Hls => "hls",
-            Container::Jpeg => "jpg",
-            Container::Unknown => "bin",
-        }
+        self.container.name()
     }
 
     fn codec_or_container(&self) -> String {

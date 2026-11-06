@@ -80,6 +80,16 @@ pass that re-reads the result from disk, then one rename. The layout is
 `ftyp | moov | mdat(video) | mdat(audio)`; `moov` first so a player can read the
 index without seeking to the end (see [guarantees §3](guarantees.md#3-g2--structural-verification)).
 
+| `--write-info-json` | write `<name>.info.json` beside each file |
+
+The sidecar is written **after** the media file has been renamed into place, so a
+failed run never leaves a document describing a file that does not exist. It
+carries no media URLs: a signed URL expires within hours and a file that outlives
+it should not carry one. Two cases are named rather than silent — `-o -` is a
+pipe, so there is nothing to sit beside, and a photo post has one file per image,
+so there is no single file the document describes. Both print a note and carry
+on.
+
 ## 4. Transfer
 
 | Flag | Meaning |

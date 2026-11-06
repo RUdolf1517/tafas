@@ -20,6 +20,7 @@ Every destination is written twice: once as a temporary, once as itself.
 5. (remux only) mux into <target>.part, verify from disk  → G2
 6. rename(<target>.part → <target>)                        ← atomic
 7. fsync(parent directory)                                 ← durable
+8. (--write-info-json only) the same cycle for <name>.info.json, after step 7
 ```
 
 Whitespace, not detail: the rename only happens at step 6, so every failure

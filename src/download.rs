@@ -19,6 +19,7 @@ use std::time::Instant;
 
 use crate::cookies;
 use crate::error::{Error, Result};
+use crate::info;
 use crate::hlsfetch;
 use crate::http::Http;
 use crate::model::{Container, Format, Image, Media};
@@ -39,6 +40,8 @@ pub struct Options {
     pub multiple: bool,
     pub quality: select::Quality,
     pub audio_only: bool,
+    /// `--write-info-json`: a sidecar describing the page and the choice.
+    pub write_info_json: bool,
     pub format: Option<String>,
     pub no_mux: bool,
     pub overwrite: bool,
@@ -65,6 +68,7 @@ impl Default for Options {
             multiple: false,
             quality: select::Quality::Best,
             audio_only: false,
+            write_info_json: false,
             format: None,
             no_mux: false,
             overwrite: false,
@@ -361,6 +365,29 @@ fn handle(
 
     let bytes = fetch_plan(http, &plan, &target, options, printer)?;
     item.bytes = bytes;
+
+    if options.write_info_json {
+        if matches!(plan, Plan::Images(_)) {
+            printer.warn(
+                "note: --write-info-json is not written for photo posts; every image is its own \
+                 file and none of them is \"the\" one",
+            );
+        } else {
+            let mut files = vec![target.clone()];
+            if let Plan::Separate {
+                audio: Some(audio), ..
+            } = &plan
+            {
+                files.push(audio_path(&target, audio));
+            }
+            let document = info::document(&media, &plan, &files);
+            let sidecar = info::write(&target, &document)?;
+            if !options.json && !options.quiet {
+                printer.note(&format!("wrote {}", sidecar.display()));
+            }
+        }
+    }
+
     item.path = Some(target);
     Ok(Status::Downloaded)
 }
@@ -390,6 +417,11 @@ fn stream_to_stdout(
                     .into(),
             )),
         };
+    if options.write_info_json {
+        printer.warn(
+            "note: --write-info-json names a file and -o - is a pipe; the sidecar is skipped",
+        );
+    }
     let url = format
         .url
         .clone()

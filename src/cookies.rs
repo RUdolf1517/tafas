@@ -287,8 +287,7 @@ expired.test\tFALSE\t/\tFALSE\t1\tOLD\tgone
     fn a_cookie_goes_to_its_domain_and_its_prefixes() {
         let jar = Jar::parse(FILE);
         assert_eq!(
-            jar.header(&url("https://www.example.com/watch?v=1"))
-                .as_deref(),
+            jar.header(&url("https://www.example.com/watch?v=1")).as_deref(),
             Some("SID=abc123")
         );
         assert_eq!(
@@ -317,14 +316,12 @@ expired.test\tFALSE\t/\tFALSE\t1\tOLD\tgone
     fn a_secure_cookie_is_not_sent_over_plain_http() {
         let jar = Jar::parse(FILE);
         assert_eq!(
-            jar.header(&url("https://example.com/private/thing"))
-                .as_deref(),
+            jar.header(&url("https://example.com/private/thing")).as_deref(),
             Some("TOKEN=secret; SID=abc123"),
             "the longest path comes first"
         );
         assert_eq!(
-            jar.header(&url("http://example.com/private/thing"))
-                .as_deref(),
+            jar.header(&url("http://example.com/private/thing")).as_deref(),
             Some("SID=abc123"),
             "Secure is honoured"
         );
@@ -333,10 +330,7 @@ expired.test\tFALSE\t/\tFALSE\t1\tOLD\tgone
     #[test]
     fn a_path_prefix_stops_at_a_segment_boundary() {
         let jar = Jar::parse(FILE);
-        assert_eq!(
-            jar.header(&url("https://example.com/privateer")),
-            Some("SID=abc123".to_string())
-        );
+        assert_eq!(jar.header(&url("https://example.com/privateer")), Some("SID=abc123".to_string()));
     }
 
     #[test]
@@ -384,9 +378,6 @@ expired.test\tFALSE\t/\tFALSE\t1\tOLD\tgone
         let jar = Jar::parse(FILE);
         let text = format!("{jar:?}");
         assert!(text.contains("cookies: 4"), "{text}");
-        assert!(
-            !text.contains("abc123"),
-            "values must not be printable: {text}"
-        );
+        assert!(!text.contains("abc123"), "values must not be printable: {text}");
     }
 }

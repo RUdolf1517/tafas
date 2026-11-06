@@ -50,6 +50,11 @@ version; adding a site, a flag or a container is minor. The policy is in
   and no cookie value is logged, printed or quoted in an error. Age-gated
   YouTube and protected X posts become reachable; there is still no sign-in
   flow and no challenge is solved.
+- **`--write-info-json`.** A `<name>.info.json` beside each file: page, title,
+  uploader, duration, every stream the page offered, the choice that was made
+  and the files that were written. No media URLs — a signed URL is a credential
+  that expires in hours — and the document is written through a temporary and a
+  rename, after the media file has landed, never before.
 - **`X` posts that offer only a playlist** now download. A progressive MP4 is
   still preferred when the post offers both, and `--list-formats` shows the
   playlist as `hls`.

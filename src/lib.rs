@@ -13,6 +13,7 @@ pub mod download;
 pub mod error;
 pub mod hls;
 pub mod hlsfetch;
+pub mod info;
 pub mod http;
 pub mod model;
 pub mod mp4write;

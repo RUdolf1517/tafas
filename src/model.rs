@@ -91,6 +91,18 @@ impl Container {
         }
     }
 
+    /// The name printed in `--list-formats` and `--write-info-json`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Container::Mp4 => "mp4",
+            Container::Webm => "webm",
+            Container::Ts => "ts",
+            Container::Hls => "hls",
+            Container::Jpeg => "jpg",
+            Container::Unknown => "bin",
+        }
+    }
+
     /// Whether a stream of this container can be remuxed by `mux::mp4`.
     pub fn is_isobmff(self) -> bool {
         matches!(self, Container::Mp4)

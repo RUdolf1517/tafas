@@ -67,6 +67,12 @@ Use this name stem instead of \fI<title> [<id>]\fR.
 .B \-\-overwrite
 Replace an existing file. Without it an existing destination is an error, and
 nothing is fetched.
+.TP
+.B \-\-write\-info\-json
+Write \fI<name>.info.json\fR beside each file: the page, the title, the streams
+the page offered, which one was taken, and the files that were written. Media
+URLs are deliberately left out \— a signed URL is a credential that expires
+within hours, and a file that outlives it should not carry one.
 .SS Selection
 .TP
 .B \-Q, \-\-quality \fIQUALITY\fR
@@ -184,6 +190,10 @@ A transfer in progress. Removed by a successful run.
 .TP
 .I <target>.video.part, <target>.audio.part
 The two halves of a remux, present only while it is running or after a failure.
+.TP
+.I <target stem>.info.json
+Written only with \fB\-\-write\-info\-json\fR, and only after the file it
+describes has been renamed into place.
 .SH SEE ALSO
 .BR curl (1),
 .BR ffmpeg (1)
