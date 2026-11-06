@@ -63,7 +63,9 @@ serde_json = "1"
 # Rust — `ring` deliberately exposes only AEAD modes, and CBC is the mode the
 # HLS specification names. See docs/dependencies.md §1.5.
 aes = "0.8"
-cbc = "0.8"
+# `cbc` versions independently of `aes`: 0.1 is the release that pairs with
+# `cipher` 0.4, and `block-padding` is opt-in there, which is where PKCS#7 lives.
+cbc = { version = "0.1", features = ["block-padding"] }
 
 [dev-dependencies]
 # Tests spawn the real binary through CARGO_BIN_EXE_tafas, and the fixture HTTP

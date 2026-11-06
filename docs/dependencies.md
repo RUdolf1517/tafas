@@ -38,7 +38,7 @@ and a badge turning red at 03:00 is not a test.
 | `rustls` | 0.23 (`ring`) | Apache-2.0 OR ISC OR MIT | TLS without OpenSSL |
 | `serde_json` | 1 | MIT OR Apache-2.0 | the three sites speak JSON; so does `--json` |
 | `aes` | 0.8 | MIT OR Apache-2.0 | AES-128 block cipher, for encrypted HLS segments |
-| `cbc` | 0.8 | MIT OR Apache-2.0 | CBC mode and PKCS#7 padding, which is the mode HLS specifies |
+| `cbc` | 0.1 | MIT OR Apache-2.0 | CBC mode and PKCS#7 padding, which is the mode HLS specifies |
 
 Total: seven. A downloader is a small program on purpose — `cargo tree` fits on
 one screen, and every transitive crate is one more thing that can change under a
