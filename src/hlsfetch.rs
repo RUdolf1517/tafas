@@ -220,8 +220,7 @@ fn decrypt(data: &[u8], key: [u8; KEY_BYTES], iv: [u8; 16]) -> Result<Vec<u8>> {
         .decrypt_padded_mut::<Pkcs7>(&mut buffer)
         .map_err(|_| {
             Error::Verify(
-                "an HLS segment did not decrypt: the key, the IV or the padding is wrong"
-                    .to_string(),
+                "an HLS segment did not decrypt: the key, the IV or the padding is wrong".to_string(),
             )
         })?
         .len();
@@ -260,11 +259,7 @@ fn fetch_media(
             range,
             SEGMENT_LIMIT,
         )?;
-        if let Some(key) = segment
-            .key
-            .as_ref()
-            .filter(|key| key.method == Encryption::Aes128)
-        {
+        if let Some(key) = segment.key.as_ref().filter(|key| key.method == Encryption::Aes128) {
             let key_bytes = resolve_key(http, key, headers, &mut keys)?;
             bytes = decrypt(&bytes, key_bytes, key.iv_for(segment.sequence))?;
         }
@@ -293,7 +288,10 @@ mod tests {
             Playlist::Master(_) => panic!("expected a segment list"),
         };
         assert_eq!(media.encryption(), Some(Encryption::Aes128));
-        assert!(check(&media, &url).is_ok(), "AES-128 is read, not refused");
+        assert!(
+            check(&media, &url).is_ok(),
+            "AES-128 is read, not refused"
+        );
     }
 
     #[test]

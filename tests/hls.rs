@@ -191,8 +191,6 @@ fn a_server_that_ignores_byte_ranges_is_refused() {
 
 #[test]
 fn aes128_segments_are_decrypted_and_the_key_is_fetched_once() {
-    use std::sync::atomic::Ordering;
-
     const KEY: [u8; 16] = [
         0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
         0x0f,
@@ -235,12 +233,11 @@ fn aes128_segments_are_decrypted_and_the_key_is_fetched_once() {
     let verified = mux::verify(&out).expect("the assembled file should be readable");
     assert_eq!(verified.sample_total(), 4);
 
-    // One playlist, two segments, one key: the key URI repeats before every
-    // segment and is the same file every time.
-    assert!(
-        server.requests.load(Ordering::SeqCst) <= 4,
-        "the key was fetched more than once"
-    );
+    // The key URI repeats before every segment and names the same file every
+    // time, so it is fetched once.
+    assert_eq!(server.hits("/key.bin"), 1);
+    assert_eq!(server.hits("/seg1.ts"), 1);
+    assert_eq!(server.hits("/seg2.ts"), 1);
 }
 
 #[test]

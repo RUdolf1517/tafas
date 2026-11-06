@@ -9,10 +9,11 @@
 
 #![allow(dead_code)]
 
+use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
@@ -66,6 +67,9 @@ pub struct TestServer {
     stop: Arc<AtomicBool>,
     handle: Option<thread::JoinHandle<()>>,
     pub requests: Arc<AtomicUsize>,
+    /// Requests per path, so a test can assert that a resource was fetched
+    /// once rather than counting connections.
+    hits: Arc<Mutex<HashMap<String, usize>>>,
 }
 
 impl TestServer {
@@ -78,8 +82,10 @@ impl TestServer {
 
         let stop = Arc::new(AtomicBool::new(false));
         let requests = Arc::new(AtomicUsize::new(0));
+        let hits = Arc::new(Mutex::new(HashMap::new()));
         let stop_flag = Arc::clone(&stop);
         let counter = Arc::clone(&requests);
+        let path_hits = Arc::clone(&hits);
         let routes = Arc::new(routes);
 
         let handle = thread::spawn(move || {
@@ -87,7 +93,7 @@ impl TestServer {
                 match listener.accept() {
                     Ok((stream, _)) => {
                         counter.fetch_add(1, Ordering::SeqCst);
-                        let _ = handle_connection(stream, &routes);
+                        let _ = handle_connection(stream, &routes, &path_hits);
                     }
                     Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                         thread::sleep(Duration::from_millis(2));
@@ -102,7 +108,16 @@ impl TestServer {
             stop,
             handle: Some(handle),
             requests,
+            hits,
         }
+    }
+
+    /// How many requests a path received.
+    pub fn hits(&self, path: &str) -> usize {
+        self.hits
+            .lock()
+            .map(|hits| hits.get(path).copied().unwrap_or(0))
+            .unwrap_or(0)
     }
 
     pub fn url(&self, path: &str) -> String {
@@ -121,7 +136,11 @@ impl Drop for TestServer {
     }
 }
 
-fn handle_connection(mut stream: TcpStream, routes: &[Route]) -> std::io::Result<()> {
+fn handle_connection(
+    mut stream: TcpStream,
+    routes: &[Route],
+    hits: &Mutex<HashMap<String, usize>>,
+) -> std::io::Result<()> {
     stream.set_read_timeout(Some(Duration::from_secs(5)))?;
     let mut reader = BufReader::new(stream.try_clone()?);
 
@@ -160,6 +179,9 @@ fn handle_connection(mut stream: TcpStream, routes: &[Route]) -> std::io::Result
     }
 
     let path = target.split('?').next().unwrap_or("/");
+    if let Ok(mut hits) = hits.lock() {
+        *hits.entry(path.to_string()).or_insert(0) += 1;
+    }
     let route = match routes.iter().find(|route| route.path == path) {
         Some(route) => route,
         None => return write_response(&mut stream, 404, "Not Found", b"no route", None),
