@@ -156,7 +156,9 @@ pub fn extract(http: &Http, url: &Url, raw: &str) -> Result<Media> {
         .iter()
         .any(|format| format.container == Container::Mp4)
     {
-        media.formats.retain(|format| format.container != Container::Hls);
+        media
+            .formats
+            .retain(|format| format.container != Container::Hls);
     }
 
     if media.formats.is_empty() && media.images.is_empty() {

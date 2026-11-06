@@ -136,7 +136,11 @@ fn media_playlist(http: &Http, url: &Url, headers: &[(&str, &str)]) -> Result<Me
 
 /// The gates between a playlist and a fetch.
 fn check(media: &Media, url: &Url) -> Result<()> {
-    if let Some(map) = media.segments.iter().find_map(|segment| segment.map.as_ref()) {
+    if let Some(map) = media
+        .segments
+        .iter()
+        .find_map(|segment| segment.map.as_ref())
+    {
         return Err(Error::Refused(format!(
             "{url}: this playlist uses fMP4 segments (EXT-X-MAP {}); tafas reads the MPEG-TS \
              flavour of HLS, and fMP4 is on the roadmap",
@@ -153,7 +157,9 @@ fn check(media: &Media, url: &Url) -> Result<()> {
         )));
     }
     if media.segments.is_empty() {
-        return Err(Error::Parse(format!("{url}: the playlist lists no segments")));
+        return Err(Error::Parse(format!(
+            "{url}: the playlist lists no segments"
+        )));
     }
     if media.segments.len() > SEGMENT_COUNT_LIMIT {
         return Err(Error::Limit(format!(

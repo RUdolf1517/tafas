@@ -288,7 +288,10 @@ pub fn ts_segment() -> Vec<u8> {
     const PACKET: usize = 188;
 
     fn packet(pid: u16, unit_start: bool, counter: u8, payload: &[u8]) -> Vec<u8> {
-        assert!(payload.len() <= PACKET - 4, "a packet holds 184 payload bytes");
+        assert!(
+            payload.len() <= PACKET - 4,
+            "a packet holds 184 payload bytes"
+        );
         let mut out = Vec::with_capacity(PACKET);
         out.push(SYNC);
         out.push((if unit_start { 0x40 } else { 0x00 }) | ((pid >> 8) as u8 & 0x1f));
