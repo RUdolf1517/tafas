@@ -23,7 +23,7 @@ this repository opens and closes itself.
 | unit | `#[cfg(test)]` in each module | URL parsing and rejection, title sanitising, format classification, selection rules, box parsing and patching, exit-code mapping, colour precedence |
 | remux | `src/mux.rs` tests | a synthetic two-file remux produces one file with both tracks, both payloads intact, `moov` first, and `verify` accepting it |
 | end-to-end | `tests/cli.rs` | the real binary, spawned, against a local HTTP server this test starts on `127.0.0.1:0` |
-| HLS | `tests/hls.rs` | a playlist, segments and byte ranges on a socket, assembled into an MP4 that `mux::verify` accepts; fMP4 and ignored-range playlists refused before a file exists |
+| HLS | `tests/hls.rs` | a playlist, segments, byte ranges and AES-128 segments on a socket, assembled into an MP4 that `mux::verify` accepts; fMP4, short keys and ignored ranges refused before a file exists |
 | packaging | `tests/packaging.rs` | every option in `--help` appears in `man/tafas.1`; no `Command::new` in `src/`; the capability document is valid JSON |
 
 Fixtures are **built by code**, never committed. A reviewer can read what a test

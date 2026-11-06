@@ -37,8 +37,10 @@ and a badge turning red at 03:00 is not a test.
 | `reqwest` | 0.12 (blocking) | MIT OR Apache-2.0 | HTTP/1.1 + HTTP/2, redirects, chunked bodies, gzip, proxies |
 | `rustls` | 0.23 (`ring`) | Apache-2.0 OR ISC OR MIT | TLS without OpenSSL |
 | `serde_json` | 1 | MIT OR Apache-2.0 | the three sites speak JSON; so does `--json` |
+| `aes` | 0.8 | MIT OR Apache-2.0 | AES-128 block cipher, for encrypted HLS segments |
+| `cbc` | 0.8 | MIT OR Apache-2.0 | CBC mode and PKCS#7 padding, which is the mode HLS specifies |
 
-Total: five. A downloader is a small program on purpose — `cargo tree` fits on
+Total: seven. A downloader is a small program on purpose — `cargo tree` fits on
 one screen, and every transitive crate is one more thing that can change under a
 release.
 
@@ -104,6 +106,25 @@ duplicate-key handling are already the ones a security reviewer would ask about.
 *What is not used:* the derive macros. The extractors read `serde_json::Value`
 directly, because a missing field must mean "this page changed", not "the whole
 document is invalid".
+
+### 1.5 `aes` + `cbc`
+
+*Why not `ring`?* Because `ring` deliberately exposes only AEAD modes — AES-GCM,
+ChaCha20-Poly1305 — and the HLS specification names AES-128 in **CBC** mode. This
+is the correction to an earlier draft of [roadmap](roadmap.md) that assumed
+`ring` would cover encryption; it does not, and it should not be bent to.
+
+*Why not hand-written?* AES is a table lookup and a handful of XORs, and a
+hand-written version is exactly the kind of code where a timing side channel
+hides in a branch that looks harmless. RustCrypto's `aes` uses a bitsliced,
+constant-time implementation; `cbc` supplies the mode and the PKCS#7 padding
+an HLS segment carries. Both are pure Rust, so §0 is satisfied without an
+argument — this is not a non-Rust dependency, it is two small crates.
+
+*What is wrong when it is wrong:* a segment is written as garbage. Mitigation:
+the padding check is treated as the integrity signal and a failure is a refusal,
+not a file; `tests/hls.rs` encrypts a fixture and asserts the decrypted result
+still demuxes into the same four samples.
 
 ## 2. Transitive dependencies of note
 

@@ -19,6 +19,20 @@ fn client() -> Http {
     Http::new(1, 5, 0).expect("client")
 }
 
+/// AES-128-CBC with PKCS#7 padding, the way an HLS segment is encrypted.
+fn encrypt(clear: &[u8], key: [u8; 16], iv: [u8; 16]) -> Vec<u8> {
+    use aes::cipher::{block_padding::Pkcs7, BlockEncryptMut, KeyIvInit};
+
+    let mut buffer = vec![0u8; clear.len() + 16];
+    buffer[..clear.len()].copy_from_slice(clear);
+    let written = cbc::Encryptor::<aes::Aes128>::new(&key.into(), &iv.into())
+        .encrypt_padded_mut::<Pkcs7>(&mut buffer, clear.len())
+        .expect("a buffer with one spare block can hold the padding")
+        .len();
+    buffer.truncate(written);
+    buffer
+}
+
 /// The playlist a single-file HLS post looks like.
 fn media_playlist(segment: &str) -> String {
     format!(
@@ -172,5 +186,83 @@ fn a_server_that_ignores_byte_ranges_is_refused() {
         error.to_string().contains("byte-range"),
         "the refusal should name the byte range, not the codec: {error}"
     );
+    assert!(!out.exists());
+}
+
+#[test]
+fn aes128_segments_are_decrypted_and_the_key_is_fetched_once() {
+    use std::sync::atomic::Ordering;
+
+    const KEY: [u8; 16] = [
+        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
+        0x0f,
+    ];
+    const IV: [u8; 16] = [
+        0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e,
+        0x1f,
+    ];
+
+    // Two segments, split at a packet boundary, each encrypted on its own with
+    // the same key and the same explicit IV.
+    let stream = ts_segment();
+    let first = encrypt(&stream[..3 * 188], KEY, IV);
+    let second = encrypt(&stream[3 * 188..], KEY, IV);
+
+    let playlist = "#EXTM3U\n\
+                    #EXT-X-TARGETDURATION:6\n\
+                    #EXT-X-KEY:METHOD=AES-128,URI=\"key.bin\",\
+                    IV=0x101112131415161718191a1b1c1d1e1f\n\
+                    #EXTINF:3.0,\n\
+                    seg1.ts\n\
+                    #EXTINF:3.0,\n\
+                    seg2.ts\n\
+                    #EXT-X-ENDLIST\n";
+    let server = TestServer::start(vec![
+        Route::ok("/media.m3u8", playlist.as_bytes()),
+        Route::ok("/key.bin", &KEY),
+        Route::ok("/seg1.ts", &first),
+        Route::ok("/seg2.ts", &second),
+    ]);
+    let out = temp_dir("hls-aes").join("clip.mp4");
+    let url = Url::parse(&server.url("/media.m3u8")).unwrap();
+
+    let report = hlsfetch::fetch(&client(), &url, &[], Quality::Best, &out, &mut |_| {})
+        .expect("an AES-128 playlist should decrypt into the same file");
+
+    assert_eq!(report.segments, 2);
+    assert_eq!(report.video_samples, 2);
+    assert_eq!(report.audio_samples, 2);
+    let verified = mux::verify(&out).expect("the assembled file should be readable");
+    assert_eq!(verified.sample_total(), 4);
+
+    // One playlist, two segments, one key: the key URI repeats before every
+    // segment and is the same file every time.
+    assert!(
+        server.requests.load(Ordering::SeqCst) <= 4,
+        "the key was fetched more than once"
+    );
+}
+
+#[test]
+fn a_key_of_the_wrong_size_is_refused() {
+    let segment = ts_segment();
+    let playlist = "#EXTM3U\n\
+                    #EXT-X-TARGETDURATION:6\n\
+                    #EXT-X-KEY:METHOD=AES-128,URI=\"key.bin\"\n\
+                    #EXTINF:6.0,\n\
+                    seg1.ts\n\
+                    #EXT-X-ENDLIST\n";
+    let server = TestServer::start(vec![
+        Route::ok("/media.m3u8", playlist.as_bytes()),
+        Route::ok("/key.bin", &[0x11; 8]),
+        Route::ok("/seg1.ts", &segment),
+    ]);
+    let out = temp_dir("hls-aes-short-key").join("clip.mp4");
+    let url = Url::parse(&server.url("/media.m3u8")).unwrap();
+
+    let error = hlsfetch::fetch(&client(), &url, &[], Quality::Best, &out, &mut |_| {})
+        .expect_err("eight bytes are not a key");
+    let text = error.to_string();
+    assert!(text.contains("16 bytes"), "{text}");
     assert!(!out.exists());
 }

@@ -150,7 +150,8 @@ and is written as `.mp4`, which is what it is.
 A variant whose `content_type` is `application/x-mpegURL` is an HLS playlist.
 When a post offers nothing else, the playlist is walked, the segments are
 demuxed and the result is written as an MP4 in the same process — no transcoding
-and no external binary, exactly like the remux path. A progressive MP4 is still
+and no external binary, exactly like the remux path. Segments encrypted with
+`AES-128` are decrypted on the way in, with the key fetched once. A progressive MP4 is still
 preferred when both shapes exist: one request instead of one per segment.
 
 ### 4.2 Photos
@@ -164,7 +165,7 @@ video; use `--list-formats` to see both.
 | Situation | Output |
 | --- | --- |
 | only an fMP4 playlist (`EXT-X-MAP`) | refusal naming `EXT-X-MAP`; fragments are not stitched yet |
-| an encrypted playlist (`AES-128`) | refusal naming the method; decryption is on the roadmap |
+| a `SAMPLE-AES` playlist | refusal at parse time: the cipher is inside the container's framing |
 | tombstone (deleted, protected, age-restricted) | refusal naming the missing account |
 | post with no media at all | `unsupported` |
 | id not found by syndication | `unsupported`, because the endpoint answers 404 for old and private posts alike |

@@ -13,10 +13,11 @@
 //! encrypted one and an unreadable one produce different messages, so the
 //! reader learns what is missing instead of getting a half-written file.
 
+use std::collections::HashMap;
 use std::path::Path;
 
 use crate::error::{Error, Result};
-use crate::hls::{Encryption, Media, Playlist};
+use crate::hls::{Encryption, Key, Media, Playlist};
 use crate::http::Http;
 use crate::mp4write;
 use crate::select::Quality;
@@ -27,6 +28,11 @@ use crate::url::Url;
 /// seconds of video; anything past this is a mis-served playlist or a file
 /// wearing a `.ts` extension, and naming the limit beats filling the machine.
 pub const SEGMENT_LIMIT: u64 = 64 * 1024 * 1024;
+
+/// The size of an AES-128 key, and the most a key file may be: a key URL that
+/// answers with a megabyte is not a key.
+const KEY_BYTES: usize = 16;
+const KEY_LIMIT: u64 = 1024;
 
 /// How many segments a playlist may name before this build stops reading it.
 /// Ten hours of six-second segments is six thousand, so this is slack, not a
@@ -147,12 +153,15 @@ fn check(media: &Media, url: &Url) -> Result<()> {
             map.uri
         )));
     }
+    // AES-128 is read: the key is fetched once per URI and every segment is
+    // decrypted in memory. The other methods are refused here, before a single
+    // segment request, because they cannot be written as a file that is right.
     let method = media
         .encryption()
-        .filter(|method| *method != Encryption::None);
+        .filter(|method| !matches!(*method, Encryption::None | Encryption::Aes128));
     if let Some(method) = method {
         return Err(Error::Refused(format!(
-            "{url}: the segments are encrypted with {}; decryption is not in this build yet",
+            "{url}: the segments are encrypted with {}, which this build cannot undo",
             method_name(method)
         )));
     }
@@ -168,6 +177,55 @@ fn check(media: &Media, url: &Url) -> Result<()> {
         )));
     }
     Ok(())
+}
+
+/// A key, fetched once per URI: a playlist repeats the same `EXT-X-KEY` before
+/// every segment, and the file it names is the same file.
+fn resolve_key(
+    http: &Http,
+    key: &Key,
+    headers: &[(&str, &str)],
+    cache: &mut HashMap<String, [u8; KEY_BYTES]>,
+) -> Result<[u8; KEY_BYTES]> {
+    let uri = key
+        .uri
+        .clone()
+        .ok_or_else(|| Error::Parse("an AES-128 key block without a URI".to_string()))?;
+    let id = uri.to_string();
+    if let Some(cached) = cache.get(&id) {
+        return Ok(*cached);
+    }
+    let bytes = http.get_bytes("hls-key", &id, headers, None, KEY_LIMIT)?;
+    let key_bytes: [u8; KEY_BYTES] = bytes.as_slice().try_into().map_err(|_| {
+        Error::Refused(format!(
+            "{id}: an AES-128 key is {KEY_BYTES} bytes, this one is {}",
+            bytes.len()
+        ))
+    })?;
+    cache.insert(id, key_bytes);
+    Ok(key_bytes)
+}
+
+/// One segment, decrypted in place.
+///
+/// HLS specifies AES-128 in CBC mode with PKCS#7 padding for whole segments.
+/// A segment that does not decrypt — a wrong key, a wrong IV, a truncated
+/// body — is a failure rather than something to write out and hope for: the
+/// padding check is the only integrity signal there is.
+fn decrypt(data: &[u8], key: [u8; KEY_BYTES], iv: [u8; 16]) -> Result<Vec<u8>> {
+    use aes::cipher::{block_padding::Pkcs7, BlockDecryptMut, KeyIvInit};
+
+    let mut buffer = data.to_vec();
+    let clear_length = cbc::Decryptor::<aes::Aes128>::new(&key.into(), &iv.into())
+        .decrypt_padded_mut::<Pkcs7>(&mut buffer)
+        .map_err(|_| {
+            Error::Verify(
+                "an HLS segment did not decrypt: the key, the IV or the padding is wrong".to_string(),
+            )
+        })?
+        .len();
+    buffer.truncate(clear_length);
+    Ok(buffer)
 }
 
 fn method_name(method: Encryption) -> &'static str {
@@ -190,16 +248,21 @@ fn fetch_media(
     on_bytes: &mut dyn FnMut(u64),
     segments: &mut usize,
 ) -> Result<Vec<u8>> {
+    let mut keys: HashMap<String, [u8; KEY_BYTES]> = HashMap::new();
     let mut data = Vec::new();
     for segment in &media.segments {
         let range = segment.range.map(|range| (range.offset, range.length));
-        let bytes = http.get_bytes(
+        let mut bytes = http.get_bytes(
             "hls-segment",
             &segment.uri.to_string(),
             headers,
             range,
             SEGMENT_LIMIT,
         )?;
+        if let Some(key) = segment.key.as_ref().filter(|key| key.method == Encryption::Aes128) {
+            let key_bytes = resolve_key(http, key, headers, &mut keys)?;
+            bytes = decrypt(&bytes, key_bytes, key.iv_for(segment.sequence))?;
+        }
         on_bytes(bytes.len() as u64);
         data.extend_from_slice(&bytes);
         *segments += 1;
@@ -212,7 +275,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn an_encrypted_playlist_is_refused_by_name() {
+    fn an_aes128_playlist_passes_the_gate() {
         let url = Url::parse("https://example.test/media.m3u8").unwrap();
         let text = "#EXTM3U\n\
                     #EXT-X-TARGETDURATION:6\n\
@@ -224,10 +287,20 @@ mod tests {
             Playlist::Media(media) => media,
             Playlist::Master(_) => panic!("expected a segment list"),
         };
-        let error = check(&media, &url).unwrap_err();
-        let text = error.to_string();
-        assert!(text.contains("AES-128"), "{text}");
-        assert!(text.contains("decryption"), "{text}");
+        assert_eq!(media.encryption(), Some(Encryption::Aes128));
+        assert!(
+            check(&media, &url).is_ok(),
+            "AES-128 is read, not refused"
+        );
+    }
+
+    #[test]
+    fn a_segment_that_does_not_decrypt_is_a_failure() {
+        // A body that is not a whole number of blocks cannot be a padded
+        // CBC stream, whatever the key says. The padding check is the only
+        // integrity signal an AES-128 segment carries.
+        let error = decrypt(&[0x42; 17], [0u8; 16], [0u8; 16]).unwrap_err();
+        assert!(error.to_string().contains("did not decrypt"), "{error}");
     }
 
     #[test]

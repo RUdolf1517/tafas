@@ -90,6 +90,8 @@ except the temporaries this run made.
 | redirects | at most ten, then an error; the final URL is what the extractor sees |
 | request deadlines | 60 s for metadata (configurable), none for a media body |
 | response ceilings | 16 MiB for JSON, 24 MiB for HTML — a page larger than that is not a page we can use |
+| HLS segments | one at a time, 64 MiB each at most; decrypted in memory and dropped once the samples are lifted out |
+| HLS keys | fetched once per URI and required to be exactly 16 bytes |
 | retries | transport errors, `429`, `5xx`; never `4xx` |
 | proxy | `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY` — the client's own handling, not a flag |
 | cookies | none are sent for X or TikTok; YouTube receives only the consent cookie, which is what makes a European request return a page at all |

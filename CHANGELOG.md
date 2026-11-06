@@ -38,6 +38,11 @@ version; adding a site, a flag or a container is minor. The policy is in
   server that answers a range request with the whole object is refused when the
   window does not start at zero, and the window is cut on this side when it
   does.
+- **AES-128 HLS segments** (`aes`, `cbc`). The key is fetched once per URI and
+  every segment is decrypted in memory with the IV the playlist states or the
+  media sequence it implies. A segment that does not decrypt — wrong key, wrong
+  IV, truncated body — is a refusal, because the padding check is the only
+  integrity signal there is. `SAMPLE-AES` is still refused by name.
 - **`X` posts that offer only a playlist** now download. A progressive MP4 is
   still preferred when the post offers both, and `--list-formats` shows the
   playlist as `hls`.
@@ -46,11 +51,10 @@ version; adding a site, a flag or a container is minor. The policy is in
 
 `--quality` now applies to a variant list as well: a height ceiling picks the
 best variant at or below it, and `best`/`worst` fall back to bandwidth when the
-playlist states no resolution. Two gates remain, both named before any file is
-created: an fMP4 playlist (`EXT-X-MAP`) and an encrypted one (`EXT-X-KEY`).
-Encrypted segments — AES-128-CBC, with the pure-Rust `aes` and `cbc` crates —
-are the next step, followed by `--cookies`, `--playlist-items` and the
-`--write-*` family. Nothing in this section changes any existing flag.
+playlist states no resolution. One gate remains, named before any file is
+created: a playlist of fMP4 segments (`EXT-X-MAP`). Next are `--cookies`,
+`--playlist-items` and the `--write-*` family. Nothing in this section changes
+any existing flag.
 
 ## [0.1.0] - 2026-11-04
 

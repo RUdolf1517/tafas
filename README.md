@@ -134,7 +134,7 @@ stream, which is what a phone on a train wants.
 
 A site is listed only because its reader exists and its refusals are written
 down. What each one can and cannot reach — age gates, PO tokens, signature
-ciphers, fMP4 and encrypted playlists — is one table away in
+ciphers, fMP4 playlists — is one table away in
 [docs/extractors.md](docs/extractors.md).
 
 ## Why tafas
@@ -143,7 +143,7 @@ ciphers, fMP4 and encrypted playlists — is one table away in
 | --- | --- |
 | **It never re-encodes** | Picture and sound are copied as sample tables; the muxer rewrites chunk offsets, track ids and durations in `moov`, and leaves `avcC`, `av1C`, `vpcC` and `esds` byte for byte. Quality is whatever the site served. |
 | **It joins streams itself** | YouTube's 1080p is two files. `tafas` builds the single MP4 in Rust — there is no `ffmpeg` to install, and no subprocess to fail in a way that looks like a network error. |
-| **It refuses instead of guessing** | Cipher-protected formats, fMP4 and encrypted playlists, age-gated pages and posts that need an account each exit with a named reason and a link to the paragraph that explains it. |
+| **It refuses instead of guessing** | Cipher-protected formats, fMP4 playlists, age-gated pages and posts that need an account each exit with a named reason and a link to the paragraph that explains it. |
 | **Nothing half-written survives** | Every file lands through `<target>.part` and is renamed only after its byte count matches — and, for a remux, after the result has been re-read from disk and every chunk offset checked against the file it points into. |
 | **Resume is not an afterthought** | `--resume` (the default) continues a `.part` with a range request, notices a server that ignores `Range`, and starts over rather than writing the beginning twice. |
 | **The terminal is the interface** | No config file, no daemon, no environment variables of its own, no state on disk between runs. Every decision is an argument, so the command you ran yesterday is the command that runs today. |
