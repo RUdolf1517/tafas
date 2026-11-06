@@ -5,9 +5,10 @@
 //! including `mediaDetails` with the MP4 variants of any video — already muxed,
 //! so no remuxing is needed, and already free of the player's wrappers.
 //!
-//! The alternative route is HLS (`application/x-mpegURL`), which would mean
-//! demuxing MPEG-TS segments and rebuilding sample tables; this build does not
-//! do that, and says so instead of writing a file that only some players open.
+//! The other route is HLS (`application/x-mpegURL`): a playlist of MPEG-TS
+//! segments, which `hlsfetch` demuxes and writes as an MP4 in this process. It
+//! is used when a post offers nothing else, and skipped when a progressive MP4
+//! is available — one request instead of one per segment.
 
 use serde_json::Value;
 
@@ -97,14 +98,24 @@ pub fn extract(http: &Http, url: &Url, raw: &str) -> Result<Media> {
                     continue;
                 };
                 if content_type.contains("mpegurl") {
-                    // Named rather than silently skipped, because this is the
-                    // one shape a user may reasonably expect to work.
-                    if media.formats.is_empty() {
-                        return Err(Error::Refused(format!(
-                            "x: {id}: this post offers only an HLS playlist (m3u8); this build \
-                             remuxes plain MP4 and does not demux MPEG-TS (docs/extractors.md §5)"
-                        )));
-                    }
+                    // The playlist is fetched, demuxed and written as an MP4 in
+                    // this process. It is a fallback rather than a first
+                    // choice: a progressive MP4 is one request, a playlist is
+                    // one per segment.
+                    media.formats.push(Format {
+                        id: format!("x-{}-{}", index + 1, variant_index + 1),
+                        kind: StreamKind::Muxed,
+                        container: Container::Hls,
+                        codec: String::new(),
+                        width: 0,
+                        height: 0,
+                        fps: 0,
+                        bitrate: 0,
+                        bytes: None,
+                        url: Some(variant_url),
+                        headers: request_headers.clone(),
+                        source: "hls",
+                    });
                     continue;
                 }
                 if !content_type.contains("mp4") {
@@ -136,6 +147,16 @@ pub fn extract(http: &Http, url: &Url, raw: &str) -> Result<Media> {
                 });
             }
         }
+    }
+
+    // A post that offers both shapes gets the progressive one: same picture,
+    // fewer requests, and no demuxing to get wrong.
+    if media
+        .formats
+        .iter()
+        .any(|format| format.container == Container::Mp4)
+    {
+        media.formats.retain(|format| format.container != Container::Hls);
     }
 
     if media.formats.is_empty() && media.images.is_empty() {

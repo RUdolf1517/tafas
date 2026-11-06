@@ -18,6 +18,7 @@ use std::sync::Mutex;
 use std::time::Instant;
 
 use crate::error::{Error, Result};
+use crate::hlsfetch;
 use crate::http::Http;
 use crate::model::{Container, Format, Image, Media};
 use crate::mux;
@@ -27,6 +28,7 @@ use crate::report::{self, Item, Status, Totals};
 use crate::select::{self, Plan};
 use crate::sites;
 use crate::style::{self, Pen};
+use crate::url::Url;
 
 /// Everything the command line decided.
 #[derive(Debug, Clone)]
@@ -355,6 +357,13 @@ fn stream_to_stdout(
 ) -> Result<Status> {
     let format =
         match plan {
+            Plan::Single(format) if format.container == Container::Hls => {
+                return Err(Error::Usage(format!(
+                    "-o - writes one stream, and an HLS playlist ({}) is assembled from its \
+                     segments into an MP4 first; give a file name instead",
+                    format.label()
+                )))
+            }
             Plan::Single(format) | Plan::Audio(format) => Format::clone(format),
             _ => return Err(Error::Usage(
                 "-o - writes one stream: this selection needs two streams or a remux, so give a \
@@ -433,6 +442,9 @@ fn fetch_plan(
     printer: &Printer,
 ) -> Result<u64> {
     match plan {
+        Plan::Single(format) if format.container == Container::Hls => {
+            fetch_hls(http, format, target, options, printer)
+        }
         Plan::Single(format) => {
             let bytes = fetch_stream(http, format, target, options, printer)?;
             commit(&part_path(target), target, options.overwrite)?;
@@ -514,6 +526,73 @@ fn fetch_plan(
             Ok(total)
         }
     }
+}
+
+/// Fetches an HLS stream: playlist, segments, demux, MP4.
+///
+/// The staging file is `<target>.part` like every other fetch, so an
+/// interrupted HLS download leaves the same debris — and `--resume` does not
+/// apply, because a segment list is fetched as a whole and a half-written MP4
+/// has no meaningful offset to resume from.
+fn fetch_hls(
+    http: &Http,
+    format: &Format,
+    target: &Path,
+    options: &Options,
+    printer: &Printer,
+) -> Result<u64> {
+    let url = format
+        .url
+        .clone()
+        .ok_or_else(|| Error::Internal("the chosen format has no URL".into()))?;
+    let url = Url::parse(&url)?;
+    let part = part_path(target);
+
+    if let Some(parent) = part.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent)?;
+        }
+    }
+
+    let mut progress = printer.progress(format!("{} hls", format.label()), None);
+    let result = hlsfetch::fetch(
+        http,
+        &url,
+        &request_headers(format),
+        options.quality,
+        &part,
+        &mut |bytes| progress.add(bytes),
+    );
+    progress.clear();
+
+    let report = match result {
+        Ok(report) => report,
+        Err(error) => {
+            let _ = fs::remove_file(&part);
+            return Err(error);
+        }
+    };
+
+    let verified = mux::verify(&part)?;
+    if verified.sample_total() == 0 {
+        let _ = fs::remove_file(&part);
+        return Err(Error::Verify(format!(
+            "{}: the assembled file has no samples",
+            part.display()
+        )));
+    }
+
+    commit(&part, target, options.overwrite)?;
+    if !options.json {
+        printer.note(&format!(
+            "hls: {} segments, {}, {} video and {} audio samples",
+            report.segments,
+            human_bytes(report.bytes),
+            report.video_samples,
+            report.audio_samples
+        ));
+    }
+    Ok(report.bytes)
 }
 
 fn announce_path(path: &Path, options: &Options, printer: &Printer) {
@@ -795,6 +874,7 @@ fn print_formats(media: &Media, printer: &Printer) -> Result<()> {
             Container::Mp4 => "mp4",
             Container::Webm => "webm",
             Container::Ts => "ts",
+            Container::Hls => "hls",
             Container::Jpeg => "jpg",
             Container::Unknown => "?",
         };

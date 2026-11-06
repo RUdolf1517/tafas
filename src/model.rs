@@ -73,6 +73,10 @@ pub enum Container {
     /// MPEG-TS, which is what an HLS segment is. Recognised so that the refusal
     /// can name it.
     Ts,
+    /// An HLS playlist. The segments inside it are MPEG-TS and become an MP4,
+    /// so this is a container that has to be *assembled* rather than written
+    /// through: it is the only one that changes shape on the way to disk.
+    Hls,
     Jpeg,
     Unknown,
 }
@@ -80,7 +84,7 @@ pub enum Container {
 impl Container {
     pub fn extension(self) -> &'static str {
         match self {
-            Container::Mp4 | Container::Ts => "mp4",
+            Container::Mp4 | Container::Ts | Container::Hls => "mp4",
             Container::Webm => "webm",
             Container::Jpeg => "jpg",
             Container::Unknown => "bin",

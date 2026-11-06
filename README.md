@@ -28,8 +28,8 @@ What it will not do is pretend. A YouTube format that arrives
 signature-protected is **dropped**, not guessed at, because solving that means
 executing the site's own minified JavaScript. A page behind a sign-in check is a
 refusal with a reason, not an empty file and not a hang. A post that offers only
-an HLS playlist is named as such instead of being written into a container half
-the players refuse. Everything that is out of reach is in
+an HLS playlist is walked segment by segment and written as an MP4 in the same
+process. Everything that is out of reach is in
 [docs/extractors.md](docs/extractors.md), written down before you hit it.
 
 ```console
@@ -130,11 +130,11 @@ stream, which is what a phone on a train wants.
 | --- | --- | --- | --- |
 | **YouTube** | `watch?v=`, `youtu.be/`, `/shorts/`, `/embed/`, `/live/`, `music.youtube.com` | the watch page's inlined player response, then InnerTube with a fixed client chain (`android_vr` → `ios` → `android` → embedded TV → `web`) | MP4; separate DASH streams are remuxed into one file |
 | **TikTok** | `/@user/video/`, `/@user/photo/`, `vm.tiktok.com`, `vt.tiktok.com` | the page's rehydration document, then the mobile feed | MP4, watermark-free version preferred; photo posts give images |
-| **X** | `/<user>/status/`, `i/web/status/`, `t.co` | the syndication endpoint the embedded widget uses | MP4 (video, or an animated GIF's MP4), or the post's photos as JPEG |
+| **X** | `/<user>/status/`, `i/web/status/`, `t.co` | the syndication endpoint the embedded widget uses | MP4 (video, or an animated GIF's MP4), the post's photos as JPEG, or — when a post offers nothing else — its HLS playlist assembled into an MP4 |
 
 A site is listed only because its reader exists and its refusals are written
 down. What each one can and cannot reach — age gates, PO tokens, signature
-ciphers, HLS-only posts — is one table away in
+ciphers, fMP4 and encrypted playlists — is one table away in
 [docs/extractors.md](docs/extractors.md).
 
 ## Why tafas
@@ -143,7 +143,7 @@ ciphers, HLS-only posts — is one table away in
 | --- | --- |
 | **It never re-encodes** | Picture and sound are copied as sample tables; the muxer rewrites chunk offsets, track ids and durations in `moov`, and leaves `avcC`, `av1C`, `vpcC` and `esds` byte for byte. Quality is whatever the site served. |
 | **It joins streams itself** | YouTube's 1080p is two files. `tafas` builds the single MP4 in Rust — there is no `ffmpeg` to install, and no subprocess to fail in a way that looks like a network error. |
-| **It refuses instead of guessing** | Cipher-protected formats, HLS-only posts, age-gated pages and posts that need an account each exit with a named reason and a link to the paragraph that explains it. |
+| **It refuses instead of guessing** | Cipher-protected formats, fMP4 and encrypted playlists, age-gated pages and posts that need an account each exit with a named reason and a link to the paragraph that explains it. |
 | **Nothing half-written survives** | Every file lands through `<target>.part` and is renamed only after its byte count matches — and, for a remux, after the result has been re-read from disk and every chunk offset checked against the file it points into. |
 | **Resume is not an afterthought** | `--resume` (the default) continues a `.part` with a range request, notices a server that ignores `Range`, and starts over rather than writing the beginning twice. |
 | **The terminal is the interface** | No config file, no daemon, no environment variables of its own, no state on disk between runs. Every decision is an argument, so the command you ran yesterday is the command that runs today. |

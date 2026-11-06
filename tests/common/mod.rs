@@ -276,3 +276,146 @@ pub fn temp_dir(name: &str) -> std::path::PathBuf {
     std::fs::create_dir_all(&dir).expect("create the temp dir");
     dir
 }
+
+/// A whole transport stream in a handful of packets: a program table, a program
+/// map, two H.264 access units and two AAC frames.
+///
+/// It is the smallest stream the demuxer accepts with both tracks in it, which
+/// is what an end-to-end HLS test needs — the playlist and segment plumbing is
+/// under test, not the codec.
+pub fn ts_segment() -> Vec<u8> {
+    const SYNC: u8 = 0x47;
+    const PACKET: usize = 188;
+
+    fn packet(pid: u16, unit_start: bool, counter: u8, payload: &[u8]) -> Vec<u8> {
+        assert!(payload.len() <= PACKET - 4, "a packet holds 184 payload bytes");
+        let mut out = Vec::with_capacity(PACKET);
+        out.push(SYNC);
+        out.push((if unit_start { 0x40 } else { 0x00 }) | ((pid >> 8) as u8 & 0x1f));
+        out.push(pid as u8);
+        let stuffing = PACKET - 4 - payload.len();
+        if stuffing == 0 {
+            out.push(0x10 | (counter & 0x0f));
+        } else {
+            out.push(0x30 | (counter & 0x0f));
+            let field_length = stuffing - 1;
+            out.push(field_length as u8);
+            if field_length > 0 {
+                out.push(0x00);
+                out.resize(out.len() + field_length - 1, 0xff);
+            }
+        }
+        out.extend_from_slice(payload);
+        assert_eq!(out.len(), PACKET);
+        out
+    }
+
+    fn pat(program_map_pid: u16) -> Vec<u8> {
+        let mut section = vec![0u8; 8];
+        section[0] = 0x00;
+        section[1] = 0xb0;
+        section[2] = 0x0d;
+        let mut entry = [0u8; 4];
+        entry[0..2].copy_from_slice(&1u16.to_be_bytes());
+        entry[2] = 0xe0 | ((program_map_pid >> 8) as u8 & 0x1f);
+        entry[3] = program_map_pid as u8;
+        section.extend_from_slice(&entry);
+        let mut payload = vec![0u8];
+        payload.extend_from_slice(&section);
+        payload
+    }
+
+    fn pmt(video_pid: u16, audio_pid: u16) -> Vec<u8> {
+        let mut section = vec![0u8; 12];
+        section[0] = 0x02;
+        section[1] = 0xb0;
+        section[2] = 0x17;
+        section.push(0x1b);
+        section.push(0xe0 | ((video_pid >> 8) as u8 & 0x1f));
+        section.push(video_pid as u8);
+        section.push(0xf0);
+        section.push(0x00);
+        section.push(0x0f);
+        section.push(0xe0 | ((audio_pid >> 8) as u8 & 0x1f));
+        section.push(audio_pid as u8);
+        section.push(0xf0);
+        section.push(0x00);
+        let mut payload = vec![0u8];
+        payload.extend_from_slice(&section);
+        payload
+    }
+
+    fn timestamp_bytes(prefix: u8, value: u64) -> [u8; 5] {
+        [
+            prefix | (((value >> 30) as u8 & 0x07) << 1) | 0x01,
+            ((value >> 22) & 0xff) as u8,
+            (((value >> 15) & 0x7f) as u8) << 1 | 0x01,
+            ((value >> 7) & 0xff) as u8,
+            ((value & 0x7f) as u8) << 1 | 0x01,
+        ]
+    }
+
+    fn pes(stream_id: u8, pts: u64, dts: Option<u64>, payload: &[u8]) -> Vec<u8> {
+        let mut out = vec![0x00, 0x00, 0x01, stream_id];
+        out.extend_from_slice(&0u16.to_be_bytes());
+        out.push(0x80);
+        out.push(if dts.is_some() { 0xc0 } else { 0x80 });
+        out.push(if dts.is_some() { 10 } else { 5 });
+        out.extend_from_slice(&timestamp_bytes(
+            if dts.is_some() { 0x30 } else { 0x20 },
+            pts,
+        ));
+        if let Some(dts) = dts {
+            out.extend_from_slice(&timestamp_bytes(0x10, dts));
+        }
+        out.extend_from_slice(payload);
+        out
+    }
+
+    const SPS: [u8; 7] = [0x67, 0x42, 0x00, 0x1e, 0x95, 0xa8, 0x14];
+    const PPS: [u8; 4] = [0x68, 0xce, 0x3c, 0x80];
+    const IDR: [u8; 5] = [0x65, 0x88, 0x84, 0x00, 0x0a];
+
+    fn video_unit() -> Vec<u8> {
+        let mut out = Vec::new();
+        for unit in [&SPS[..], &PPS[..], &IDR[..]] {
+            out.extend_from_slice(&[0x00, 0x00, 0x00, 0x01]);
+            out.extend_from_slice(unit);
+        }
+        out
+    }
+
+    fn adts_frame(payload: &[u8]) -> Vec<u8> {
+        let length = payload.len() + 7;
+        let mut out = vec![0u8; 7];
+        out[0] = 0xff;
+        out[1] = 0xf1;
+        out[2] = (1 << 6) | (4 << 2); // AAC-LC, 44100 Hz
+        out[3] = ((2 & 0x03) << 6) | ((length >> 11) as u8 & 0x03);
+        out[4] = (length >> 3) as u8;
+        out[5] = (((length & 0x07) as u8) << 5) | 0x1f;
+        out[6] = 0xfc;
+        out.extend_from_slice(payload);
+        out
+    }
+
+    let mut out = Vec::new();
+    out.extend_from_slice(&packet(0, true, 0, &pat(4096)));
+    out.extend_from_slice(&packet(4096, true, 0, &pmt(481, 482)));
+    out.extend_from_slice(&packet(
+        481,
+        true,
+        0,
+        &pes(0xe0, 90_000, Some(90_000), &video_unit()),
+    ));
+    out.extend_from_slice(&packet(
+        481,
+        true,
+        1,
+        &pes(0xe0, 93_000, Some(93_000), &video_unit()),
+    ));
+    let audio = adts_frame(&[0x21, 0x10, 0x05]);
+    out.extend_from_slice(&packet(482, true, 0, &pes(0xc0, 90_000, None, &audio)));
+    out.extend_from_slice(&packet(482, true, 1, &pes(0xc0, 93_000, None, &audio)));
+    out
+}

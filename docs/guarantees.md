@@ -99,7 +99,7 @@ reports success without a complete commit. The refusal classes are:
 
 | Kind | Meaning | Exit |
 | --- | --- | --- |
-| `refused` | understood and declined: cipher, age gate, HLS-only, sign-in check | 1 |
+| `refused` | understood and declined: cipher, age gate, fMP4 or encrypted HLS, sign-in check | 1 |
 | `unsupported` | the site has nothing this build can take: no media, live stream, deleted post | 1 |
 | `parse` | the response was not what it claimed to be | 1 |
 | `http` | transport, after retries | 1 |

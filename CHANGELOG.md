@@ -29,13 +29,28 @@ version; adding a site, a flag or a container is minor. The policy is in
   when presentation and decode times differ, `stss` for keyframes. The finished
   file is read back by the remuxer's own verifier before the caller hears about
   it.
+- **The HLS fetch pipeline** (`src/hlsfetch.rs`, `Http::get_bytes`). A master
+  playlist is walked to one variant; that variant's segment list is fetched one
+  segment at a time, with `EXT-X-BYTERANGE` asked for as a range request; the
+  concatenated transport stream is demuxed and written as an MP4. A variant with
+  an audio rendition gets that rendition as a second track — unless its own
+  segments already carry audio, which would otherwise be written twice. A
+  server that answers a range request with the whole object is refused when the
+  window does not start at zero, and the window is cut on this side when it
+  does.
+- **`X` posts that offer only a playlist** now download. A progressive MP4 is
+  still preferred when the post offers both, and `--list-formats` shows the
+  playlist as `hls`.
 - **`Url::join`**, with dot-segment removal: playlist URIs are relative far more
   often than they are absolute, and `../` is common.
 
-HLS is not yet reachable from the command line: the fetch pipeline (master
-playlist → variant → media playlist → segments → demux → write) and the wiring
-that makes `--quality` apply to a variant list are the next step. Nothing in
-this section changes any existing flag.
+`--quality` now applies to a variant list as well: a height ceiling picks the
+best variant at or below it, and `best`/`worst` fall back to bandwidth when the
+playlist states no resolution. Two gates remain, both named before any file is
+created: an fMP4 playlist (`EXT-X-MAP`) and an encrypted one (`EXT-X-KEY`).
+Encrypted segments — AES-128-CBC, with the pure-Rust `aes` and `cbc` crates —
+are the next step, followed by `--cookies`, `--playlist-items` and the
+`--write-*` family. Nothing in this section changes any existing flag.
 
 ## [0.1.0] - 2026-11-04
 

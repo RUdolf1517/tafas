@@ -147,6 +147,7 @@ impl Format {
             Container::Mp4 => "mp4",
             Container::Webm => "webm",
             Container::Ts => "ts",
+            Container::Hls => "hls",
             Container::Jpeg => "jpg",
             Container::Unknown => "bin",
         }

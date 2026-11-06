@@ -147,6 +147,12 @@ Variants whose `content_type` is `video/mp4` are candidates; the highest
 `bit_rate` wins. An animated GIF arrives as an MP4 variant with no audio track
 and is written as `.mp4`, which is what it is.
 
+A variant whose `content_type` is `application/x-mpegURL` is an HLS playlist.
+When a post offers nothing else, the playlist is walked, the segments are
+demuxed and the result is written as an MP4 in the same process — no transcoding
+and no external binary, exactly like the remux path. A progressive MP4 is still
+preferred when both shapes exist: one request instead of one per segment.
+
 ### 4.2 Photos
 
 A post with photos and no video downloads the photos, one file each, named
@@ -157,7 +163,8 @@ video; use `--list-formats` to see both.
 
 | Situation | Output |
 | --- | --- |
-| only `application/x-mpegURL` variants | refusal naming HLS; demuxing MPEG-TS and rebuilding sample tables is not in this build |
+| only an fMP4 playlist (`EXT-X-MAP`) | refusal naming `EXT-X-MAP`; fragments are not stitched yet |
+| an encrypted playlist (`AES-128`) | refusal naming the method; decryption is on the roadmap |
 | tombstone (deleted, protected, age-restricted) | refusal naming the missing account |
 | post with no media at all | `unsupported` |
 | id not found by syndication | `unsupported`, because the endpoint answers 404 for old and private posts alike |

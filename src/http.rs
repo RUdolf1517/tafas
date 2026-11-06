@@ -183,6 +183,75 @@ impl Http {
         read_bounded(response, MAX_HTML_BYTES)
     }
 
+    /// A small body — one HLS segment, one key — read into memory on purpose:
+    /// a segment is seconds of video, and holding one at a time keeps the
+    /// memory ceiling flat however many segments the playlist names.
+    ///
+    /// `range` asks for a window of the object (`EXT-X-BYTERANGE`). A server
+    /// that answers `200` with the whole file instead is a refusal, not a
+    /// success: the bytes would then start at zero, and the caller would splice
+    /// the wrong window into the file.
+    pub fn get_bytes(
+        &self,
+        label: &str,
+        url: &str,
+        headers: &[(&str, &str)],
+        range: Option<(u64, u64)>,
+        limit: u64,
+    ) -> Result<Vec<u8>> {
+        let response = self.execute(label, || {
+            let mut request = self.client.get(url);
+            for (name, value) in headers {
+                request = request.header(*name, *value);
+            }
+            if let Some((offset, length)) = range {
+                let end = offset.saturating_add(length.saturating_sub(1));
+                request = request.header(reqwest::header::RANGE, format!("bytes={offset}-{end}"));
+            }
+            request
+        })?;
+        let response = self.classify(label, url, response)?;
+
+        if let Some((offset, _)) = range {
+            if offset > 0 && response.status() != StatusCode::PARTIAL_CONTENT {
+                return Err(Error::Http(format!(
+                    "{label}: the server ignored a byte-range request for {url}"
+                )));
+            }
+        }
+
+        // A server may answer a range with more than was asked for — everything
+        // from `offset` to the end of the object is legal — so the window is cut
+        // here rather than trusted to the server.
+        let ceiling = match range {
+            Some((_, length)) => length.min(limit),
+            None => limit,
+        };
+        let mut buffer = Vec::new();
+        response
+            .take(ceiling.saturating_add(1))
+            .read_to_end(&mut buffer)
+            .map_err(|e| Error::Http(format!("{label}: could not read {url}: {e}")))?;
+
+        if let Some((offset, length)) = range {
+            if (buffer.len() as u64) < length {
+                return Err(Error::Http(format!(
+                    "{label}: asked for {length} bytes at {offset} of {url}, received {}",
+                    buffer.len()
+                )));
+            }
+            buffer.truncate(length as usize);
+            return Ok(buffer);
+        }
+        if buffer.len() as u64 > limit {
+            return Err(Error::Limit(format!(
+                "{label}: {url} is larger than {} and is not a segment",
+                crate::progress::human_bytes(limit)
+            )));
+        }
+        Ok(buffer)
+    }
+
     /// A JSON document from a GET. `Ok(None)` means the endpoint answered 404,
     /// which two of the three sites use to mean "this post is gone" rather than
     /// "your request is broken".
