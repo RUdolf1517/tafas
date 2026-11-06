@@ -5,7 +5,9 @@ use reqwest::blocking::{Client, Response};
 use reqwest::StatusCode;
 use serde_json::Value;
 
+use crate::cookies::Jar;
 use crate::error::{Error, Result};
+use crate::url::Url;
 
 /// Sent with everything that is not a media request. The three sites serve a
 /// different page to a browser user agent, and a different page again to
@@ -53,6 +55,10 @@ pub struct Http {
     retries: u32,
     timeout: Duration,
     verbose: u8,
+    /// The cookies the user named with `--cookies`, and nothing else. tafas
+    /// stores none of its own: a cookie is a credential, and a credential this
+    /// program invented would be one it has to keep.
+    cookies: Option<Jar>,
 }
 
 /// rustls refuses to guess between crypto providers, and reqwest is built with
@@ -89,7 +95,52 @@ impl Http {
             retries,
             timeout: Duration::from_secs(timeout_secs.max(1)),
             verbose,
+            cookies: None,
         })
+    }
+
+    /// Attaches a jar to every request this client makes.
+    pub fn with_cookies(mut self, jar: Jar) -> Http {
+        self.cookies = Some(jar);
+        self
+    }
+
+    /// A GET with the caller's headers and any cookie that applies to `url`.
+    ///
+    /// The cookie header is computed per request from the URL rather than set
+    /// once on the client, which is what keeps a jar scoped to one site from
+    /// following a redirect to a CDN on another.
+    fn prepare(&self, url: &str, headers: &[(&str, &str)]) -> reqwest::blocking::RequestBuilder {
+        self.prepare_with(self.client.get(url), url, headers)
+    }
+
+    /// The same, for a request that has already chosen its method.
+    fn prepare_with(
+        &self,
+        mut request: reqwest::blocking::RequestBuilder,
+        url: &str,
+        headers: &[(&str, &str)],
+    ) -> reqwest::blocking::RequestBuilder {
+        let mut explicit: Option<String> = None;
+        for (name, value) in headers {
+            if name.eq_ignore_ascii_case("cookie") {
+                explicit = Some((*value).to_string());
+                continue;
+            }
+            request = request.header(*name, *value);
+        }
+        let from_jar = self
+            .cookies
+            .as_ref()
+            .and_then(|jar| Url::parse(url).ok().and_then(|url| jar.header(&url)));
+        let cookie = match (explicit, from_jar) {
+            (Some(explicit), Some(jar)) => Some(format!("{explicit}; {jar}")),
+            (explicit, jar) => explicit.or(jar),
+        };
+        if let Some(cookie) = cookie {
+            request = request.header(reqwest::header::COOKIE, cookie);
+        }
+        request
     }
 
     fn log(&self, text: &str) {
@@ -172,13 +223,7 @@ impl Http {
 
     /// A page as text, with a hard ceiling.
     pub fn get_text(&self, url: &str, headers: &[(&str, &str)]) -> Result<String> {
-        let response = self.execute("page", || {
-            let mut request = self.client.get(url);
-            for (name, value) in headers {
-                request = request.header(*name, *value);
-            }
-            request
-        })?;
+        let response = self.execute("page", || self.prepare(url, headers))?;
         let response = self.classify("page", url, response)?;
         read_bounded(response, MAX_HTML_BYTES)
     }
@@ -200,10 +245,7 @@ impl Http {
         limit: u64,
     ) -> Result<Vec<u8>> {
         let response = self.execute(label, || {
-            let mut request = self.client.get(url);
-            for (name, value) in headers {
-                request = request.header(*name, *value);
-            }
+            let mut request = self.prepare(url, headers);
             if let Some((offset, length)) = range {
                 let end = offset.saturating_add(length.saturating_sub(1));
                 request = request.header(reqwest::header::RANGE, format!("bytes={offset}-{end}"));
@@ -262,11 +304,8 @@ impl Http {
         headers: &[(&str, &str)],
     ) -> Result<Option<Value>> {
         let response = self.execute(label, || {
-            let mut request = self.client.get(url);
-            for (name, value) in headers {
-                request = request.header(*name, *value);
-            }
-            request.header("accept", "application/json")
+            self.prepare(url, headers)
+                .header("accept", "application/json")
         })?;
         if response.status() == StatusCode::NOT_FOUND {
             return Ok(None);
@@ -292,14 +331,12 @@ impl Http {
         let payload = serde_json::to_string(body)
             .map_err(|e| Error::Internal(format!("could not encode the {label} request: {e}")))?;
         let response = self.execute(label, || {
-            let mut request = self
+            let post = self
                 .client
                 .post(url)
                 .header("content-type", "application/json");
-            for (name, value) in headers {
-                request = request.header(*name, *value);
-            }
-            request.body(payload.clone())
+            self.prepare_with(post, url, headers)
+                .body(payload.clone())
         })?;
         let response = self.classify(label, url, response)?;
         let text = read_bounded(response, MAX_JSON_BYTES)?;
@@ -310,7 +347,7 @@ impl Http {
     /// Used only for the short links (`t.co`, `vm.tiktok.com`), where the whole
     /// purpose of the link is its destination.
     pub fn resolve(&self, url: &str) -> Result<String> {
-        let response = self.execute("redirect", || self.client.get(url))?;
+        let response = self.execute("redirect", || self.prepare(url, &[]))?;
         let final_url = response.url().to_string();
         // Drop the body without reading it: the connection is reused only for
         // its headers, and a short link's destination is enough.
@@ -339,10 +376,7 @@ impl Http {
         on_bytes: &mut dyn FnMut(u64),
     ) -> Result<DownloadReport> {
         let response = self.execute(label, || {
-            let mut request = self.client.get(url);
-            for (name, value) in headers {
-                request = request.header(*name, *value);
-            }
+            let mut request = self.prepare(url, headers);
             if resume_from > 0 {
                 request = request.header("range", format!("bytes={resume_from}-"));
             }

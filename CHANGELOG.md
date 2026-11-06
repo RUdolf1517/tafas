@@ -43,6 +43,13 @@ version; adding a site, a flag or a container is minor. The policy is in
   media sequence it implies. A segment that does not decrypt — wrong key, wrong
   IV, truncated body — is a refusal, because the padding check is the only
   integrity signal there is. `SAMPLE-AES` is still refused by name.
+- **`--cookies FILE`.** A Netscape cookie jar is read once at startup and its
+  cookies are sent only where they apply: host, path, `Secure` and expiry are
+  checked per request, so a jar full of browser cookies does not leak a session
+  cookie to a CDN that merely shares a parent domain. Nothing is written back,
+  and no cookie value is logged, printed or quoted in an error. Age-gated
+  YouTube and protected X posts become reachable; there is still no sign-in
+  flow and no challenge is solved.
 - **`X` posts that offer only a playlist** now download. A progressive MP4 is
   still preferred when the post offers both, and `--list-formats` shows the
   playlist as `hls`.
@@ -52,8 +59,8 @@ version; adding a site, a flag or a container is minor. The policy is in
 `--quality` now applies to a variant list as well: a height ceiling picks the
 best variant at or below it, and `best`/`worst` fall back to bandwidth when the
 playlist states no resolution. One gate remains, named before any file is
-created: a playlist of fMP4 segments (`EXT-X-MAP`). Next are `--cookies`,
-`--playlist-items` and the `--write-*` family. Nothing in this section changes
+created: a playlist of fMP4 segments (`EXT-X-MAP`). Next are `--playlist-items`
+and the `--write-*` family. Nothing in this section changes
 any existing flag.
 
 ## [0.1.0] - 2026-11-04

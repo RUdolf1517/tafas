@@ -88,11 +88,20 @@ index without seeking to the end (see [guarantees §3](guarantees.md#3-g2--struc
 | `--retries N` | retries for one request (default 3) |
 | `--timeout SECS` | deadline for one metadata request (default 60) |
 | `-j, --jobs N` | how many URLs to work on at once (default 1; `0` means four) |
+| `--cookies FILE` | send the cookies in a Netscape cookie file (read once, never written back) |
 
 Retried: transport failures, `429`, and `5xx`, with a growing delay (0.4 s,
 0.8 s, 1.6 s, 3.2 s, capped at 5 s). Not retried: `400`, `401`, `403`, `404`,
 `410`, `416` — those are answers, not weather. A `403` from a CDN is classified
 as a refusal, because in practice it is a page check rather than a broken URL.
+
+`--cookies FILE` reads a Netscape cookie file once, at startup. A line that is
+not a cookie is skipped; a file with no cookies in it is a usage error (2), and a
+file that cannot be read is a failure (1), both before any URL is requested. A
+cookie is sent only where it applies — domain (with or without subdomains), path
+prefix, `Secure` and expiry are all checked per request — and a `cookie` header
+the extractor itself sets (YouTube's consent pair) is kept, with the jar's
+cookies appended rather than replacing it.
 
 A media transfer has no total deadline: a 500 MiB file on a slow line is not an
 error. A resumed transfer sends `Range: bytes=N-`; a server that answers `200`

@@ -123,6 +123,10 @@ pub struct Args {
     #[arg(long, value_name = "SECS", default_value_t = 60)]
     pub timeout: u64,
 
+    /// Send cookies from a Netscape cookie file (read once, never written back)
+    #[arg(long, value_name = "FILE")]
+    pub cookies: Option<PathBuf>,
+
     /// Log requests and decisions on stderr (repeatable)
     #[arg(short = 'v', long, action = clap::ArgAction::Count)]
     pub verbose: u8,
@@ -205,6 +209,7 @@ impl Args {
             jobs: self.jobs(),
             retries: self.retries,
             timeout: self.timeout,
+            cookies: self.cookies.clone(),
             verbose: self.verbose,
             color: self.color(),
         }

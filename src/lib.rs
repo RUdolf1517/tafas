@@ -8,6 +8,7 @@
 //! library does not expose.
 
 pub mod cli;
+pub mod cookies;
 pub mod download;
 pub mod error;
 pub mod hls;

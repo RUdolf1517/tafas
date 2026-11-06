@@ -121,8 +121,9 @@ fn refusal(id: &str, notes: &[String]) -> Error {
     let joined = notes.join("; ").to_ascii_lowercase();
     if joined.contains("sign in to confirm") || joined.contains("not a bot") {
         return Error::Refused(format!(
-            "youtube: {id}: the site answered with a sign-in check (\"{}\"). This build sends no \
-             cookies and solves no challenge; see docs/extractors.md §3.",
+            "youtube: {id}: the site answered with a sign-in check (\"{}\"). Cookies from \
+             --cookies are sent when you name a file, but no challenge is solved; see \
+             docs/extractors.md §3.",
             first_bot_sentence(notes)
         ));
     }
@@ -134,8 +135,8 @@ fn refusal(id: &str, notes: &[String]) -> Error {
     }
     if joined.contains("age") || joined.contains("inappropriate") {
         return Error::Refused(format!(
-            "youtube: {id}: age-restricted content needs an account, and this build sends no \
-             cookies (docs/extractors.md §3)"
+            "youtube: {id}: age-restricted content needs a signed-in account; pass --cookies FILE \
+             with an export from a signed-in browser (docs/extractors.md §3)"
         ));
     }
     Error::Refused(format!(

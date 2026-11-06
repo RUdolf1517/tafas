@@ -88,14 +88,16 @@ that matter:
 
 | Status / reason | Output |
 | --- | --- |
-| `LOGIN_REQUIRED` + "Sign in to confirm you're not a bot" | refusal naming the check; no cookies are sent and none are accepted as an argument |
+| `LOGIN_REQUIRED` + "Sign in to confirm you're not a bot" | refusal naming the check; cookies from `--cookies` are sent, no challenge is solved |
 | `AGE_VERIFICATION_REQUIRED` / "inappropriate for some users" | refusal naming the age gate |
 | `UNPLAYABLE`, `ERROR`, region block | refusal quoting the site's own sentence |
 
-There is no `--cookies` flag. That is a deliberate boundary of v0.1.0, not an
-oversight: a cookie jar turns a stateless command into something that can act as
-a logged-in account, and that decision (and its failure modes) is on the
-[roadmap §7](roadmap.md#7-what-will-not-happen) rather than smuggled in.
+v0.1.0 had no `--cookies` flag, on the grounds that a cookie jar turns a
+stateless command into something that can act as a logged-in account. v0.2 adds
+one with that cost stated: the file is read **once**, sent only to the hosts its
+domains match, never written back, and never logged. tafas still has no sign-in
+flow and stores nothing between runs — the file is the user's, and using it is
+the user's decision. Details in [safety §5](safety.md#5-network).
 
 ### 2.5 Live streams
 

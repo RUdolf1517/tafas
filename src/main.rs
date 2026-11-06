@@ -91,20 +91,27 @@ fn capabilities() -> String {
                 "clients": ["android_vr", "ios", "android", "tv_embedded", "web"],
                 "signature_decipher": false,
                 "po_token": false,
-                "cookies": false
+                "cookies": "user-supplied (--cookies FILE)"
             },
             "tiktok": {
                 "routes": ["web page (__UNIVERSAL_DATA_FOR_REHYDRATION__)", "mobile feed"],
                 "watermark": "avoided by preferring playAddr",
-                "cookies": false
+                "cookies": "user-supplied (--cookies FILE)"
             },
             "x": {
                 "routes": ["syndication tweet-result"],
-                "hls": false,
-                "cookies": false
+                "hls": true,
+                "cookies": "user-supplied (--cookies FILE)"
             }
         },
         "containers": ["mp4", "m4a"],
+        "hls": {
+            "playlists": ["master", "media"],
+            "segments": "mpeg-ts",
+            "encryption": ["aes-128"],
+            "fmp4": false,
+            "live": false
+        },
         "muxing": {
             "container": "mp4",
             "reencode": false,

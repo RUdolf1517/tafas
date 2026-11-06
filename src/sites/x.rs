@@ -59,7 +59,7 @@ pub fn extract(http: &Http, url: &Url, raw: &str) -> Result<Media> {
     if typename.contains("Tombstone") || typename.contains("Unavailable") {
         return Err(Error::Refused(format!(
             "x: {id}: the post is unavailable without an account (deleted, protected or \
-             age-restricted; this build sends no cookies)"
+             age-restricted); cookies from --cookies FILE are sent when you name a file"
         )));
     }
 

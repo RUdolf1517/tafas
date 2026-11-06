@@ -17,6 +17,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::Instant;
 
+use crate::cookies;
 use crate::error::{Error, Result};
 use crate::hlsfetch;
 use crate::http::Http;
@@ -51,6 +52,8 @@ pub struct Options {
     pub jobs: usize,
     pub retries: u32,
     pub timeout: u64,
+    /// A Netscape cookie file to send from, when the user named one.
+    pub cookies: Option<PathBuf>,
     pub verbose: u8,
     pub color: style::Choice,
 }
@@ -75,6 +78,7 @@ impl Default for Options {
             jobs: 1,
             retries: 3,
             timeout: 60,
+            cookies: None,
             verbose: 0,
             color: style::Choice::Auto,
         }
@@ -150,6 +154,21 @@ pub fn run(urls: &[String], options: &Options) -> u8 {
             eprintln!("tafas: {error}");
             return error.exit_code();
         }
+    };
+    let http = match &options.cookies {
+        None => http,
+        Some(path) => match cookies::Jar::load(path) {
+            Ok(jar) => {
+                if options.verbose > 0 {
+                    eprintln!("tafas: {} cookies from {}", jar.len(), path.display());
+                }
+                http.with_cookies(jar)
+            }
+            Err(error) => {
+                eprintln!("tafas: {error}");
+                return error.exit_code();
+            }
+        },
     };
     let printer = Printer::new(options);
 

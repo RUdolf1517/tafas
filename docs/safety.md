@@ -94,8 +94,8 @@ except the temporaries this run made.
 | HLS keys | fetched once per URI and required to be exactly 16 bytes |
 | retries | transport errors, `429`, `5xx`; never `4xx` |
 | proxy | `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY` — the client's own handling, not a flag |
-| cookies | none are sent for X or TikTok; YouTube receives only the consent cookie, which is what makes a European request return a page at all |
-| credentials | none are accepted, stored or logged; a `user:pass@` in a URL is dropped before use |
+| cookies | none of its own: YouTube receives the consent cookie, which is what makes a European request return a page at all; otherwise only what `--cookies FILE` supplies, matched by domain, path, `Secure` and expiry |
+| credentials | file names only: a cookie jar is read once and never written back, and no cookie value is logged, printed or quoted in an error; a `user:pass@` in a URL is dropped before use |
 | telemetry | none; the only requests are the ones a capture needs |
 
 The user agent is a browser string, because that is what the three sites serve

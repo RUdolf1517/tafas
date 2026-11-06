@@ -101,6 +101,12 @@ deadline.
 .TP
 .B \-j, \-\-jobs \fIN\fR
 How many URLs to work on at once (default 1; \fB0\fR means four).
+.TP
+.B \-\-cookies \fIFILE\fR
+Send the cookies in a Netscape cookie file, in the format curl writes and every
+browser exports. The file is read once at startup, sent only to the hosts its
+domains match, never written back and never logged. It is the only credential
+this program accepts, and it stores nothing between runs.
 .SS Output
 .TP
 .B \-n, \-\-dry\-run

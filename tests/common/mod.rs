@@ -27,6 +27,9 @@ pub struct Route {
     pub support_range: bool,
     /// Truncate the declared body, to exercise the byte-count check.
     pub truncate_by: usize,
+    /// Answer only when the request carries this header with this value, and
+    /// `403` otherwise: the shape a site with a session check has.
+    pub requires_header: Option<(String, String)>,
 }
 
 impl Route {
@@ -37,6 +40,15 @@ impl Route {
             fail_first: 0,
             support_range: true,
             truncate_by: 0,
+            requires_header: None,
+        }
+    }
+
+    /// A route that answers `403` unless the request carries `name: value`.
+    pub fn requiring_header(path: &str, name: &str, value: &str, body: &[u8]) -> Route {
+        Route {
+            requires_header: Some((name.to_lowercase(), value.to_string())),
+            ..Route::ok(path, body)
         }
     }
 
@@ -153,6 +165,7 @@ fn handle_connection(
     let target = parts.next().unwrap_or("/").to_string();
 
     let mut range_start: Option<u64> = None;
+    let mut headers: Vec<(String, String)> = Vec::new();
     loop {
         let mut line = String::new();
         if reader.read_line(&mut line)? == 0 {
@@ -161,6 +174,9 @@ fn handle_connection(
         let line = line.trim_end();
         if line.is_empty() {
             break;
+        }
+        if let Some((name, value)) = line.split_once(':') {
+            headers.push((name.trim().to_lowercase(), value.trim().to_string()));
         }
         if let Some(value) = line
             .strip_prefix("Range: ")
@@ -194,6 +210,16 @@ fn handle_connection(
     // which is what a connection dropped mid-transfer actually looks like.
     let body = route.body.clone();
     let sent = body.len().saturating_sub(route.truncate_by);
+
+    if let Some((name, value)) = &route.requires_header {
+        let carried = headers
+            .iter()
+            .filter(|(header, _)| header == name)
+            .any(|(_, carried)| carried.split(';').any(|part| part.trim() == value));
+        if !carried {
+            return write_response(&mut stream, 403, "Forbidden", b"no session", None);
+        }
+    }
 
     let already = FAILURES.load(Ordering::SeqCst);
     if already < route.fail_first {

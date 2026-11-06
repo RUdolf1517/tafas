@@ -158,3 +158,30 @@ fn color_never_and_no_color_agree() {
     assert_eq!(stderr(&a), stderr(&b));
     assert!(!stderr(&a).contains('\u{1b}'));
 }
+
+#[test]
+fn a_missing_cookie_file_is_reported_before_any_request() {
+    let output = tafas(&[
+        "--cookies",
+        "/nonexistent/tafas/cookies.txt",
+        "https://youtu.be/dQw4w9WgXcQ",
+    ]);
+    assert_eq!(code(&output), 1);
+    let text = stderr(&output);
+    assert!(text.contains("cookies.txt"), "{text}");
+    assert!(text.starts_with("tafas: "), "{text}");
+}
+
+#[test]
+fn a_cookie_file_with_no_cookies_in_it_is_a_usage_error() {
+    let path = std::env::temp_dir().join(format!("tafas-cli-cookies-{}", std::process::id()));
+    std::fs::write(&path, "{\"cookies\": []}\n").expect("write the file");
+
+    let output = tafas(&[
+        "--cookies",
+        path.to_str().expect("a utf-8 path"),
+        "https://youtu.be/dQw4w9WgXcQ",
+    ]);
+    assert_eq!(code(&output), 2, "a jar with no cookies is a mistake in the arguments");
+    assert!(stderr(&output).contains("Netscape"), "{}", stderr(&output));
+}

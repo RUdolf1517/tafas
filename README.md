@@ -103,6 +103,7 @@ tafas https://youtu.be/aqz-KE-bpKQ --list-formats   # what the page offers, then
 tafas https://youtu.be/aqz-KE-bpKQ -n               # plan only, nothing fetched
 tafas https://youtu.be/aqz-KE-bpKQ --json           # one object per item
 tafas https://youtu.be/aqz-KE-bpKQ -o - | mpv -     # bytes on stdout
+tafas https://x.com/user/status/123 --cookies ~/cookies.txt  # a session, if you have one
 ```
 
 | Exit | Meaning |
