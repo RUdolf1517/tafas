@@ -182,6 +182,10 @@ fn a_cookie_file_with_no_cookies_in_it_is_a_usage_error() {
         path.to_str().expect("a utf-8 path"),
         "https://youtu.be/dQw4w9WgXcQ",
     ]);
-    assert_eq!(code(&output), 2, "a jar with no cookies is a mistake in the arguments");
+    assert_eq!(
+        code(&output),
+        2,
+        "a jar with no cookies is a mistake in the arguments"
+    );
     assert!(stderr(&output).contains("Netscape"), "{}", stderr(&output));
 }
