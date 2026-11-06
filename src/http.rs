@@ -335,8 +335,7 @@ impl Http {
                 .client
                 .post(url)
                 .header("content-type", "application/json");
-            self.prepare_with(post, url, headers)
-                .body(payload.clone())
+            self.prepare_with(post, url, headers).body(payload.clone())
         })?;
         let response = self.classify(label, url, response)?;
         let text = read_bounded(response, MAX_JSON_BYTES)?;

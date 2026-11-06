@@ -19,9 +19,9 @@ use std::time::Instant;
 
 use crate::cookies;
 use crate::error::{Error, Result};
-use crate::info;
 use crate::hlsfetch;
 use crate::http::Http;
+use crate::info;
 use crate::model::{Container, Format, Image, Media};
 use crate::mux;
 use crate::names;
