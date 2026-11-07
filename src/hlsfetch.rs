@@ -322,7 +322,7 @@ fn fetch_segment(
     http: &Http,
     segment: &Segment,
     headers: &[(&str, &str)],
-    key: Option<[u8; KEY_BYTES]>,
+    key: Option<([u8; KEY_BYTES], [u8; 16])>,
 ) -> Result<Vec<u8>> {
     let range = segment.range.map(|range| (range.offset, range.length));
     let mut bytes = http.get_bytes(
@@ -332,8 +332,8 @@ fn fetch_segment(
         range,
         SEGMENT_LIMIT,
     )?;
-    if let Some(key_bytes) = key {
-        bytes = decrypt(&bytes, key_bytes, key.iv_for(segment.sequence))?;
+    if let Some((key_bytes, iv)) = key {
+        bytes = decrypt(&bytes, key_bytes, iv)?;
     }
     Ok(bytes)
 }
@@ -360,17 +360,24 @@ fn fetch_media(
     // and is read-only afterwards: no lock in the fetch path, and no key
     // fetched twice because two workers reached the same URI together.
     let mut cache: HashMap<String, [u8; KEY_BYTES]> = HashMap::new();
-    let mut keys: Vec<Option<[u8; KEY_BYTES]>> = Vec::with_capacity(chosen.len());
+    let mut keys: Vec<Option<([u8; KEY_BYTES], [u8; 16])>> = Vec::with_capacity(chosen.len());
     for segment in chosen {
-        let key = match segment
+        let resolved = match segment
             .key
             .as_ref()
             .filter(|key| key.method == Encryption::Aes128)
         {
-            Some(key) => Some(resolve_key(http, key, headers, &mut cache)?),
+            // The IV belongs to the segment, not to the key block: a playlist
+            // that omits `IV` expects the media sequence number, which differs
+            // per segment. Both are settled here so the fetch path stays a
+            // fetch.
+            Some(key) => Some((
+                resolve_key(http, key, headers, &mut cache)?,
+                key.iv_for(segment.sequence),
+            )),
             None => None,
         };
-        keys.push(key);
+        keys.push(resolved);
     }
 
     let workers = concurrency.clamp(1, chosen.len().max(1));
