@@ -1,0 +1,98 @@
+name: ci
+
+on:
+  push:
+    branches: [main, "arena/**"]
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  CARGO_TERM_COLOR: never
+
+jobs:
+  # The three platforms a downloader is expected to run on. No test touches the
+  # network: the fixtures in `tests/` build their own HTTP server.
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      # Failures are captured and published rather than only living in the job
+      # log: the log of a failed run is not reachable from every environment
+      # this project is developed in, and an error nobody can read is not a
+      # report.
+      - name: Clippy
+        id: clippy
+        continue-on-error: true
+        shell: bash
+        run: cargo clippy --all-targets -- -D warnings 2>&1 | tee clippy.log
+
+      - name: Test
+        id: test
+        if: steps.clippy.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: cargo test --all-targets 2>&1 | tee test.log
+
+      - name: Release build
+        id: build
+        if: steps.clippy.outcome == 'success' && steps.test.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: cargo build --release 2>&1 | tee build.log
+
+      - name: Publish the failure
+        if: always() && (steps.clippy.outcome == 'failure' || steps.test.outcome == 'failure' || steps.build.outcome == 'failure')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # On a pull_request event `github.ref_name` is `<branch>/merge`, which
+          # matches no branch that has a pull request, so the report was written
+          # to the job log and lost exactly when it was needed.
+          HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
+          set -uo pipefail
+          # Only the steps that actually failed: a passing clippy log would
+          # otherwise be published under a failing test's name.
+          : > failure.md
+          for pair in "clippy:${{ steps.clippy.outcome }}" "test:${{ steps.test.outcome }}" "build:${{ steps.build.outcome }}"; do
+            name="${pair%%:*}"
+            outcome="${pair##*:}"
+            [ "$outcome" = "failure" ] || continue
+            log="${name}.log"
+            [ -f "$log" ] || continue
+            # Cargo's own progress lines are removed: a log where the errors are
+            # buried under 200 "Downloaded" lines is a log nobody reads.
+            grep -vE "^ *(Downloading|Downloaded|Compiling|Checking|Updating|Adding|Locking)" "$log" \
+              | tail -n 120 > "failure-$name.txt" || true
+            {
+              echo "### \`${{ matrix.os }}\` — \`$name\`"
+              echo '```'
+              cat "failure-$name.txt"
+              echo '```'
+            } >> failure.md
+          done
+
+          cat failure.md
+          number="$(gh pr list --head "$HEAD_BRANCH" --state open --json number -q '.[0].number' 2>/dev/null || true)"
+          if [ -z "$number" ]; then
+            echo "no open pull request for $HEAD_BRANCH; see the step log"
+            exit 0
+          fi
+          gh pr comment "$number" --body-file failure.md || true
+
+      - name: Fail the job
+        if: steps.clippy.outcome == 'failure' || steps.test.outcome == 'failure' || steps.build.outcome == 'failure'
+        shell: bash
+        run: exit 1

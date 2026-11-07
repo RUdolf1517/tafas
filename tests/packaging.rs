@@ -1,0 +1,264 @@
+//! Packaging invariants: the manual page, the completions and the parser must
+//! describe the same program, and the program must not grow a way to run another
+//! one.
+//!
+//! These are cheap checks that catch a class of bug no unit test can: a flag that
+//! exists in `--help` and nowhere else, a manual page that drifted a release ago,
+//! a `Command::new` that quietly turned a static binary into a wrapper.
+
+use std::collections::BTreeSet;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
+fn manifest_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+}
+
+fn read(relative: &str) -> String {
+    let path = manifest_dir().join(relative);
+    std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()))
+}
+
+fn help_text() -> String {
+    let output = Command::new(env!("CARGO_BIN_EXE_tafas"))
+        .arg("--help")
+        .output()
+        .expect("the binary runs");
+    assert!(output.status.success(), "--help failed");
+    String::from_utf8_lossy(&output.stdout).into_owned()
+}
+
+/// Every long option mentioned in `--help`, without the `--`.
+fn help_long_options(help: &str) -> BTreeSet<String> {
+    let mut options = BTreeSet::new();
+    for token in help.split(|c: char| c.is_whitespace() || c == ',' || c == '[' || c == ']') {
+        if let Some(name) = token.strip_prefix("--") {
+            let name = name.trim_end_matches(|c: char| !c.is_alphanumeric() && c != '-');
+            if !name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || c == '-') {
+                options.insert(name.to_string());
+            }
+        }
+    }
+    options
+}
+
+#[test]
+fn every_option_in_help_appears_in_the_manual_page() {
+    let help = help_text();
+    // groff escapes every hyphen (`\-`), including the ones inside a word, so
+    // the page is normalised before it is compared with the parser's output.
+    let man = read("man/tafas.1").replace("\\-", "-");
+
+    let missing: Vec<String> = help_long_options(&help)
+        .into_iter()
+        // `--` itself is punctuation, not an option.
+        .filter(|name| !name.is_empty())
+        .filter(|name| !man.contains(&format!("--{name}")))
+        .collect();
+
+    assert!(
+        missing.is_empty(),
+        "options in --help but not in man/tafas.1: {missing:?}"
+    );
+}
+
+#[test]
+fn the_manual_page_names_the_current_version() {
+    let version = env!("CARGO_PKG_VERSION");
+    let man = read("man/tafas.1");
+    assert!(
+        man.contains(&format!("tafas {version}")),
+        "man/tafas.1 does not mention version {version}"
+    );
+}
+
+#[test]
+fn the_binary_runs_no_other_program() {
+    let sources = source_files(&manifest_dir().join("src"));
+    assert!(!sources.is_empty(), "no source files found");
+    for path in sources {
+        let text = std::fs::read_to_string(&path).expect("read a source file");
+        assert!(
+            !text.contains("Command::new"),
+            "{} spawns a subprocess; tafas is one static binary and runs nothing else",
+            path.display()
+        );
+        assert!(
+            !text.contains("unsafe {"),
+            "{} contains unsafe code, and the crate forbids it",
+            path.display()
+        );
+    }
+}
+
+fn source_files(dir: &Path) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(_) => return files,
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            files.extend(source_files(&path));
+        } else if path.extension().map(|ext| ext == "rs").unwrap_or(false) {
+            files.push(path);
+        }
+    }
+    files
+}
+
+#[test]
+fn the_readme_documents_the_exit_codes_the_binary_uses() {
+    let readme = read("README.md");
+    for code in ["`0`", "`1`", "`2`", "`3`", "`4`"] {
+        assert!(
+            readme.contains(code),
+            "README does not document exit code {code}"
+        );
+    }
+}
+
+#[test]
+fn the_documented_sites_are_the_ones_compiled_in() {
+    let capabilities = Command::new(env!("CARGO_BIN_EXE_tafas"))
+        .arg("--capabilities")
+        .output()
+        .expect("the binary runs");
+    let value: serde_json::Value =
+        serde_json::from_slice(&capabilities.stdout).expect("capabilities is JSON");
+    let sites: Vec<&str> = value["sites"]
+        .as_array()
+        .expect("sites array")
+        .iter()
+        .map(|site| site.as_str().unwrap_or(""))
+        .collect();
+
+    let readme = read("README.md");
+    for site in sites {
+        assert!(
+            readme.to_lowercase().contains(site),
+            "README does not mention the {site} extractor"
+        );
+    }
+}
+
+#[test]
+fn the_dependency_list_in_the_docs_matches_the_manifest() {
+    let cargo = read("Cargo.toml");
+    let docs = read("docs/dependencies.md");
+    for crate_name in ["clap", "clap_complete", "reqwest", "rustls", "serde_json"] {
+        assert!(
+            cargo.contains(&format!("{crate_name} =")),
+            "{crate_name} is not a dependency any more; update docs/dependencies.md and this test"
+        );
+        assert!(
+            docs.contains(crate_name),
+            "{crate_name} is not documented in docs/dependencies.md"
+        );
+    }
+}
+
+/// The Windows asset name appears in four places that must never drift: the
+/// installer downloads it, the manifest generator hashes it, the release job
+/// builds it, and the documentation tells a reader what to look for.
+#[test]
+fn the_windows_channel_names_the_asset_the_release_builds() {
+    const ASSET: &str = "tafas-x86_64-pc-windows-msvc.zip";
+    for file in [
+        "packaging/windows/install.ps1",
+        "packaging/winget/generate.py",
+        ".github/workflows/release.yml",
+        "docs/releases.md",
+    ] {
+        assert!(
+            read(file).contains(ASSET),
+            "{file} does not name the Windows asset {ASSET}"
+        );
+    }
+}
+
+/// The installer is shipped as an asset and attached to the release, and it must
+/// stay a per-user installer: no elevation, a checksum before an unpack, and an
+/// uninstall path. A drift here is a change in what installing means.
+#[test]
+fn the_windows_installer_is_published_and_verifies_what_it_writes() {
+    let installer = read("packaging/windows/install.ps1");
+    let release = read(".github/workflows/release.yml");
+
+    assert!(
+        release.contains("artifacts/install.ps1"),
+        "the release job must publish install.ps1 as an asset"
+    );
+    assert!(
+        release.contains("packaging/winget/generate.py"),
+        "the release job must render the winget manifests from the shipped ZIP"
+    );
+
+    for required in [
+        "SHA256SUMS",
+        "Get-FileHash",
+        "-Uninstall",
+        "installer = 'tafas-per-user'",
+    ] {
+        assert!(
+            installer.contains(required),
+            "install.ps1 no longer contains {required:?}"
+        );
+    }
+    // No elevation and no machine-wide write: this is a per-user installer.
+    for forbidden in [
+        "RunAs",
+        "EnvironmentVariableTarget]::Machine",
+        "ProgramFiles",
+        "ProgramData",
+    ] {
+        assert!(
+            !installer.contains(forbidden),
+            "install.ps1 mentions {forbidden:?}: this is a per-user installer, not a machine-wide one"
+        );
+    }
+}
+
+/// Every template the generator names must exist and carry the identifier the
+/// bundle is filed under, so `winget install --manifest` finds one package.
+#[test]
+fn the_winget_templates_match_the_generator() {
+    let generator = read("packaging/winget/generate.py");
+    for template in [
+        "version.yaml.in",
+        "installer.yaml.in",
+        "locale.en-US.yaml.in",
+    ] {
+        assert!(
+            generator.contains(template),
+            "generate.py no longer names {template}"
+        );
+        let path = manifest_dir()
+            .join("packaging/winget/templates")
+            .join(template);
+        assert!(path.is_file(), "{} is missing", path.display());
+        let text = read(&format!("packaging/winget/templates/{template}"));
+        assert!(
+            text.contains("PackageIdentifier: RUdolf1517.tafas"),
+            "{template} does not declare the package identifier"
+        );
+        assert!(
+            text.contains("ManifestVersion: 1.6.0"),
+            "{template} does not declare the manifest schema version"
+        );
+    }
+
+    let installer = read("packaging/winget/templates/installer.yaml.in");
+    for required in [
+        "InstallerType: zip",
+        "NestedInstallerType: portable",
+        "RelativeFilePath: tafas.exe",
+        "PortableCommandAlias: tafas",
+    ] {
+        assert!(
+            installer.contains(required),
+            "the installer template no longer declares {required:?}"
+        );
+    }
+}

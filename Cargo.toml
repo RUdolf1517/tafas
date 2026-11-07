@@ -1,0 +1,84 @@
+[package]
+name = "tafas"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82"
+description = "Capture a video from YouTube, TikTok or X into one MP4 — no re-encoding, no external binaries"
+authors = ["RUdolf1517 <rudolfzinovev@protonmail.com>"]
+license = "MIT"
+repository = "https://github.com/RUdolf1517/tafas"
+homepage = "https://github.com/RUdolf1517/tafas"
+readme = "README.md"
+keywords = ["cli", "youtube", "tiktok", "download", "video"]
+categories = ["command-line-utilities", "multimedia"]
+
+[lib]
+name = "tafas"
+path = "src/lib.rs"
+
+[[bin]]
+name = "tafas"
+path = "src/main.rs"
+
+[dependencies]
+# Argument parsing. `default-features = false` drops the derive-less colour and
+# suggestion machinery that a tool printing plain GNU-style errors does not use;
+# `error-context` is kept because a rejected value must say what was expected.
+clap = { version = "4.5", default-features = false, features = [
+    "std",
+    "derive",
+    "help",
+    "usage",
+    "error-context",
+] }
+# Completions are generated from the live parser, so they cannot drift from
+# `--help` the way a checked-in script can.
+clap_complete = "4.5"
+
+# Blocking HTTP client. Chosen over a hand-rolled HTTP/1.1 stack because the
+# three sites are behind redirects, chunked transfer, gzip and HTTP/2, and a
+# downloader's failure modes there are silent corruption rather than an error.
+reqwest = { version = "0.12", default-features = false, features = [
+    "blocking",
+    "gzip",
+    "charset",
+    "http2",
+    "rustls-tls-webpki-roots-no-provider",
+] }
+
+# TLS is rustls with the `ring` provider: no OpenSSL, no system libssl to link
+# against, and one static binary. `ring` is the only dependency in the graph
+# that carries C and assembly; docs/dependencies.md §3 states that plainly.
+rustls = { version = "0.23", default-features = false, features = [
+    "ring",
+    "std",
+    "tls12",
+    "logging",
+] }
+
+# JSON: every extractor speaks it, and so does `--json`.
+serde_json = "1"
+
+# AES-128-CBC, for the segments of an encrypted HLS playlist. RustCrypto, pure
+# Rust — `ring` deliberately exposes only AEAD modes, and CBC is the mode the
+# HLS specification names. See docs/dependencies.md §1.5.
+aes = "0.8"
+# `cbc` versions independently of `aes`: 0.1 is the release that pairs with
+# `cipher` 0.4, and `block-padding` is opt-in there, which is where PKCS#7 lives.
+cbc = { version = "0.1", features = ["block-padding"] }
+
+[dev-dependencies]
+# Tests spawn the real binary through CARGO_BIN_EXE_tafas, and the fixture HTTP
+# server is std-only, so the test graph adds nothing that the binary does not
+# already carry.
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
+incremental = false
+
+[lints.rust]
+unsafe_code = "forbid"

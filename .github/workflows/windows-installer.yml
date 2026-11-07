@@ -1,0 +1,155 @@
+name: windows installer
+
+# The Windows channel cannot be proved by `cargo test`: `install.ps1` is a
+# PowerShell program that moves directories, writes the user PATH and rolls back.
+# This workflow is where that program meets a real Windows filesystem — once in
+# PowerShell against a locally built release, once for the manifests the release
+# job generates from the same bytes.
+#
+# It runs without the network on purpose. `Install.Integration.ps1` builds its own
+# "releases" from a stub executable, so a red run always means the installer is
+# wrong, not that GitHub was slow.
+
+on:
+  push:
+    branches: [main, "arena/**"]
+    paths:
+      - "packaging/windows/**"
+      - "packaging/winget/**"
+      - ".github/workflows/windows-installer.yml"
+      - ".github/workflows/release.yml"
+      - "docs/releases.md"
+      - "README.md"
+  pull_request:
+    paths:
+      - "packaging/windows/**"
+      - "packaging/winget/**"
+      - ".github/workflows/windows-installer.yml"
+      - ".github/workflows/release.yml"
+      - "docs/releases.md"
+      - "README.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  installer:
+    name: install, upgrade, refuse, roll back, uninstall
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the release binary the installer will be tested against
+        shell: bash
+        run: cargo build --release
+
+      - name: Prove the archive name and --version format agree with the installer
+        shell: bash
+        run: |
+          set -euo pipefail
+          version_line="$(./target/release/tafas.exe --version)"
+          printf 'version output: %s\n' "$version_line"
+          case "$version_line" in
+            "tafas "*.*.*) ;;
+            *) echo "install.ps1 parses 'tafas <x.y.z>'; the binary printed something else" >&2; exit 1 ;;
+          esac
+          grep -q "tafas-x86_64-pc-windows-msvc.zip" packaging/windows/install.ps1
+          grep -q "tafas-x86_64-pc-windows-msvc.zip" packaging/winget/generate.py
+          grep -q "tafas-x86_64-pc-windows-msvc.zip" .github/workflows/release.yml
+          grep -q "tafas-x86_64-pc-windows-msvc.zip" docs/releases.md
+
+      - name: Integration test
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .\packaging\windows\tests\Install.Integration.ps1 `
+            -SourceExecutable (Resolve-Path .\target\release\tafas.exe) `
+            -EvidencePath artifacts\installer-integration.log
+
+      - name: Publish the transcript when something fails
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/
+          if-no-files-found: warn
+          retention-days: 30
+
+      # The transcript also goes into the pull request. A failed run's log is not
+      # reachable from every environment this project is developed in, and a
+      # failure nobody can read is not a report.
+      - name: Publish the transcript to the pull request
+        if: failure()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
+          set -uo pipefail
+          number="$(gh pr list --state open --json number,headRefName \
+            --jq "[.[] | select(.headRefName == \"$HEAD_BRANCH\")] | .[0].number" 2>/dev/null || true)"
+          if [ -z "$number" ] || [ "$number" = "null" ]; then
+            echo "no open pull request for $HEAD_BRANCH; the transcript is in the job log"
+            exit 0
+          fi
+          log="artifacts/installer-integration.log"
+          {
+            echo "### windows installer — the integration test failed"
+            echo
+            echo '```'
+            if [ -f "$log" ]; then tail -n 150 "$log"; else echo "the harness wrote no transcript"; fi
+            echo '```'
+          } > failure.md
+          gh pr comment "$number" --body-file failure.md || true
+
+  winget-manifests:
+    name: local winget manifests describe the exact ZIP
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generator tests
+        run: python3 packaging/winget/tests/check.py
+
+      - name: Render manifests from a ZIP built the way the release builds it
+        run: |
+          set -euo pipefail
+          work="$(mktemp -d)"
+          mkdir "$work/dist"
+          printf 'not really tafas\n' > "$work/dist/tafas.exe"
+          cp LICENSE "$work/dist/"
+          (cd "$work/dist" && zip -q "../tafas-x86_64-pc-windows-msvc.zip" tafas.exe LICENSE)
+          python3 packaging/winget/generate.py \
+            --tag v0.0.0 \
+            --windows-archive "$work/tafas-x86_64-pc-windows-msvc.zip" \
+            --output-dir "$work/out"
+          expected="$(sha256sum "$work/tafas-x86_64-pc-windows-msvc.zip" | cut -d' ' -f1 | tr 'a-f' 'A-F')"
+          grep -q "InstallerSha256: $expected" "$work/out/0.0.0/RUdolf1517.tafas.installer.yaml"
+          unzip -l "$work/out/tafas-winget-local-manifests-v0.0.0.zip"
+
+      - name: Parse the installer without running it
+        run: |
+          set -euo pipefail
+          if ! command -v pwsh >/dev/null 2>&1; then
+            echo "pwsh is not installed; the Windows job parses install.ps1 by running it" >&2
+            exit 0
+          fi
+          pwsh -NoProfile -Command '
+            $failed = $false
+            foreach ($file in @("packaging/windows/install.ps1", "packaging/windows/tests/Install.Integration.ps1")) {
+              $tokens = $null
+              $errors = $null
+              [System.Management.Automation.Language.Parser]::ParseFile(
+                (Resolve-Path $file).Path, [ref]$tokens, [ref]$errors) | Out-Null
+              if ($errors.Count -gt 0) {
+                $failed = $true
+                $errors | ForEach-Object { Write-Host ("{0}: {1}" -f $file, $_.Message) }
+              }
+            }
+            if ($failed) { exit 1 }
+            Write-Host "both scripts parse"
+          '
