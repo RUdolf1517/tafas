@@ -57,6 +57,10 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # On a pull_request event `github.ref_name` is `<branch>/merge`, which
+          # matches no branch that has a pull request, so the report was written
+          # to the job log and lost exactly when it was needed.
+          HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}
         run: |
           set -uo pipefail
           # Only the steps that actually failed: a passing clippy log would
@@ -81,9 +85,9 @@ jobs:
           done
 
           cat failure.md
-          number="$(gh pr list --head "$GITHUB_REF_NAME" --state open --json number -q '.[0].number' 2>/dev/null || true)"
+          number="$(gh pr list --head "$HEAD_BRANCH" --state open --json number -q '.[0].number' 2>/dev/null || true)"
           if [ -z "$number" ]; then
-            echo "no open pull request for $GITHUB_REF_NAME; see the step log"
+            echo "no open pull request for $HEAD_BRANCH; see the step log"
             exit 0
           fi
           gh pr comment "$number" --body-file failure.md || true
