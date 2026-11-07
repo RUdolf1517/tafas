@@ -36,7 +36,7 @@ and a badge turning red at 03:00 is not a test.
 | `clap_complete` | 4.5 | MIT OR Apache-2.0 | completions generated from the live parser |
 | `reqwest` | 0.12 (blocking) | MIT OR Apache-2.0 | HTTP/1.1 + HTTP/2, redirects, chunked bodies, gzip, proxies |
 | `rustls` | 0.23 (`ring`) | Apache-2.0 OR ISC OR MIT | TLS without OpenSSL |
-| `serde_json` | 1 | MIT OR Apache-2.0 | the four sites speak JSON; so does `--json` |
+| `serde_json` | 1 | MIT OR Apache-2.0 | the five sites speak JSON; so does `--json` |
 | `aes` | 0.8 | MIT OR Apache-2.0 | AES-128 block cipher, for encrypted HLS segments |
 | `cbc` | 0.1 | MIT OR Apache-2.0 | CBC mode and PKCS#7 padding, which is the mode HLS specifies |
 

@@ -130,6 +130,12 @@ fn capabilities() -> String {
                 "hls": true,
                 "dash": false,
                 "cookies": "user-supplied (--cookies FILE)"
+            },
+            "reddit": {
+                "routes": ["post json (comments/<id>.json)", "v.redd.it playlist"],
+                "hls": true,
+                "progressive": "not offered: DASH_<height>.mp4 carries no audio",
+                "cookies": "user-supplied (--cookies FILE)"
             }
         },
         "extractor_args": {
@@ -179,7 +185,7 @@ fn info(args: &Args) -> String {
         env!("CARGO_PKG_VERSION")
     ));
     out.push_str(
-        "capture YouTube, TikTok, X and Vimeo as one playable MP4, without re-encoding\n\n",
+        "capture YouTube, TikTok, X, Vimeo and Reddit as one playable MP4, without re-encoding\n\n",
     );
     out.push_str(&format!("sites        {}\n", SITES.join(", ")));
     out.push_str("muxing       mp4 (streams copied, index rebuilt, output verified)\n");

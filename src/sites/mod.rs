@@ -7,6 +7,7 @@
 //! format whose URL is cipher-protected is dropped, and a page that answers with
 //! a consent wall is a refusal rather than an empty success.
 
+pub mod reddit;
 pub mod tiktok;
 pub mod vimeo;
 pub mod x;
@@ -29,7 +30,7 @@ pub fn extract(http: &Http, raw_url: &str, args: &ExtractorArgs) -> Result<Media
     let url = Url::parse(raw_url)?;
     let site = Site::from_url(&url).ok_or_else(|| {
         Error::Unsupported(format!(
-            "no extractor for {raw_url}: this build reads youtube, tiktok, x and vimeo"
+            "no extractor for {raw_url}: this build reads youtube, tiktok, x, vimeo and reddit"
         ))
     })?;
     match site {
@@ -37,12 +38,13 @@ pub fn extract(http: &Http, raw_url: &str, args: &ExtractorArgs) -> Result<Media
         Site::TikTok => tiktok::extract(http, &url, raw_url, args),
         Site::X => x::extract(http, &url, raw_url),
         Site::Vimeo => vimeo::extract(http, &url, raw_url),
+        Site::Reddit => reddit::extract(http, &url, raw_url),
     }
 }
 
 /// The site names this build reads, for `--capabilities` and for the error
 /// message above.
-pub const SITES: [&str; 4] = ["youtube", "tiktok", "x", "vimeo"];
+pub const SITES: [&str; 5] = ["youtube", "tiktok", "x", "vimeo", "reddit"];
 
 // --- small JSON helpers ----------------------------------------------------
 //

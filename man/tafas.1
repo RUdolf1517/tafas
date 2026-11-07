@@ -61,6 +61,14 @@ endpoint. Progressive MP4s are preferred; a video that offers only an HLS
 playlist is fetched, demuxed and written in process. DASH is not read and the
 refusal says so, and an unlisted video without its hash is the same 404 a deleted
 one gets, which the refusal also says.
+.TP
+.B Reddit
+Posts whose `secure_media.reddit_video` lists a playlist, and bare
+\fBv.redd.it/<hash>\fR URLs, read from \fB/comments/<id>.json\fR. Only the HLS
+playlist is taken: the progressive \fBDASH_<height>.mp4\fR files carry no audio
+at all, and the DASH manifest is `SegmentBase`, which is not read \- both are
+refusals that say so rather than a silent file. An over\-18 post with nothing
+playable names \fB\-\-cookies\fR.
 .SH OPTIONS
 .SS Destination
 .TP
@@ -93,7 +101,7 @@ quietly, and a photo post is skipped by name: every image is already a file.
 Write the page's caption tracks beside each file, as WebVTT:
 \fI<name>.<language>.vtt\fR, or \fI<name>.<language>.auto.vtt\fR when the site
 transcribed the audio instead of a person writing the cues. One file per track;
-nothing is merged. YouTube is the only site of the four that lists tracks, so
+nothing is merged. YouTube is the only site of the five that lists tracks, so
 elsewhere this is a note rather than a file.
 .TP
 .B \-\-embed\-subs

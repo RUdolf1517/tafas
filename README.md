@@ -151,6 +151,7 @@ stream, which is what a phone on a train wants.
 | **TikTok** | `/@user/video/`, `/@user/photo/`, `vm.tiktok.com`, `vt.tiktok.com` | the page's rehydration document, then the mobile feed | MP4, watermark-free version preferred; photo posts give images |
 | **X** | `/<user>/status/`, `i/web/status/`, `t.co` | the syndication endpoint the embedded widget uses | MP4 (video, or an animated GIF's MP4), the post's photos as JPEG, or — when a post offers nothing else — its HLS playlist assembled into an MP4 |
 | **Vimeo** | `vimeo.com/<id>`, channel URLs, unlisted `<id>/<hash>`, `player.vimeo.com/video/<id>` | the player's own configuration endpoint; one request, no HTML | MP4 from the progressive files; a video that offers only an HLS playlist is assembled into an MP4; the poster and duration come from the same document |
+| **Reddit** | `/r/<sub>/comments/<id>/`, `redd.it`, `v.redd.it/<hash>` | the post's own JSON (`/comments/<id>.json`), or the fixed playlist path for a bare media URL | MP4 assembled from the HLS playlist; the progressive `DASH_<height>.mp4` files carry no audio and are refused by name |
 
 A site is listed only because its reader exists and its refusals are written
 down. What each one can and cannot reach — age gates, PO tokens, signature
@@ -182,7 +183,7 @@ in front of.
 | --- | --- | --- |
 | [v0.1.0](docs/roadmap.md#1-v010--shipped) | **shipped** | Three sites, DASH remuxing verified by a second reader, atomic `.part` commit, resume, `--json`, the manual page, completions, `--capabilities`. |
 | [v0.2](docs/roadmap.md#2-v02--the-shapes-users-actually-hit) | **in progress** | **In:** HLS → MP4, AES-128 keys, `--cookies`, `--write-info-json`, `--write-thumbnail`, `--write-subs`/`--sub-langs`, `--playlist-items` over HLS segment lists, an independent test demuxer, `.deb`/`.rpm`, Homebrew, `install.sh`, the per-user Windows installer and the local winget manifests. **Open:** playlist and channel pages; AUR, `.apk`, Scoop, a flake. |
-| [v0.3](docs/roadmap.md#3-v03--reach-and-the-parts-that-are-not-a-url) | **in progress** | **In:** `--concurrent-fragments`; `--extractor-args`; fragmented MP4 (`EXT-X-MAP`/`moof`); a sample-table reader for a progressive MP4 (`mp4read::plain`); `--embed-subs`, one `wvtt` caption track inside the file; `cargo fuzz` targets, run weekly; Vimeo. **Open:** Reddit, SoundCloud, Twitch. |
+| [v0.3](docs/roadmap.md#3-v03--reach-and-the-parts-that-are-not-a-url) | **in progress** | **In:** `--concurrent-fragments`; `--extractor-args`; fragmented MP4 (`EXT-X-MAP`/`moof`); a sample-table reader for a progressive MP4 (`mp4read::plain`); `--embed-subs`, one `wvtt` caption track inside the file; `cargo fuzz` targets, run weekly; Vimeo; Reddit. **Open:** SoundCloud, Twitch. |
 | [v0.4](docs/roadmap.md#4-v04--speed-platforms-trust) | planned | `--limit-rate` and per-fragment resume; reproducible builds and signed releases; size and startup budgets in CI; an MSRV job; Windows long paths. |
 | [v0.5](docs/roadmap.md#5-v05--extensibility-without-a-fork) | planned | A stable `Extractor` trait; feature-per-site builds; one documentation page per site. |
 

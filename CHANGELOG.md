@@ -133,6 +133,16 @@ version; adding a site, a flag or a container is minor. The policy is in
   refusal that says so; an unlisted video without its hash gets the same `404` a
   deleted one gets. Shapes this cannot reach are in
   [extractors §5](docs/extractors.md#5-vimeo).
+- **Reddit.** `/r/<sub>/comments/<id>/`, `redd.it` and bare `v.redd.it/<hash>`
+  URLs. A post is read from `/comments/<id>.json`; a bare media URL needs no
+  JSON, because its playlist lives at a fixed path. One route is taken —
+  `hls_url`, a master playlist with an `EXT-X-MEDIA` audio rendition that
+  `hlsfetch` joins into one MP4 — and the two obvious alternatives are refusals
+  that say why: `fallback_url` (`DASH_<height>.mp4`) is a **video-only** MP4,
+  and `dash_url` is `SegmentBase`, which this build does not read. A removed
+  post, a gallery or a text post and an over-18 post with nothing playable are
+  each named. The limitations are in
+  [extractors §6](docs/extractors.md#6-reddit).
 - **`Url::join`**, with dot-segment removal: playlist URIs are relative far more
   often than they are absolute, and `../` is common.
 - **`--embed-subs`.** The cues of one caption track go *inside* the MP4 as a

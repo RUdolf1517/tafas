@@ -124,7 +124,7 @@ fn info_names_the_sites() {
     let output = tafas(&["--info"]);
     assert_eq!(code(&output), 0);
     let text = stdout(&output);
-    for site in ["youtube", "tiktok", "x", "vimeo"] {
+    for site in ["youtube", "tiktok", "x", "vimeo", "reddit"] {
         assert!(text.contains(site), "{site} missing from --info");
     }
 }

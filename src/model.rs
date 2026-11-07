@@ -1,6 +1,6 @@
 use std::fmt;
 
-/// The four sites this build knows how to read.
+/// The five sites this build knows how to read.
 ///
 /// A site is a *reader*, not a guarantee: `Site::from_url` answering `Some`
 /// only means the URL names the site, not that the page can be captured. The
@@ -11,6 +11,7 @@ pub enum Site {
     TikTok,
     X,
     Vimeo,
+    Reddit,
 }
 
 impl Site {
@@ -20,6 +21,7 @@ impl Site {
             Site::TikTok => "tiktok",
             Site::X => "x",
             Site::Vimeo => "vimeo",
+            Site::Reddit => "reddit",
         }
     }
 
@@ -34,6 +36,7 @@ impl Site {
             "tiktok.com" | "vt.tiktok.com" | "vm.tiktok.com" | "m.tiktok.com" => Some(Site::TikTok),
             "x.com" | "twitter.com" | "t.co" | "mobile.twitter.com" => Some(Site::X),
             "vimeo.com" | "player.vimeo.com" => Some(Site::Vimeo),
+            "reddit.com" | "old.reddit.com" | "redd.it" | "v.redd.it" => Some(Site::Reddit),
             _ => None,
         }
     }
@@ -309,6 +312,13 @@ mod tests {
         );
         assert_eq!(site("https://vimeo.com.evil.example/1"), None);
         assert_eq!(site("https://notvimeo.com/1"), None);
+        assert_eq!(
+            site("https://www.reddit.com/r/aww/comments/abc/"),
+            Some(Site::Reddit)
+        );
+        assert_eq!(site("https://v.redd.it/abc"), Some(Site::Reddit));
+        assert_eq!(site("https://redd.it/abc"), Some(Site::Reddit));
+        assert_eq!(site("https://notreddit.com/1"), None);
         assert_eq!(site("https://t.co/abc"), Some(Site::X));
     }
 

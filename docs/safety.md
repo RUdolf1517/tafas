@@ -100,7 +100,7 @@ except the temporaries this run made.
 | credentials | file names only: a cookie jar is read once and never written back, and no cookie value is logged, printed or quoted in an error; a `user:pass@` in a URL is dropped before use |
 | telemetry | none; the only requests are the ones a capture needs |
 
-The user agent is a browser string, because that is what the four sites serve
+The user agent is a browser string, because that is what the five sites serve
 data to. That is a statement about the sites, not about the program: tafas does
 not execute JavaScript, does not run a headless browser, and does not solve
 challenges.

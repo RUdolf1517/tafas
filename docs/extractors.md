@@ -22,6 +22,7 @@ rather than with an empty file.
 | `tiktok.com`, `vm.tiktok.com`, `vt.tiktok.com` | TikTok |
 | `x.com`, `twitter.com`, `t.co` | X |
 | `vimeo.com`, `player.vimeo.com` | Vimeo |
+| `reddit.com`, `old.reddit.com`, `redd.it`, `v.redd.it` | Reddit |
 
 `m.` and `mobile.` prefixes are stripped before the comparison, and so is a
 trailing dot. `notyoutube.com` and `youtube.com.evil.example` are **not**
@@ -252,7 +253,43 @@ wants.
 videos behind a password, and anything that requires solving a challenge. There is
 no fallback that pretends otherwise.
 
-## 6. What a refusal looks like, and what it does not
+## 6. Reddit
+
+### 6.1 Route
+
+`/comments/<id>.json?raw_json=1` for a post — the listing the old mobile clients
+asked for; its first child is the post, and `secure_media.reddit_video` is the
+video. A bare `v.redd.it/<hash>` needs no JSON at all: the master playlist lives
+at a fixed path under the same hash, so the URL is built.
+
+### 6.2 One route, and why not the two obvious ones
+
+Only `hls_url` is taken, and the two alternatives in the same object are named
+here rather than silently skipped:
+
+| Field | Why it is not offered |
+| --- | --- |
+| `fallback_url` (`DASH_<height>.mp4`) | it is a **video-only** MP4: no audio track at all. Writing it as a finished video would be a file with a picture and no sound |
+| `dash_url` (`DASHPlaylist.mpd`) | DASH `SegmentBase`, which this build does not read |
+| `hls_url` | a master playlist with the video renditions and an `EXT-X-MEDIA` audio rendition, which `hlsfetch` follows and joins into one MP4 — **taken** |
+
+A `v.redd.it` GIF is the same route, and comes out with no audio because the
+source has none.
+
+### 6.3 Refused
+
+| Situation | Result |
+| --- | --- |
+| `404` on the post listing | refusal (1): deleted, private, or a community that is gone |
+| `removed_by_category` present | refusal (1) naming the category |
+| no `reddit_video` | refusal (1): a text, link, gallery or photo post is not a video |
+| a video with no `hls_url` | refusal (1) that says the progressive files carry no audio, so no silent file is written |
+| `over_18` and nothing playable | refusal (1) that names `--cookies FILE`; nothing challenges a wall |
+
+**What it cannot reach:** videos behind a wall or a private community (a session
+may help), and anything the post lists only as DASH.
+
+## 7. What a refusal looks like, and what it does not
 
 A refusal is a **failure**: exit 1, one line on stderr, and — under `--json` —
 an object with `"status": "failed"` and a `reason`. It is not a skip that exits
@@ -262,7 +299,7 @@ Nothing is ever written on a refusal. No empty file, no directory, no truncated
 `.mp4` with a valid header: the extractors run before the first byte of media is
 requested, so a refusal costs one or two page requests and no disk.
 
-## 7. When a site changes
+## 8. When a site changes
 
 Every extractor is written to *fail* rather than to produce something wrong:
 `read_player` returns "no formats" instead of panicking on a missing field, the
@@ -270,7 +307,7 @@ JSON lookup helpers are total, and media URLs are used only when they are
 strings. A changed page therefore produces a refusal with the status the site
 reported, which is the single most useful thing a bug report can contain.
 
-## 8. The escape hatch: `--extractor-args`
+## 9. The escape hatch: `--extractor-args`
 
 Section 6 ends with "a changed page produces a refusal", and a refusal is useful
 but not a download. The flag for the day between the change and the release is
