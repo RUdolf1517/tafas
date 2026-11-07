@@ -234,7 +234,9 @@ fn the_winget_templates_match_the_generator() {
             generator.contains(template),
             "generate.py no longer names {template}"
         );
-        let path = manifest_dir().join("packaging/winget/templates").join(template);
+        let path = manifest_dir()
+            .join("packaging/winget/templates")
+            .join(template);
         assert!(path.is_file(), "{} is missing", path.display());
         let text = read(&format!("packaging/winget/templates/{template}"));
         assert!(
