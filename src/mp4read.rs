@@ -1338,7 +1338,9 @@ mod tests {
         // `mp4write` is the fixture generator here: whatever it wrote, this
         // reader has to hand back the same samples, which is the property the
         // subtitle work needs and the remux path will want.
-        let avcc = vec![0x01, 0x64, 0x00, 0x1f, 0xff, 0xe1, 0x00, 0x04, 0x67, 0x64, 0x00, 0x1f];
+        let avcc = vec![
+            0x01, 0x64, 0x00, 0x1f, 0xff, 0xe1, 0x00, 0x04, 0x67, 0x64, 0x00, 0x1f,
+        ];
         let asc = AacConfig {
             asc: [0x12, 0x10],
             sample_rate: 44_100,
@@ -1398,7 +1400,10 @@ mod tests {
             assert_eq!(before.timescale, after.timescale);
             assert_eq!(before.samples.len(), after.samples.len());
             for (original, copy) in before.samples.iter().zip(&after.samples) {
-                assert_eq!(original.data, copy.data, "sample bytes survive the round trip");
+                assert_eq!(
+                    original.data, copy.data,
+                    "sample bytes survive the round trip"
+                );
                 assert_eq!(original.pts, copy.pts, "presentation times survive");
                 assert_eq!(original.dts, copy.dts, "decode times survive");
                 assert_eq!(original.keyframe, copy.keyframe, "keyframes survive");
