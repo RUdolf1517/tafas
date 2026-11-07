@@ -37,6 +37,12 @@ YouTube: the comparison is on the whole host, which is why a lookalike is a
    browser receives, so it is parsed directly (brace-matched, string-aware, so a
    `}` inside a title cannot truncate it). The page also supplies
    `INNERTUBE_API_KEY`, which the next route needs.
+   The page's `INNERTUBE_API_KEY` is what route 2 authenticates with. When the
+   page cannot be read at all, the key in the source (`PUBLIC_WEB_API_KEY`) is
+   used: it is YouTube's own web-client key, public, in every page, and a
+   secret scanner will call it a leak. [SECURITY.md § Credentials in the
+   source](../SECURITY.md#credentials-in-the-source-and-what-to-do-when-a-scanner-flags-one)
+   explains why it stays.
 2. **InnerTube**, `POST /youtubei/v1/player`, with the clients below in this
    order. Each is a different `context.client`, because YouTube serves different
    documents to different clients, and the difference is exactly whether a

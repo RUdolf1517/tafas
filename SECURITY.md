@@ -60,6 +60,31 @@ A documented limitation is not by itself a vulnerability — §7 of
 [docs/extractors.md](docs/extractors.md) lists what is deliberately refused. A
 way *around* a documented safeguard may be one.
 
+## Credentials in the source, and what to do when a scanner flags one
+
+tafas stores nothing between runs. The only credential it ever handles is the
+cookie file named by `--cookies`: it is read once, sent to hosts the cookies'
+domains match, never written back and never logged.
+
+One string in the source is shaped like a Google API key and is **not** a
+credential: `PUBLIC_WEB_API_KEY` in `src/sites/youtube.rs`. It is the key
+YouTube serves to an anonymous browser on every `watch` page and that every
+other reader of the InnerTube API ships as a default. It identifies the *client*
+to a public endpoint — it unlocks no account, no private video and no quota of
+ours, and the only thing associated with it is the caller's IP address. The
+watch page's own `INNERTUBE_API_KEY` is preferred whenever the page can be read;
+the constant only covers the case where the page could not be fetched at all.
+
+So: when GitHub's secret scanning reports a **Google API Key** in
+`src/sites/youtube.rs`, that alert is a false positive. Dismiss it with reason
+**"Won't fix"** or **"False positive"** and the comment that the string is
+YouTube's public web-client key, not a secret; there is nothing to rotate.
+Dismissing it is not a blanket permission to stop looking: any *other* alert
+from this repository should be treated as real, and a credential that a user
+pastes into an issue or a pull request should be rotated rather than dismissed.
+The scan stays enabled for the whole repository — no path is excluded from it —
+because excluding a file hides the next real leak as well as this one.
+
 ## What to include
 
 Provide as much of the following as is available:

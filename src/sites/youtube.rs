@@ -24,11 +24,20 @@ use crate::model::{Container, Format, Image, Media, Site, StreamKind, Subtitle};
 use crate::sites::{at, json_after, list, text, uint};
 use crate::url::Url;
 
-/// The InnerTube key that youtube.com serves to an anonymous browser. It is a
-/// public identifier embedded in the site's own HTML, not a credential; the
-/// page's value is preferred whenever it can be read, and this one only fills
-/// the gap when the page could not be fetched at all.
-const FALLBACK_API_KEY: &str = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8";
+/// YouTube's own web-client key, as served to an anonymous browser on every
+/// `watch` page and shipped by every other reader of this API.
+///
+/// It is *not* a credential. It identifies the web client to a public endpoint
+/// and unlocks no account, no private video and no quota of ours; the only
+/// thing Google associates with it is the caller's IP address. The page's own
+/// `INNERTUBE_API_KEY` is preferred whenever the page can be read, and this
+/// value only fills the gap when the page could not be fetched at all — which
+/// is the one case where dropping it would cost the whole InnerTube route.
+///
+/// GitHub's secret scanning flags the string, because it is shaped like a
+/// Google API key. There is no secret to rotate: dismissing that alert as a
+/// false positive is correct, and `SECURITY.md` says so out loud.
+const PUBLIC_WEB_API_KEY: &str = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8";
 
 const UA_ANDROID_VR: &str =
     "com.google.android.apps.youtube.vr.oculus/1.60.19 (Linux; U; Android 12; GB) gzip";
@@ -81,7 +90,7 @@ pub fn extract(http: &Http, url: &Url, raw: &str, args: &ExtractorArgs) -> Resul
         },
     };
 
-    let mut api_key = FALLBACK_API_KEY.to_string();
+    let mut api_key = PUBLIC_WEB_API_KEY.to_string();
     if let Some(page) = &page {
         if let Some(key) = inline_string(page, "INNERTUBE_API_KEY") {
             api_key = key;

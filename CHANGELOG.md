@@ -127,13 +127,21 @@ version; adding a site, a flag or a container is minor. The policy is in
 - **`Url::join`**, with dot-segment removal: playlist URIs are relative far more
   often than they are absolute, and `../` is common.
 
+### Changed
+
+- **`FALLBACK_API_KEY` is now `PUBLIC_WEB_API_KEY`, and the comment says what it
+  is.** The string is YouTube's own web-client key, public and in every watch
+  page; secret scanning flags it because it is shaped like a Google API key, and
+  there is nothing to rotate. [SECURITY.md](SECURITY.md) now says that out loud,
+  explains why the fallback exists, and says that no other alert gets the same
+  treatment.
+
 `--quality` now applies to a variant list as well: a height ceiling picks the
 best variant at or below it, and `best`/`worst` fall back to bandwidth when the
-playlist states no resolution. One gate remains, named before any file is
-created: a playlist of fMP4 segments (`EXT-X-MAP`). Next are the packaging
-channels — AUR, Alpine, Scoop and a flake — and the independent demuxer that
-`tests/common/mp4.rs` now gives the test suite. Nothing in this section changes
-any existing flag.
+playlist states no resolution. Both HLS containers are read, and the independent
+demuxer in `tests/common/mp4.rs` checks what is written. Next are the packaging
+channels — AUR, Alpine, Scoop and a flake — and the rest of v0.3. Nothing in
+this section changes any existing flag.
 
 ## [0.1.0] - 2026-11-04
 
