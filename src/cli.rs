@@ -127,6 +127,10 @@ pub struct Args {
     #[arg(long, value_name = "SECS", default_value_t = 60)]
     pub timeout: u64,
 
+    /// Take only these segments of an HLS list: 3, 1-5, 2- (1-based)
+    #[arg(long, value_name = "ITEMS", value_parser = parse_items)]
+    pub playlist_items: Option<crate::items::Items>,
+
     /// Send cookies from a Netscape cookie file (read once, never written back)
     #[arg(long, value_name = "FILE")]
     pub cookies: Option<PathBuf>,
@@ -167,6 +171,10 @@ pub struct Args {
 
 fn parse_quality(text: &str) -> Result<Quality, String> {
     Quality::parse(text).map_err(|error| error.to_string())
+}
+
+fn parse_items(text: &str) -> Result<crate::items::Items, String> {
+    crate::items::Items::parse(text).map_err(|error| error.to_string())
 }
 
 fn parse_color(text: &str) -> Result<Choice, String> {
@@ -215,6 +223,7 @@ impl Args {
             retries: self.retries,
             timeout: self.timeout,
             cookies: self.cookies.clone(),
+            playlist_items: self.playlist_items.clone(),
             verbose: self.verbose,
             color: self.color(),
         }

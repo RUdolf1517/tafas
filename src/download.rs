@@ -22,6 +22,7 @@ use crate::error::{Error, Result};
 use crate::hlsfetch;
 use crate::http::Http;
 use crate::info;
+use crate::items;
 use crate::model::{Container, Format, Image, Media};
 use crate::mux;
 use crate::names;
@@ -57,6 +58,8 @@ pub struct Options {
     pub timeout: u64,
     /// A Netscape cookie file to send from, when the user named one.
     pub cookies: Option<PathBuf>,
+    /// `--playlist-items`: which segments of an HLS list to take.
+    pub playlist_items: Option<items::Items>,
     pub verbose: u8,
     pub color: style::Choice,
 }
@@ -83,6 +86,7 @@ impl Default for Options {
             retries: 3,
             timeout: 60,
             cookies: None,
+            playlist_items: None,
             verbose: 0,
             color: style::Choice::Auto,
         }
@@ -326,6 +330,15 @@ fn handle(
         },
     )?;
     item.selection = plan.describe();
+
+    if options.playlist_items.is_some()
+        && !matches!(&plan, Plan::Single(format) if format.container == Container::Hls)
+    {
+        printer.warn(
+            "note: --playlist-items applies to an HLS segment list; this selection is not \
+             one, so it was ignored",
+        );
+    }
 
     let target = target_path(options, &media, &plan)?;
 
@@ -611,6 +624,7 @@ fn fetch_hls(
         &url,
         &request_headers(format),
         options.quality,
+        options.playlist_items.as_ref(),
         &part,
         &mut |bytes| progress.add(bytes),
     );
@@ -634,6 +648,9 @@ fn fetch_hls(
     }
 
     commit(&part, target, options.overwrite)?;
+    for warning in &report.warnings {
+        printer.warn(&format!("warning: {warning}"));
+    }
     if !options.json {
         printer.note(&format!(
             "hls: {} segments, {}, {} video and {} audio samples",

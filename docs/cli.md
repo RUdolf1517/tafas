@@ -99,6 +99,7 @@ on.
 | `--timeout SECS` | deadline for one metadata request (default 60) |
 | `-j, --jobs N` | how many URLs to work on at once (default 1; `0` means four) |
 | `--cookies FILE` | send the cookies in a Netscape cookie file (read once, never written back) |
+| `--playlist-items ITEMS` | take only these entries of a list: `3`, `1-5`, `2-`, mixed with commas |
 
 Retried: transport failures, `429`, and `5xx`, with a growing delay (0.4 s,
 0.8 s, 1.6 s, 3.2 s, capped at 5 s). Not retried: `400`, `401`, `403`, `404`,
@@ -112,6 +113,16 @@ cookie is sent only where it applies — domain (with or without subdomains), pa
 prefix, `Secure` and expiry are all checked per request — and a `cookie` header
 the extractor itself sets (YouTube's consent pair) is kept, with the jar's
 cookies appended rather than replacing it.
+
+`--playlist-items ITEMS` is parsed before the first request, so a typo is a
+usage error (2) rather than a half-written file. Entries are 1-based and
+inclusive at both ends; `2-` means "from the second to the end". Today the only
+list is the segment list of an HLS playlist, where the item is a segment: the
+file is assembled from the segments named and from no others, and the playlist
+is still read in full, so the count in the refusal is the count the server
+served. A selection that matches no segment is a refusal (1); one that does not
+start on a keyframe is written, with a warning that the first frames will not
+decode.
 
 A media transfer has no total deadline: a 500 MiB file on a slow line is not an
 error. A resumed transfer sends `Range: bytes=N-`; a server that answers `200`

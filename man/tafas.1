@@ -113,6 +113,14 @@ Send the cookies in a Netscape cookie file, in the format curl writes and every
 browser exports. The file is read once at startup, sent only to the hosts its
 domains match, never written back and never logged. It is the only credential
 this program accepts, and it stores nothing between runs.
+.TP
+.B \-\-playlist\-items \fIITEMS\fR
+Take only these entries of a list: \fB3\fR, \fB1\-5\fR, \fB2\-\fR or any
+comma\-separated mix, counted from one. Today the lists are the segment lists of
+an HLS playlist; the item is a segment, and the file is assembled from the ones
+named. A selection that matches nothing is a refusal, not an empty file. A
+selection that does not begin on a keyframe produces a warning, because the
+first frames are then undecodable.
 .SS Output
 .TP
 .B \-n, \-\-dry\-run

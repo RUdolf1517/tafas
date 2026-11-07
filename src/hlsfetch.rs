@@ -17,8 +17,9 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use crate::error::{Error, Result};
-use crate::hls::{Encryption, Key, Media, Playlist};
+use crate::hls::{Encryption, Key, Media, Playlist, Segment};
 use crate::http::Http;
+use crate::items::Items;
 use crate::mp4write;
 use crate::select::Quality;
 use crate::ts;
@@ -52,19 +53,24 @@ pub struct Report {
     pub dimensions: (u32, u32),
     pub video_samples: u64,
     pub audio_samples: u64,
+    /// Things the caller should say out loud but that are not failures — an
+    /// item selection that starts between keyframes, for instance.
+    pub warnings: Vec<String>,
 }
 
 /// Fetches `url` and writes an MP4 at `out`.
 ///
 /// `headers` are the site's request headers (a referrer, usually); every
-/// request in the walk carries them. `on_bytes` is called with the size of each
-/// segment as it lands, so the caller's progress bar moves while the file does
-/// not exist yet.
+/// request in the walk carries them. `items` is `--playlist-items`: positions
+/// into the segment list, 1-based, or `None` for all of them. `on_bytes` is
+/// called with the size of each segment as it lands, so the caller's progress
+/// bar moves while the file does not exist yet.
 pub fn fetch(
     http: &Http,
     url: &Url,
     headers: &[(String, String)],
     quality: Quality,
+    items: Option<&Items>,
     out: &Path,
     on_bytes: &mut dyn FnMut(u64),
 ) -> Result<Report> {
@@ -90,11 +96,24 @@ pub fn fetch(
     };
 
     let video_media = media_playlist(http, &video_url, &borrowed)?;
+    let video_segments = selected(&video_media, items, &video_url)?;
     let mut segments = 0usize;
-    let video_bytes = fetch_media(http, &video_media, &borrowed, on_bytes, &mut segments)?;
+    let video_bytes = fetch_media(http, &video_segments, &borrowed, on_bytes, &mut segments)?;
     let demuxed = ts::demux(&video_bytes)?;
     let mut duration = video_media.total_duration();
     let video_has_audio = demuxed.audio().is_some();
+    let mut warnings = Vec::new();
+    if items.is_some() {
+        if let Some(first) = demuxed.video().and_then(|track| track.samples.first()) {
+            if !first.keyframe {
+                warnings.push(
+                    "the selection does not begin on a keyframe: the file will not play from \
+                     its first frame in every player"
+                        .to_string(),
+                );
+            }
+        }
+    }
     let mut tracks = demuxed.tracks;
 
     // A variant with an audio group usually carries no audio of its own; when
@@ -102,7 +121,8 @@ pub fn fetch(
     // separate rendition is not fetched over it.
     if let Some(audio_url) = audio_url.filter(|_| !video_has_audio) {
         let audio_media = media_playlist(http, &audio_url, &borrowed)?;
-        let audio_bytes = fetch_media(http, &audio_media, &borrowed, on_bytes, &mut segments)?;
+        let audio_segments = selected(&audio_media, items, &audio_url)?;
+        let audio_bytes = fetch_media(http, &audio_segments, &borrowed, on_bytes, &mut segments)?;
         let audio = ts::demux(&audio_bytes)?;
         match audio.audio() {
             Some(track) => tracks.push(track.clone()),
@@ -123,6 +143,7 @@ pub fn fetch(
         dimensions,
         video_samples: report.video_samples,
         audio_samples: report.audio_samples,
+        warnings,
     })
 }
 
@@ -238,20 +259,48 @@ fn method_name(method: Encryption) -> &'static str {
     }
 }
 
+/// The segments an item selection keeps, in playlist order.
+///
+/// A selection that matches nothing is a refusal: writing an empty file and
+/// calling it success is the one thing this program does not do.
+fn selected<'a>(media: &'a Media, items: Option<&Items>, url: &Url) -> Result<Vec<&'a Segment>> {
+    let chosen: Vec<&Segment> = media
+        .segments
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| match items {
+            Some(items) => items.contains(index + 1),
+            None => true,
+        })
+        .map(|(_, segment)| segment)
+        .collect();
+
+    if let (true, Some(items)) = (chosen.is_empty(), items) {
+        return Err(Error::Refused(format!(
+            "--playlist-items {items} selects none of the {} segments of {url}",
+            media.segments.len()
+        )));
+    }
+    if chosen.is_empty() {
+        return Err(Error::Refused(format!("{url}: the playlist names no segments")));
+    }
+    Ok(chosen)
+}
+
 /// Every segment of one playlist, concatenated.
 ///
 /// Transport streams are packet-aligned, so a segment boundary is always
 /// between two 188-byte packets and the concatenation is itself a stream.
 fn fetch_media(
     http: &Http,
-    media: &Media,
+    chosen: &[&Segment],
     headers: &[(&str, &str)],
     on_bytes: &mut dyn FnMut(u64),
     segments: &mut usize,
 ) -> Result<Vec<u8>> {
     let mut keys: HashMap<String, [u8; KEY_BYTES]> = HashMap::new();
     let mut data = Vec::new();
-    for segment in &media.segments {
+    for segment in chosen {
         let range = segment.range.map(|range| (range.offset, range.length));
         let mut bytes = http.get_bytes(
             "hls-segment",

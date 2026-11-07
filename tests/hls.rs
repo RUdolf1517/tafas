@@ -11,6 +11,7 @@ mod common;
 use common::{temp_dir, ts_segment, Route, TestServer};
 use tafas::hlsfetch;
 use tafas::http::Http;
+use tafas::items::Items;
 use tafas::mux;
 use tafas::select::Quality;
 use tafas::url::Url;
@@ -57,7 +58,7 @@ fn a_media_playlist_becomes_an_mp4() {
     let url = Url::parse(&server.url("/media.m3u8")).unwrap();
 
     let mut seen = 0u64;
-    let report = hlsfetch::fetch(&client(), &url, &[], Quality::Best, &out, &mut |bytes| {
+    let report = hlsfetch::fetch(&client(), &url, &[], Quality::Best, None, &out, &mut |bytes| {
         seen += bytes
     })
     .expect("the pipeline should accept a plain media playlist");
@@ -100,7 +101,7 @@ fn a_master_playlist_is_walked_to_the_chosen_variant() {
         &client(),
         &url,
         &[],
-        Quality::Height(720),
+        Quality::Height(720), None,
         &out,
         &mut |_| {},
     )
@@ -126,7 +127,7 @@ fn an_fmp4_playlist_is_refused_before_a_file_appears() {
     let out = temp_dir("hls-fmp4").join("clip.mp4");
     let url = Url::parse(&server.url("/media.m3u8")).unwrap();
 
-    let error = hlsfetch::fetch(&client(), &url, &[], Quality::Best, &out, &mut |_| {})
+    let error = hlsfetch::fetch(&client(), &url, &[], Quality::Best, None, &out, &mut |_| {})
         .expect_err("fMP4 segments are not read by this build");
     let text = error.to_string();
     assert!(text.contains("fMP4"), "{text}");
@@ -155,7 +156,7 @@ fn byte_ranged_segments_are_cut_out_of_one_object() {
     let out = temp_dir("hls-range").join("clip.mp4");
     let url = Url::parse(&server.url("/media.m3u8")).unwrap();
 
-    let report = hlsfetch::fetch(&client(), &url, &[], Quality::Best, &out, &mut |_| {})
+    let report = hlsfetch::fetch(&client(), &url, &[], Quality::Best, None, &out, &mut |_| {})
         .expect("a byte-range playlist should be assembled");
 
     assert_eq!(report.segments, 2);
@@ -180,7 +181,7 @@ fn a_server_that_ignores_byte_ranges_is_refused() {
     let out = temp_dir("hls-range-ignored").join("clip.mp4");
     let url = Url::parse(&server.url("/media.m3u8")).unwrap();
 
-    let error = hlsfetch::fetch(&client(), &url, &[], Quality::Best, &out, &mut |_| {})
+    let error = hlsfetch::fetch(&client(), &url, &[], Quality::Best, None, &out, &mut |_| {})
         .expect_err("a 200 in place of a 206 means the window is wrong");
     assert!(
         error.to_string().contains("byte-range"),
@@ -224,7 +225,7 @@ fn aes128_segments_are_decrypted_and_the_key_is_fetched_once() {
     let out = temp_dir("hls-aes").join("clip.mp4");
     let url = Url::parse(&server.url("/media.m3u8")).unwrap();
 
-    let report = hlsfetch::fetch(&client(), &url, &[], Quality::Best, &out, &mut |_| {})
+    let report = hlsfetch::fetch(&client(), &url, &[], Quality::Best, None, &out, &mut |_| {})
         .expect("an AES-128 playlist should decrypt into the same file");
 
     assert_eq!(report.segments, 2);
@@ -257,9 +258,77 @@ fn a_key_of_the_wrong_size_is_refused() {
     let out = temp_dir("hls-aes-short-key").join("clip.mp4");
     let url = Url::parse(&server.url("/media.m3u8")).unwrap();
 
-    let error = hlsfetch::fetch(&client(), &url, &[], Quality::Best, &out, &mut |_| {})
+    let error = hlsfetch::fetch(&client(), &url, &[], Quality::Best, None, &out, &mut |_| {})
         .expect_err("eight bytes are not a key");
     let text = error.to_string();
     assert!(text.contains("16 bytes"), "{text}");
+    assert!(!out.exists());
+}
+
+#[test]
+fn a_playlist_selection_fetches_only_the_segments_it_names() {
+    let segment = ts_segment();
+    let playlist = "#EXTM3U\n\
+                    #EXT-X-TARGETDURATION:6\n\
+                    #EXTINF:2.0,\n\
+                    seg1.ts\n\
+                    #EXTINF:2.0,\n\
+                    seg2.ts\n\
+                    #EXTINF:2.0,\n\
+                    seg3.ts\n\
+                    #EXT-X-ENDLIST\n";
+    let server = TestServer::start(vec![
+        Route::ok("/media.m3u8", playlist.as_bytes()),
+        Route::ok("/seg1.ts", &segment),
+        Route::ok("/seg2.ts", &segment),
+        Route::ok("/seg3.ts", &segment),
+    ]);
+    let out = temp_dir("hls-items").join("clip.mp4");
+    let url = Url::parse(&server.url("/media.m3u8")).unwrap();
+    let items = Items::parse("1").unwrap();
+
+    let report = hlsfetch::fetch(
+        &client(),
+        &url,
+        &[],
+        Quality::Best,
+        Some(&items),
+        &out,
+        &mut |_| {},
+    )
+    .expect("one segment out of three is still a stream");
+
+    assert_eq!(report.segments, 1);
+    assert_eq!(server.hits("/seg1.ts"), 1);
+    assert_eq!(server.hits("/seg2.ts"), 0, "an unselected segment is not fetched");
+    assert_eq!(server.hits("/seg3.ts"), 0);
+    let verified = mux::verify(&out).expect("the assembled file should be readable");
+    assert_eq!(verified.sample_total(), 4);
+}
+
+#[test]
+fn a_selection_that_matches_nothing_is_refused() {
+    let segment = ts_segment();
+    let server = TestServer::start(vec![
+        Route::ok("/media.m3u8", media_playlist("seg1.ts").as_bytes()),
+        Route::ok("/seg1.ts", &segment),
+    ]);
+    let out = temp_dir("hls-items-empty").join("clip.mp4");
+    let url = Url::parse(&server.url("/media.m3u8")).unwrap();
+    let items = Items::parse("4-9").unwrap();
+
+    let error = hlsfetch::fetch(
+        &client(),
+        &url,
+        &[],
+        Quality::Best,
+        Some(&items),
+        &out,
+        &mut |_| {},
+    )
+    .expect_err("a playlist with one segment cannot satisfy 4-9");
+    let text = error.to_string();
+    assert!(text.contains("4-9"), "{text}");
+    assert!(text.contains("selects none"), "{text}");
     assert!(!out.exists());
 }
