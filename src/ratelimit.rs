@@ -38,7 +38,7 @@ pub fn parse(text: &str) -> Result<u64, String> {
         _ => (digits, 1u64),
     };
     let number = number.trim();
-    let value: f64 = match number.parse() {
+    let value: f64 = match number.parse::<f64>() {
         Ok(value) if value.is_finite() && value > 0.0 => value,
         _ => return Err(wrong_shape(text)),
     };
