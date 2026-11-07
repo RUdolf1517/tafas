@@ -165,6 +165,20 @@ fn from_item(item: &Value, id: &str, page: &str, headers: &[(String, String)]) -
         text(item, &["author", "uniqueId"]).or_else(|| text(item, &["author", "unique_id"]));
     media.duration = uint(item, &["video", "duration"]);
 
+    // The cover arrives in the same `{urlList: [...]}` shape as every other
+    // asset, and `originCover` is the untouched frame where both are offered.
+    let cover = url_list(item, &["video", "originCover"])
+        .into_iter()
+        .chain(url_list(item, &["video", "cover"]))
+        .next();
+    if let Some(url) = cover {
+        media.thumbnail = Some(Image {
+            url,
+            extension: "jpg",
+            headers: headers.to_vec(),
+        });
+    }
+
     let mut candidates: Vec<(String, Option<u64>)> = Vec::new();
     for key in ["playAddr", "play_addr", "downloadAddr", "download_addr"] {
         if let Some(url) = text(item, &["video", key]) {
@@ -306,6 +320,23 @@ mod tests {
         assert_eq!(media.uploader.as_deref(), Some("someone"));
         assert_eq!(media.formats.len(), 1);
         assert_eq!(media.formats[0].bytes, Some(1234));
+    }
+
+    #[test]
+    fn an_origin_cover_preferred_over_a_cover() {
+        let item = serde_json::json!({
+            "desc": "a clip",
+            "video": {
+                "play_addr": {"url_list": ["https://cdn.example/v.mp4"]},
+                "cover": {"url_list": ["https://cdn.example/cover.jpg"]},
+                "origin_cover": {"url_list": ["https://cdn.example/origin.jpg"]}
+            }
+        });
+        let media = from_item(&item, "4", "https://www.tiktok.com/@a/video/4", &[]);
+        assert_eq!(
+            media.thumbnail.map(|image| image.url),
+            Some("https://cdn.example/origin.jpg".to_string())
+        );
     }
 
     #[test]

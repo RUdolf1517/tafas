@@ -55,6 +55,12 @@ version; adding a site, a flag or a container is minor. The policy is in
   and the files that were written. No media URLs — a signed URL is a credential
   that expires in hours — and the document is written through a temporary and a
   rename, after the media file has landed, never before.
+- **`--write-thumbnail`.** The page's poster frame beside each file, as
+  `<name>.jpg`, `.webp` or `.png` — the site's own bytes, never resized or
+  converted, with the extension following the bytes. The sources are
+  `videoDetails.thumbnail.thumbnails` on YouTube (widest wins), `originCover`
+  then `cover` on TikTok, and `media_url_https` on an X video. Written after the
+  media file, through a temporary and a rename.
 - **`--playlist-items ITEMS`.** `3`, `1-5`, `2-`, or any comma-separated mix,
   counted from one and parsed before the first request. On an HLS playlist the
   item is a segment: the file is assembled from the segments named and no
@@ -70,9 +76,9 @@ version; adding a site, a flag or a container is minor. The policy is in
 `--quality` now applies to a variant list as well: a height ceiling picks the
 best variant at or below it, and `best`/`worst` fall back to bandwidth when the
 playlist states no resolution. One gate remains, named before any file is
-created: a playlist of fMP4 segments (`EXT-X-MAP`). Next are
-`--write-thumbnail` and `--write-subs`, then the packaging channels. Nothing in
-this section changes any existing flag.
+created: a playlist of fMP4 segments (`EXT-X-MAP`). Next are `--write-subs` and
+`--sub-langs`, then the packaging channels. Nothing in this section changes any
+existing flag.
 
 ## [0.1.0] - 2026-11-04
 

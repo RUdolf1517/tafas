@@ -184,6 +184,9 @@ pub struct Media {
     pub duration: Option<u64>,
     pub formats: Vec<Format>,
     pub images: Vec<Image>,
+    /// The poster frame, when the page names one. Written only on request
+    /// (`--write-thumbnail`); nothing here fetches it otherwise.
+    pub thumbnail: Option<Image>,
     pub page_url: String,
 }
 
@@ -197,6 +200,7 @@ impl Media {
             duration: None,
             formats: Vec::new(),
             images: Vec::new(),
+            thumbnail: None,
             page_url,
         }
     }

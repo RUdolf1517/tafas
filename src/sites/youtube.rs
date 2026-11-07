@@ -19,7 +19,7 @@ use serde_json::{json, Value};
 
 use crate::error::{Error, Result};
 use crate::http::{Http, UA_ANDROID, UA_DESKTOP, UA_IOS};
-use crate::model::{Container, Format, Media, Site, StreamKind};
+use crate::model::{Container, Format, Image, Media, Site, StreamKind};
 use crate::sites::{at, json_after, list, text, uint};
 use crate::url::Url;
 
@@ -236,6 +236,8 @@ struct PlayerInfo {
     title: Option<String>,
     uploader: Option<String>,
     duration: Option<u64>,
+    /// The largest poster the player response names.
+    thumbnail: Option<String>,
     formats: Vec<Format>,
     /// `None` when the document reported `OK`; otherwise the status and reason.
     status: Option<String>,
@@ -278,6 +280,7 @@ fn read_player(value: &Value, source: &'static str) -> PlayerInfo {
         title: text(value, &["videoDetails", "title"]),
         uploader: text(value, &["videoDetails", "author"]),
         duration: uint(value, &["videoDetails", "lengthSeconds"]),
+        thumbnail: best_thumbnail(value),
         formats,
         status: if status_code == "OK" {
             None
@@ -289,6 +292,28 @@ fn read_player(value: &Value, source: &'static str) -> PlayerInfo {
         },
         ciphered,
     }
+}
+
+/// The widest poster in `videoDetails.thumbnail.thumbnails`.
+///
+/// The list is ordered smallest first but that is an observation, not a
+/// promise, so the width decides.
+fn best_thumbnail(value: &Value) -> Option<String> {
+    let mut best: Option<(u64, String)> = None;
+    for item in list(value, &["videoDetails", "thumbnail", "thumbnails"]) {
+        let Some(url) = text(item, &["url"]) else {
+            continue;
+        };
+        let width = uint(item, &["width"]).unwrap_or(0);
+        let wins = match &best {
+            Some((widest, _)) => width > *widest,
+            None => true,
+        };
+        if wins {
+            best = Some((width, url));
+        }
+    }
+    best.map(|(_, url)| url)
 }
 
 fn describe(info: &PlayerInfo) -> String {
@@ -310,6 +335,13 @@ fn apply(media: &mut Media, info: PlayerInfo) {
     }
     if let Some(duration) = info.duration {
         media.duration = Some(duration);
+    }
+    if let Some(url) = info.thumbnail {
+        media.thumbnail = Some(Image {
+            url,
+            extension: "jpg",
+            headers: Vec::new(),
+        });
     }
     media.formats = info.formats;
 }
@@ -459,6 +491,29 @@ mod tests {
         assert_eq!(id("https://www.youtube.com/watch?v=short"), None);
         assert_eq!(id("https://www.youtube.com/watch"), None);
         assert_eq!(id("https://www.youtube.com/playlist?list=PL123"), None);
+    }
+
+    #[test]
+    fn the_widest_thumbnail_is_the_one_kept() {
+        let document = serde_json::json!({
+            "playabilityStatus": {"status": "OK"},
+            "videoDetails": {
+                "title": "a video",
+                "thumbnail": {
+                    "thumbnails": [
+                        {"url": "https://i.ytimg.com/vi/x/default.jpg", "width": 120, "height": 90},
+                        {"url": "https://i.ytimg.com/vi/x/maxresdefault.jpg", "width": 1280, "height": 720},
+                        {"url": "https://i.ytimg.com/vi/x/hqdefault.jpg", "width": 480, "height": 360}
+                    ]
+                }
+            },
+            "streamingData": {"formats": []}
+        });
+        let info = read_player(&document, "test");
+        assert_eq!(
+            info.thumbnail.as_deref(),
+            Some("https://i.ytimg.com/vi/x/maxresdefault.jpg")
+        );
     }
 
     #[test]

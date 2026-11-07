@@ -81,6 +81,14 @@ pass that re-reads the result from disk, then one rename. The layout is
 index without seeking to the end (see [guarantees §3](guarantees.md#3-g2--structural-verification)).
 
 | `--write-info-json` | write `<name>.info.json` beside each file |
+| `--write-thumbnail` | write the page's poster frame beside each file |
+
+`--write-thumbnail` fetches the poster the page names and puts it beside the
+media file, as `<name>.jpg`, `.webp` or `.png` — the extension follows the bytes,
+because a `.webp` named `.jpg` is a file half the viewers refuse. Nothing is
+resized or converted. It is written after the media file has landed and through
+a temporary of its own. Two cases are named rather than silent: a page that
+offers no poster, and a photo post, whose images are already files.
 
 The sidecar is written **after** the media file has been renamed into place, so a
 failed run never leaves a document describing a file that does not exist. It

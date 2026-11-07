@@ -138,6 +138,18 @@ pub fn extract(http: &Http, url: &Url, raw: &str) -> Result<Media> {
             }
         }
 
+        // X names the poster of a video with the same field a photo uses, so a
+        // video detail carries both the stream and its still.
+        if is_video && detail.get("video_info").is_some() {
+            if let Some(poster) = text(detail, &["media_url_https"]) {
+                media.thumbnail = Some(Image {
+                    url: poster,
+                    extension: "jpg",
+                    headers: request_headers.clone(),
+                });
+            }
+        }
+
         if kind == "photo" {
             if let Some(image_url) = text(detail, &["media_url_https"]) {
                 media.images.push(Image {

@@ -75,6 +75,10 @@ pub struct Args {
     #[arg(long)]
     pub write_info_json: bool,
 
+    /// Write the page's poster frame beside each file
+    #[arg(long)]
+    pub write_thumbnail: bool,
+
     /// Exact stream id to fetch, as printed by --list-formats
     #[arg(long, value_name = "ID")]
     pub format: Option<String>,
@@ -209,6 +213,7 @@ impl Args {
             quality: self.quality,
             audio_only: self.audio_only,
             write_info_json: self.write_info_json,
+            write_thumbnail: self.write_thumbnail,
             format: self.format.clone(),
             no_mux: self.no_mux,
             overwrite: self.overwrite,

@@ -73,6 +73,13 @@ Write \fI<name>.info.json\fR beside each file: the page, the title, the streams
 the page offered, which one was taken, and the files that were written. Media
 URLs are deliberately left out \— a signed URL is a credential that expires
 within hours, and a file that outlives it should not carry one.
+.TP
+.B \-\-write\-thumbnail
+Write the page's poster frame beside each file, as \fI<name>.jpg\fR,
+\fI<name>.webp\fR or \fI<name>.png\fR: the site's own format, copied byte for
+byte and never re\-encoded. It lands after the media file, through a temporary
+and a rename. A page that offers no poster says so rather than writing nothing
+quietly, and a photo post is skipped by name: every image is already a file.
 .SS Selection
 .TP
 .B \-Q, \-\-quality \fIQUALITY\fR
@@ -202,6 +209,9 @@ The two halves of a remux, present only while it is running or after a failure.
 .I <target stem>.info.json
 Written only with \fB\-\-write\-info\-json\fR, and only after the file it
 describes has been renamed into place.
+.TP
+.I <target stem>.jpg, .webp, .png
+The poster frame, written only with \fB\-\-write\-thumbnail\fR.
 .SH SEE ALSO
 .BR curl (1),
 .BR ffmpeg (1)

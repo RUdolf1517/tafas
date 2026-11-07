@@ -31,6 +31,7 @@ use crate::report::{self, Item, Status, Totals};
 use crate::select::{self, Plan};
 use crate::sites;
 use crate::style::{self, Pen};
+use crate::thumbnails;
 use crate::url::Url;
 
 /// Everything the command line decided.
@@ -43,6 +44,8 @@ pub struct Options {
     pub audio_only: bool,
     /// `--write-info-json`: a sidecar describing the page and the choice.
     pub write_info_json: bool,
+    /// `--write-thumbnail`: the poster frame, beside the file.
+    pub write_thumbnail: bool,
     pub format: Option<String>,
     pub no_mux: bool,
     pub overwrite: bool,
@@ -72,6 +75,7 @@ impl Default for Options {
             quality: select::Quality::Best,
             audio_only: false,
             write_info_json: false,
+            write_thumbnail: false,
             format: None,
             no_mux: false,
             overwrite: false,
@@ -379,6 +383,10 @@ fn handle(
     let bytes = fetch_plan(http, &plan, &target, options, printer)?;
     item.bytes = bytes;
 
+    if options.write_thumbnail {
+        write_thumbnail(http, &media, &plan, &target, options, printer)?;
+    }
+
     if options.write_info_json {
         if matches!(plan, Plan::Images(_)) {
             printer.warn(
@@ -403,6 +411,37 @@ fn handle(
 
     item.path = Some(target);
     Ok(Status::Downloaded)
+}
+
+/// `--write-thumbnail`: the poster frame, beside the media file.
+///
+/// It is written after the media file has landed, and a failure here is a
+/// failure of the item: the file the user asked for is on disk either way, but
+/// a silent thumbnail is the kind of quiet skips this program does not do.
+fn write_thumbnail(
+    http: &Http,
+    media: &Media,
+    plan: &Plan,
+    target: &Path,
+    options: &Options,
+    printer: &Printer,
+) -> Result<()> {
+    if matches!(plan, Plan::Images(_)) {
+        printer.warn(
+            "note: --write-thumbnail is not written for photo posts; every image is already a \
+             file of its own",
+        );
+        return Ok(());
+    }
+    let Some(thumbnail) = media.thumbnail.as_ref() else {
+        printer.warn("note: this page offered no thumbnail; nothing was written");
+        return Ok(());
+    };
+    let path = thumbnails::write(http, thumbnail, target)?;
+    if !options.json && !options.quiet {
+        printer.note(&format!("wrote {}", path.display()));
+    }
+    Ok(())
 }
 
 /// `-o -`: the media bytes themselves on stdout. Only possible when the result
