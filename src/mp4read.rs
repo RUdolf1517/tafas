@@ -701,6 +701,7 @@ struct RunSample {
     composition_offset: i32,
 }
 
+#[derive(Debug)]
 struct Run {
     data_offset: Option<i32>,
     samples: Vec<RunSample>,
@@ -993,6 +994,48 @@ mod tests {
         let text = error.to_string();
         assert!(text.contains("track 1"), "{text}");
         assert!(text.contains("bytes"), "{text}");
+    }
+
+    #[test]
+    fn the_fixture_has_the_boxes_the_reader_walks() {
+        let media = fragment(1, 0, &[(4, true), (4, false)], b"AAAABBBB");
+        let top = scan(&media, 0, media.len()).unwrap();
+        let kinds: Vec<String> = top
+            .iter()
+            .map(|bx| format!("{}({}..{})", name(&bx.kind), bx.start, bx.end))
+            .map(|k| k.to_string())
+            .collect();
+        let moof = top.into_iter().find(|bx| &bx.kind == b"moof").unwrap();
+        let inside: Vec<String> = scan(&media, moof.body_start, moof.end)
+            .unwrap()
+            .iter()
+            .map(|bx| format!("{}({}..{})", name(&bx.kind), bx.body_start, bx.end))
+            .collect();
+        let traf = scan(&media, moof.body_start, moof.end)
+            .unwrap()
+            .into_iter()
+            .find(|bx| &bx.kind == b"traf")
+            .unwrap();
+        let parts: Vec<String> = scan(&media, traf.body_start, traf.end)
+            .unwrap()
+            .iter()
+            .map(|bx| format!("{}:{:02x?}", name(&bx.kind), &media[bx.body_start..bx.end]))
+            .collect();
+        let trun = scan(&media, traf.body_start, traf.end)
+            .unwrap()
+            .into_iter()
+            .find(|bx| &bx.kind == b"trun")
+            .unwrap();
+        let run = parse_trun(
+            &media,
+            &trun,
+            &Defaults {
+                duration: 3_000,
+                size: 0,
+                flags: 0,
+            },
+        );
+        panic!("top {kinds:?} inside {inside:?} parts {parts:?} run {run:?}");
     }
 
     #[test]
