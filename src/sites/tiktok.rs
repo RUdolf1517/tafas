@@ -169,6 +169,7 @@ fn from_item(item: &Value, id: &str, page: &str, headers: &[(String, String)]) -
     // asset, and `originCover` is the untouched frame where both are offered.
     let cover = url_list(item, &["video", "originCover"])
         .into_iter()
+        .chain(url_list(item, &["video", "origin_cover"]))
         .chain(url_list(item, &["video", "cover"]))
         .next();
     if let Some(url) = cover {

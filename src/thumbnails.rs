@@ -103,10 +103,7 @@ mod tests {
 
     #[test]
     fn a_known_extension_is_kept() {
-        assert_eq!(
-            extension_of("https://i.ytimg.com/vi/x/maxresdefault.jpg"),
-            Some("jpg")
-        );
+        assert_eq!(extension_of("https://i.ytimg.com/vi/x/maxresdefault.jpg"), Some("jpg"));
         assert_eq!(extension_of("https://cdn.example/cover.jpeg"), Some("jpg"));
         assert_eq!(extension_of("https://cdn.example/cover.webp"), Some("webp"));
         assert_eq!(extension_of("https://cdn.example/cover.png"), Some("png"));
