@@ -99,7 +99,31 @@ domains match, never written back, and never logged. tafas still has no sign-in
 flow and stores nothing between runs — the file is the user's, and using it is
 the user's decision. Details in [safety §5](safety.md#5-network).
 
-### 2.5 Live streams
+### 2.5 Captions, and the languages a video does not have
+
+`--write-subs` writes WebVTT, one file per selected track:
+`<name>.<language>.vtt`, or `<name>.<language>.auto.vtt` when the site
+transcribed the audio rather than a person writing the cues. The two are never
+merged and never presented as the same thing, because one of them is usually
+wrong in the places that matter.
+
+The tracks come from `captions.playerCaptionsTracklistRenderer.captionTracks`,
+and each `baseUrl` is asked for `fmt=vtt` at parse time — the format is decided
+in one place, not at fetch time.
+
+| Situation | Output |
+| --- | --- |
+| `--sub-langs` names a track the video does not have | refusal (exit 1) naming the languages it does have, or `none` |
+| `--sub-langs` with a `*` that matches several tracks | all of them, one file each |
+| the video lists no captions at all, no `--sub-langs` given | a note on stderr, exit 0: the video is what was asked for and it is on disk |
+| `timedtext` answers `200` with an empty body | refusal naming the route, not the language: YouTube does this to some networks |
+| `timedtext` answers with something that is not WebVTT | refusal stating how many bytes arrived |
+| `--sub-langs` without `--write-subs` | usage error (exit 2), before any request |
+
+A track is a reference until the flag asks for it: nothing is fetched otherwise,
+and `--list-formats` does not print them.
+
+### 2.6 Live streams
 
 A live stream without a finished recording has no fixed `mdat` to fetch; the
 manifest is a rolling list of fragments. This build does not stitch fragments,
@@ -136,6 +160,10 @@ attribution. Neither is re-encoded: whatever TikTok serves is what is written.
 | region-restricted post | refusal quoting the status message |
 | photo post | images are downloaded; a photo post with no video is not an error |
 
+TikTok names no caption tracks, so `--write-subs` there is a note rather than a
+file, and `--sub-langs` names a language the site cannot offer: a refusal that
+says so, because guessing would be a quiet lie.
+
 ## 4. X
 
 ### 4.1 Route
@@ -171,6 +199,10 @@ video; use `--list-formats` to see both.
 | tombstone (deleted, protected, age-restricted) | refusal naming the missing account |
 | post with no media at all | `unsupported` |
 | id not found by syndication | `unsupported`, because the endpoint answers 404 for old and private posts alike |
+| `--write-subs` | a note: X carries no caption tracks |
+
+The X refusal table stays three rows long on purpose: a post either has media or
+it does not, and a caption flag cannot change that.
 
 ## 5. What a refusal looks like, and what it does not
 

@@ -123,9 +123,15 @@ the word "verified". The parts that are genuinely independent:
 - any panic, any out-of-bounds read, is a `verify`/`parse` error before a rename,
   never a half-written destination.
 
-A future version may add an independent demuxer as a dev-dependency for tests
-(see [roadmap](roadmap.md) §6). Until then, this paragraph is the honest version
-of the claim.
+What the test suite now adds is a genuinely independent reader:
+`tests/common/mp4.rs` walks boxes from the ISO-BMFF definition and imports
+neither `mux` nor `mp4write`, and `tests/hls.rs` reads every assembled file with
+it before believing the writer's own verifier. It is test-only code and makes no
+promise about a user's file — the promise there remains the second pass — but it
+means a bug in the box parser can no longer hide behind a second call to the same
+parser. `tests/mp4.rs` keeps the independent reader honest by feeding it a file
+built byte by byte in the test, including one whose chunk offset points into the
+header.
 
 ## 7. What is deliberately absent
 

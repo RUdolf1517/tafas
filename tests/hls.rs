@@ -343,3 +343,42 @@ fn a_selection_that_matches_nothing_is_refused() {
     assert!(text.contains("selects none"), "{text}");
     assert!(!out.exists());
 }
+
+/// The file the pipeline wrote, read by a parser that shares no code with the
+/// writer: the guarantee `docs/guarantees.md` §6 makes, exercised on the one
+/// path that builds a file from nothing.
+#[test]
+fn an_independent_reader_agrees_with_the_written_file() {
+    let segment = ts_segment();
+    let server = TestServer::start(vec![
+        Route::ok("/media.m3u8", media_playlist("seg1.ts").as_bytes()),
+        Route::ok("/seg1.ts", &segment),
+    ]);
+    let out = temp_dir("hls-independent").join("clip.mp4");
+    let url = Url::parse(&server.url("/media.m3u8")).unwrap();
+
+    hlsfetch::fetch(&client(), &url, &[], Quality::Best, None, &out, &mut |_| {})
+        .expect("the pipeline should accept a plain media playlist");
+
+    let bytes = std::fs::read(&out).expect("the file is on disk");
+    let movie = common::mp4::read(&bytes).expect("the independent reader accepts it");
+
+    assert_eq!(movie.tracks.len(), 2, "one video track and one audio track");
+    let video = movie.track("vide").expect("a video track");
+    let audio = movie.track("soun").expect("an audio track");
+    assert_eq!(video.codec, "avc1", "the sample description says H.264");
+    assert_eq!(audio.codec, "mp4a", "and the audio one says AAC");
+    assert_eq!(video.samples.len(), 2);
+    assert_eq!(audio.samples.len(), 2);
+
+    for sample in video.samples.iter().chain(audio.samples.iter()) {
+        assert!(
+            movie.inside_mdat(sample),
+            "a sample at {} with {} bytes is outside every mdat",
+            sample.offset,
+            sample.size
+        );
+        assert!(sample.size > 0, "an empty sample is a rewrite that lost data");
+    }
+    assert_eq!(video.keyframes(), 2, "both slices are IDRs");
+}

@@ -26,6 +26,7 @@ this repository opens and closes itself.
 | sidecar | unit tests in `src/info.rs` | the document names the page, the streams and the files, carries no media URL, and is written through a temporary that is gone after the rename |
 | cookies | `tests/cookies.rs` | a jar on disk and a fixture route that answers `403` without the session cookie; host, `Secure` and header-merging rules |
 | HLS | `tests/hls.rs` | a playlist, segments, byte ranges and AES-128 segments on a socket, assembled into an MP4 that `mux::verify` accepts; fMP4, short keys and ignored ranges refused before a file exists |
+| independent reader | `tests/common/mp4.rs`, `tests/mp4.rs` | a second box walker, sharing no code with `mux` or `mp4write`, that reads the written file and checks every sample offset against `mdat`; tested against a file it builds itself byte by byte |
 | packaging | `tests/packaging.rs` | every option in `--help` appears in `man/tafas.1`; no `Command::new` in `src/`; the capability document is valid JSON |
 
 Fixtures are **built by code**, never committed. A reviewer can read what a test

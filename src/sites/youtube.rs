@@ -19,7 +19,7 @@ use serde_json::{json, Value};
 
 use crate::error::{Error, Result};
 use crate::http::{Http, UA_ANDROID, UA_DESKTOP, UA_IOS};
-use crate::model::{Container, Format, Image, Media, Site, StreamKind};
+use crate::model::{Container, Format, Image, Media, Site, StreamKind, Subtitle};
 use crate::sites::{at, json_after, list, text, uint};
 use crate::url::Url;
 
@@ -238,6 +238,8 @@ struct PlayerInfo {
     duration: Option<u64>,
     /// The largest poster the player response names.
     thumbnail: Option<String>,
+    /// The caption tracks the player response lists.
+    subtitles: Vec<Subtitle>,
     formats: Vec<Format>,
     /// `None` when the document reported `OK`; otherwise the status and reason.
     status: Option<String>,
@@ -281,6 +283,7 @@ fn read_player(value: &Value, source: &'static str) -> PlayerInfo {
         uploader: text(value, &["videoDetails", "author"]),
         duration: uint(value, &["videoDetails", "lengthSeconds"]),
         thumbnail: best_thumbnail(value),
+        subtitles: caption_tracks(value),
         formats,
         status: if status_code == "OK" {
             None
@@ -292,6 +295,52 @@ fn read_player(value: &Value, source: &'static str) -> PlayerInfo {
         },
         ciphered,
     }
+}
+
+/// The caption tracks in `captions.playerCaptionsTracklistRenderer`.
+///
+/// Each one is a *reference*: the cues are on the `timedtext` route, and the
+/// URL is asked for WebVTT here rather than at fetch time, so the document a
+/// user gets is decided by the extractor in one place.
+fn caption_tracks(value: &Value) -> Vec<Subtitle> {
+    let mut tracks = Vec::new();
+    for item in list(
+        value,
+        &[
+            "captions",
+            "playerCaptionsTracklistRenderer",
+            "captionTracks",
+        ],
+    ) {
+        let Some(base) = text(item, &["baseUrl"]) else {
+            continue;
+        };
+        let Some(language) = text(item, &["languageCode"]) else {
+            continue;
+        };
+        // `kind: "asr"` is the machine transcript. Everything else a person
+        // (or a studio) wrote, which is the version worth trusting.
+        let automatic = text(item, &["kind"])
+            .map(|kind| kind.eq_ignore_ascii_case("asr"))
+            .unwrap_or(false);
+        tracks.push(Subtitle {
+            language,
+            name: text(item, &["name", "simpleText"]),
+            automatic,
+            url: webvtt_url(&base),
+            headers: Vec::new(),
+        });
+    }
+    tracks
+}
+
+/// `&fmt=vtt` on a `timedtext` URL: the same cues as WebVTT instead of XML.
+fn webvtt_url(base: &str) -> String {
+    if base.contains("fmt=") {
+        return base.to_string();
+    }
+    let separator = if base.contains('?') { '&' } else { '?' };
+    format!("{base}{separator}fmt=vtt")
 }
 
 /// The widest poster in `videoDetails.thumbnail.thumbnails`.
@@ -343,6 +392,7 @@ fn apply(media: &mut Media, info: PlayerInfo) {
             headers: Vec::new(),
         });
     }
+    media.subtitles = info.subtitles;
     media.formats = info.formats;
 }
 

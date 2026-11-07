@@ -82,6 +82,8 @@ index without seeking to the end (see [guarantees §3](guarantees.md#3-g2--struc
 
 | `--write-info-json` | write `<name>.info.json` beside each file |
 | `--write-thumbnail` | write the page's poster frame beside each file |
+| `--write-subs` | write the page's caption tracks beside each file, as WebVTT |
+| `--sub-langs LANGS` | which caption languages: `all` (default), `en`, `pt-BR`, `en*` |
 
 `--write-thumbnail` fetches the poster the page names and puts it beside the
 media file, as `<name>.jpg`, `.webp` or `.png` — the extension follows the bytes,
@@ -89,6 +91,21 @@ because a `.webp` named `.jpg` is a file half the viewers refuse. Nothing is
 resized or converted. It is written after the media file has landed and through
 a temporary of its own. Two cases are named rather than silent: a page that
 offers no poster, and a photo post, whose images are already files.
+
+`--write-subs` writes one WebVTT file per selected track:
+`<name>.<language>.vtt`, or `<name>.<language>.auto.vtt` for a machine
+transcript. `--sub-langs` takes `all` (the default when the flag is absent), an
+exact code, a prefix with a trailing `*`, or a comma-separated union of them,
+case-insensitively. Three outcomes are told apart:
+
+| Situation | Result |
+| --- | --- |
+| the page lists no captions and `--sub-langs` was not given | a note, exit 0 — the video is on disk, which is what was asked for |
+| `--sub-langs` matches no track | refusal (1), naming the languages the page does offer or `none` |
+| a track's body is empty or is not WebVTT | refusal (1) quoting the route — an empty `timedtext` body is a network matter, not a missing language |
+
+`--sub-langs` without `--write-subs` is a usage error (2), decided before any
+request: a flag that would do nothing is a mistake, not a preference.
 
 The sidecar is written **after** the media file has been renamed into place, so a
 failed run never leaves a document describing a file that does not exist. It

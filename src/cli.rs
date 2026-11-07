@@ -79,6 +79,14 @@ pub struct Args {
     #[arg(long)]
     pub write_thumbnail: bool,
 
+    /// Write the page's caption tracks beside each file, as WebVTT
+    #[arg(long)]
+    pub write_subs: bool,
+
+    /// Which caption languages to write: en, ru, pt-BR, en*, or all (default all)
+    #[arg(long, value_name = "LANGS", value_parser = parse_sub_langs)]
+    pub sub_langs: Option<crate::subtitles::Selection>,
+
     /// Exact stream id to fetch, as printed by --list-formats
     #[arg(long, value_name = "ID")]
     pub format: Option<String>,
@@ -177,6 +185,10 @@ fn parse_quality(text: &str) -> Result<Quality, String> {
     Quality::parse(text).map_err(|error| error.to_string())
 }
 
+fn parse_sub_langs(text: &str) -> Result<crate::subtitles::Selection, String> {
+    crate::subtitles::Selection::parse(text).map_err(|error| error.to_string())
+}
+
 fn parse_items(text: &str) -> Result<crate::items::Items, String> {
     crate::items::Items::parse(text).map_err(|error| error.to_string())
 }
@@ -214,6 +226,8 @@ impl Args {
             audio_only: self.audio_only,
             write_info_json: self.write_info_json,
             write_thumbnail: self.write_thumbnail,
+            write_subs: self.write_subs,
+            sub_langs: self.sub_langs.clone(),
             format: self.format.clone(),
             no_mux: self.no_mux,
             overwrite: self.overwrite,

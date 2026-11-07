@@ -23,7 +23,7 @@ use crate::hlsfetch;
 use crate::http::Http;
 use crate::info;
 use crate::items;
-use crate::model::{Container, Format, Image, Media};
+use crate::model::{Container, Format, Image, Media, Subtitle};
 use crate::mux;
 use crate::names;
 use crate::progress::{human_bytes, Progress};
@@ -31,6 +31,7 @@ use crate::report::{self, Item, Status, Totals};
 use crate::select::{self, Plan};
 use crate::sites;
 use crate::style::{self, Pen};
+use crate::subtitles;
 use crate::thumbnails;
 use crate::url::Url;
 
@@ -46,6 +47,10 @@ pub struct Options {
     pub write_info_json: bool,
     /// `--write-thumbnail`: the poster frame, beside the file.
     pub write_thumbnail: bool,
+    /// `--write-subs`: the caption tracks, beside the file.
+    pub write_subs: bool,
+    /// `--sub-langs`: which of them. `None` means "every track the page lists".
+    pub sub_langs: Option<subtitles::Selection>,
     pub format: Option<String>,
     pub no_mux: bool,
     pub overwrite: bool,
@@ -76,6 +81,8 @@ impl Default for Options {
             audio_only: false,
             write_info_json: false,
             write_thumbnail: false,
+            write_subs: false,
+            sub_langs: None,
             format: None,
             no_mux: false,
             overwrite: false,
@@ -387,6 +394,10 @@ fn handle(
         write_thumbnail(http, &media, &plan, &target, options, printer)?;
     }
 
+    if options.write_subs {
+        write_subtitles(http, &media, &target, options, printer)?;
+    }
+
     if options.write_info_json {
         if matches!(plan, Plan::Images(_)) {
             printer.warn(
@@ -411,6 +422,56 @@ fn handle(
 
     item.path = Some(target);
     Ok(Status::Downloaded)
+}
+
+/// `--write-subs`: every caption track the selection names, as WebVTT.
+///
+/// Two failures are told apart on purpose. A page that lists no captions at all
+/// is a note — the video is what the user asked for and it is on disk. A
+/// `--sub-langs` that matches nothing is a refusal: a specific thing was asked
+/// for and the page does not have it, and the message says what it does have.
+fn write_subtitles(
+    http: &Http,
+    media: &Media,
+    target: &Path,
+    options: &Options,
+    printer: &Printer,
+) -> Result<()> {
+    let selection = options.sub_langs.clone().unwrap_or_else(subtitles::Selection::all);
+    let chosen: Vec<&Subtitle> = media
+        .subtitles
+        .iter()
+        .filter(|subtitle| selection.matches(&subtitle.language))
+        .collect();
+
+    if chosen.is_empty() {
+        if options.sub_langs.is_some() {
+            let available = if media.subtitles.is_empty() {
+                "none".to_string()
+            } else {
+                media
+                    .subtitles
+                    .iter()
+                    .map(|subtitle| subtitle.language.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            };
+            return Err(Error::Refused(format!(
+                "{} {}: no caption track matches --sub-langs {selection}; the page offers {available}",
+                media.site, media.id
+            )));
+        }
+        printer.warn("note: this page offers no caption tracks; nothing was written");
+        return Ok(());
+    }
+
+    for subtitle in chosen {
+        let path = subtitles::write(http, subtitle, target)?;
+        if !options.json && !options.quiet {
+            printer.note(&format!("wrote {}", path.display()));
+        }
+    }
+    Ok(())
 }
 
 /// `--write-thumbnail`: the poster frame, beside the media file.
@@ -483,6 +544,13 @@ fn stream_to_stdout(
         .iter()
         .map(|(name, value)| (name.as_str(), value.as_str()))
         .collect();
+
+    if options.write_subs || options.write_thumbnail {
+        printer.warn(
+            "note: -o - writes one stream to a pipe, which has nowhere to put a sidecar; no \
+             caption or thumbnail file was written",
+        );
+    }
 
     let mut progress = printer.progress(format.label(), format.bytes);
     let stdout = io::stdout();

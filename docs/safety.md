@@ -93,6 +93,7 @@ except the temporaries this run made.
 | response ceilings | 16 MiB for JSON, 24 MiB for HTML — a page larger than that is not a page we can use |
 | HLS segments | one at a time, 64 MiB each at most; decrypted in memory and dropped once the samples are lifted out |
 | HLS keys | fetched once per URI and required to be exactly 16 bytes |
+| captions | WebVTT only, 16 MiB each; a body that is empty or is not WebVTT is a refusal, not an empty file |
 | retries | transport errors, `429`, `5xx`; never `4xx` |
 | proxy | `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY` — the client's own handling, not a flag |
 | cookies | none of its own: YouTube receives the consent cookie, which is what makes a European request return a page at all; otherwise only what `--cookies FILE` supplies, matched by domain, path, `Secure` and expiry |

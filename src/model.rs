@@ -172,6 +172,60 @@ pub struct Image {
     pub headers: Vec<(String, String)>,
 }
 
+/// One caption track the page offers.
+///
+/// A track is a *reference*, not a document: the cues are fetched only when
+/// `--write-subs` asks for them, and the site's language code is what
+/// `--sub-langs` matches against.
+#[derive(Debug, Clone)]
+pub struct Subtitle {
+    /// The site's own code: `en`, `en-US`, `ru`.
+    pub language: String,
+    /// What the site calls the track, when it says: "English (auto-generated)".
+    pub name: Option<String>,
+    /// True when the site produced the cues from the audio rather than a person
+    /// writing them. The file name says which, because they are not the same
+    /// thing and one of them is usually wrong.
+    pub automatic: bool,
+    pub url: String,
+    pub headers: Vec<(String, String)>,
+}
+
+impl Subtitle {
+    /// `<stem>.<language>.vtt`, or `<stem>.<language>.auto.vtt` for a
+    /// machine-transcribed track.
+    pub fn file_name(&self, stem: &str) -> String {
+        let language = language_code(&self.language);
+        if self.automatic {
+            format!("{stem}.{language}.auto.vtt")
+        } else {
+            format!("{stem}.{language}.vtt")
+        }
+    }
+}
+
+/// A language code, reduced to what a file name can hold. Codes are ASCII
+/// (`en`, `pt-BR`, `zh-Hans`) but they come from a page, so the shape is
+/// enforced rather than assumed.
+pub fn language_code(language: &str) -> String {
+    let cleaned: String = language
+        .trim()
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    if cleaned.is_empty() {
+        "und".to_string()
+    } else {
+        cleaned
+    }
+}
+
 /// Everything the extractor learned about one page, before any stream is
 /// fetched.
 #[derive(Debug, Clone)]
@@ -187,6 +241,9 @@ pub struct Media {
     /// The poster frame, when the page names one. Written only on request
     /// (`--write-thumbnail`); nothing here fetches it otherwise.
     pub thumbnail: Option<Image>,
+    /// The caption tracks the page lists. Empty means the page offers none,
+    /// which is a fact worth reporting rather than an error.
+    pub subtitles: Vec<Subtitle>,
     pub page_url: String,
 }
 
@@ -201,6 +258,7 @@ impl Media {
             formats: Vec::new(),
             images: Vec::new(),
             thumbnail: None,
+            subtitles: Vec::new(),
             page_url,
         }
     }

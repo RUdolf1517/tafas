@@ -44,6 +44,13 @@ fn main() -> ExitCode {
         usage(&args, "no URL given");
         return ExitCode::from(2);
     }
+    if args.sub_langs.is_some() && !args.write_subs {
+        usage(
+            &args,
+            "--sub-langs chooses which caption tracks to write, so it needs --write-subs",
+        );
+        return ExitCode::from(2);
+    }
     if args.format.is_some() && args.urls.len() > 1 {
         usage(
             &args,

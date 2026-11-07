@@ -9,6 +9,8 @@
 
 #![allow(dead_code)]
 
+pub mod mp4;
+
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};

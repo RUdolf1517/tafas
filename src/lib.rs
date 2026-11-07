@@ -25,6 +25,7 @@ pub mod report;
 pub mod select;
 pub mod sites;
 pub mod style;
+pub mod subtitles;
 pub mod thumbnails;
 pub mod ts;
 pub mod url;
