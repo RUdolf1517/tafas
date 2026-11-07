@@ -169,7 +169,11 @@ fn hls_url(value: &Value) -> Option<String> {
                 continue;
             };
             let rank = if name.as_str() == "gcs" { 0 } else { 1 };
-            if best.as_ref().map(|(ranked, _)| rank < *ranked).unwrap_or(true) {
+            if best
+                .as_ref()
+                .map(|(ranked, _)| rank < *ranked)
+                .unwrap_or(true)
+            {
                 best = Some((rank, url.to_string()));
             }
         }
@@ -182,7 +186,10 @@ fn hls_url(value: &Value) -> Option<String> {
 
 fn request_headers() -> Vec<(String, String)> {
     vec![
-        ("user-agent".to_string(), crate::http::UA_DESKTOP.to_string()),
+        (
+            "user-agent".to_string(),
+            crate::http::UA_DESKTOP.to_string(),
+        ),
         ("referer".to_string(), "https://vimeo.com/".to_string()),
     ]
 }
@@ -277,7 +284,11 @@ mod tests {
         assert_eq!(media.site, Site::Vimeo);
         assert_eq!(media.title, "The New Vimeo Player");
         assert_eq!(media.uploader.as_deref(), Some("Vimeo"));
-        assert_eq!(media.duration, Some(62), "the float is rounded, not truncated");
+        assert_eq!(
+            media.duration,
+            Some(62),
+            "the float is rounded, not truncated"
+        );
         assert_eq!(
             media.thumbnail.as_ref().map(|image| image.url.as_str()),
             Some("https://i.vimeocdn.com/video/1280x720.jpg"),
