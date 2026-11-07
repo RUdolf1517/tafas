@@ -177,8 +177,11 @@ function Get-UserPathEntries {
     return @(([string]$raw).Split([char[]]@(';')) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
 }
 
+# The user PATH is state under test, not scratch space: cases assert on what an
+# install added and an uninstall took back, so it is left alone between them and
+# restored once in `finally`. Only the process PATH is reset, so that one case's
+# in-process entry does not make the next case's lookup succeed by accident.
 function Reset-Environment {
-    [Environment]::SetEnvironmentVariable('Path', $script:BaselineUserPath, [EnvironmentVariableTarget]::User)
     $env:Path = [Environment]::GetEnvironmentVariable('Path', [EnvironmentVariableTarget]::Machine)
 }
 

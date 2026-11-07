@@ -448,7 +448,7 @@ function Assert-TafasExecutableAvailable {
             }
         }
     }
-    throw "Cannot replace '$ExecutablePath': it is open, locked, or unreadable. Close programs using tafas and retry. $lastError"
+    throw "Cannot replace '$ExecutablePath': it is open, locked, or unreadable. Close programs using tafas and retry. $($lastError.Message)"
 }
 
 function Test-TafasArchiveEntries {
