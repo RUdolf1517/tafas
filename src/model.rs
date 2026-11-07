@@ -1,6 +1,6 @@
 use std::fmt;
 
-/// The five sites this build knows how to read.
+/// The six sites this build knows how to read.
 ///
 /// A site is a *reader*, not a guarantee: `Site::from_url` answering `Some`
 /// only means the URL names the site, not that the page can be captured. The
@@ -12,6 +12,7 @@ pub enum Site {
     X,
     Vimeo,
     Reddit,
+    SoundCloud,
 }
 
 impl Site {
@@ -22,6 +23,7 @@ impl Site {
             Site::X => "x",
             Site::Vimeo => "vimeo",
             Site::Reddit => "reddit",
+            Site::SoundCloud => "soundcloud",
         }
     }
 
@@ -37,6 +39,7 @@ impl Site {
             "x.com" | "twitter.com" | "t.co" | "mobile.twitter.com" => Some(Site::X),
             "vimeo.com" | "player.vimeo.com" => Some(Site::Vimeo),
             "reddit.com" | "old.reddit.com" | "redd.it" | "v.redd.it" => Some(Site::Reddit),
+            "soundcloud.com" | "on.soundcloud.com" => Some(Site::SoundCloud),
             _ => None,
         }
     }
@@ -84,6 +87,9 @@ pub enum Container {
     /// through: it is the only one that changes shape on the way to disk.
     Hls,
     Jpeg,
+    /// MP3, which is written verbatim: there is no container to rebuild and
+    /// nothing to verify beyond the byte count.
+    Mp3,
     Unknown,
 }
 
@@ -93,6 +99,7 @@ impl Container {
             Container::Mp4 | Container::Ts | Container::Hls => "mp4",
             Container::Webm => "webm",
             Container::Jpeg => "jpg",
+            Container::Mp3 => "mp3",
             Container::Unknown => "bin",
         }
     }
@@ -105,6 +112,7 @@ impl Container {
             Container::Ts => "ts",
             Container::Hls => "hls",
             Container::Jpeg => "jpg",
+            Container::Mp3 => "mp3",
             Container::Unknown => "bin",
         }
     }
@@ -319,6 +327,12 @@ mod tests {
         assert_eq!(site("https://v.redd.it/abc"), Some(Site::Reddit));
         assert_eq!(site("https://redd.it/abc"), Some(Site::Reddit));
         assert_eq!(site("https://notreddit.com/1"), None);
+        assert_eq!(
+            site("https://soundcloud.com/artist/track"),
+            Some(Site::SoundCloud)
+        );
+        assert_eq!(site("https://on.soundcloud.com/abc"), Some(Site::SoundCloud));
+        assert_eq!(site("https://notsoundcloud.com/1"), None);
         assert_eq!(site("https://t.co/abc"), Some(Site::X));
     }
 

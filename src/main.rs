@@ -136,13 +136,19 @@ fn capabilities() -> String {
                 "hls": true,
                 "progressive": "not offered: DASH_<height>.mp4 carries no audio",
                 "cookies": "user-supplied (--cookies FILE)"
+            },
+            "soundcloud": {
+                "routes": ["page hydration, then the transcoding document"],
+                "container": "mp3, copied verbatim",
+                "hls_opus": false,
+                "cookies": "user-supplied (--cookies FILE)"
             }
         },
         "extractor_args": {
             "youtube:client": tafas::extractor_args::YOUTUBE_CLIENTS,
             "tiktok:route": tafas::extractor_args::TIKTOK_ROUTES
         },
-        "containers": ["mp4", "m4a"],
+        "containers": ["mp4", "m4a", "mp3"],
         "subtitles": {
             "sidecar": "webvtt, one .vtt per selected track",
             "embedded": "wvtt (WebVTT in ISO-BMFF), one track per file",
@@ -185,7 +191,7 @@ fn info(args: &Args) -> String {
         env!("CARGO_PKG_VERSION")
     ));
     out.push_str(
-        "capture YouTube, TikTok, X, Vimeo and Reddit as one playable MP4, without re-encoding\n\n",
+        "capture YouTube, TikTok, X, Vimeo and Reddit as one playable MP4, and SoundCloud as an MP3, without re-encoding\n\n",
     );
     out.push_str(&format!("sites        {}\n", SITES.join(", ")));
     out.push_str("muxing       mp4 (streams copied, index rebuilt, output verified)\n");

@@ -69,6 +69,13 @@ playlist is taken: the progressive \fBDASH_<height>.mp4\fR files carry no audio
 at all, and the DASH manifest is `SegmentBase`, which is not read \- both are
 refusals that say so rather than a silent file. An over\-18 post with nothing
 playable names \fB\-\-cookies\fR.
+.TP
+.B SoundCloud
+Track URLs (\fBsoundcloud.com/<artist>/<track>\fR) and \fBon.soundcloud.com\fR
+short links, read from the page's own hydration document. The track is written as
+an \fBMP3\fR, copied byte for byte from the CDN address the site's transcoding
+names. A set, a Go+ track, an opus-only rendition and a consent wall are refusals
+that name themselves; a set is a list, and one URL is one file.
 .SH OPTIONS
 .SS Destination
 .TP
@@ -101,7 +108,7 @@ quietly, and a photo post is skipped by name: every image is already a file.
 Write the page's caption tracks beside each file, as WebVTT:
 \fI<name>.<language>.vtt\fR, or \fI<name>.<language>.auto.vtt\fR when the site
 transcribed the audio instead of a person writing the cues. One file per track;
-nothing is merged. YouTube is the only site of the five that lists tracks, so
+nothing is merged. YouTube is the only site of the six that lists tracks, so
 elsewhere this is a note rather than a file.
 .TP
 .B \-\-embed\-subs

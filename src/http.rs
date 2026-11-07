@@ -9,7 +9,7 @@ use crate::cookies::Jar;
 use crate::error::{Error, Result};
 use crate::url::Url;
 
-/// Sent with everything that is not a media request. The five sites serve a
+/// Sent with everything that is not a media request. The six sites serve a
 /// different page to a browser user agent, and a different page again to
 /// `curl`; the browser string is the one that carries the data we need.
 pub const UA_DESKTOP: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
@@ -295,7 +295,7 @@ impl Http {
     }
 
     /// A JSON document from a GET. `Ok(None)` means the endpoint answered 404,
-    /// which two of the five sites use to mean "this post is gone" rather than
+    /// which two of the six sites use to mean "this post is gone" rather than
     /// "your request is broken".
     pub fn get_json_opt(
         &self,

@@ -23,6 +23,7 @@ rather than with an empty file.
 | `x.com`, `twitter.com`, `t.co` | X |
 | `vimeo.com`, `player.vimeo.com` | Vimeo |
 | `reddit.com`, `old.reddit.com`, `redd.it`, `v.redd.it` | Reddit |
+| `soundcloud.com`, `on.soundcloud.com` | SoundCloud |
 
 `m.` and `mobile.` prefixes are stripped before the comparison, and so is a
 trailing dot. `notyoutube.com` and `youtube.com.evil.example` are **not**
@@ -289,7 +290,51 @@ source has none.
 **What it cannot reach:** videos behind a wall or a private community (a session
 may help), and anything the post lists only as DASH.
 
-## 7. What a refusal looks like, and what it does not
+## 7. SoundCloud
+
+### 7.1 Route
+
+Three requests, and each one is needed:
+
+1. the track page, for `window.__sc_hydration` — the array the site's own player
+   renders from. The entry with `"hydratable":"sound"` carries the title, the
+   uploader, the duration, the artwork and `media.transcodings`;
+2. the transcoding URL, with the page's own public `client_id` appended. It
+   answers a small JSON document, not audio;
+3. the CDN URL that document names — the bytes.
+
+`on.soundcloud.com` is a redirector, so one redirect is followed first. The
+`client_id` is scraped from the page (`client_id=<32 alphanumerics>`, in a script
+URL or inline JSON), never guessed and never hard-coded.
+
+### 7.2 What is selected
+
+| In the document | Becomes |
+| --- | --- |
+| the first `transcodings[]` entry with `protocol: "progressive"` and `mime_type: "audio/mpeg"` | the stream, as an **MP3** copied verbatim |
+| `title`, `user.username`, `duration`, `artwork_url` | the name, the uploader, the duration, the poster |
+
+One format, no selection to make: a track is one file. `--audio-only` is
+therefore implied rather than required, and `--quality` has nothing to choose
+between.
+
+### 7.3 Refused
+
+| Situation | Result |
+| --- | --- |
+| a set (`/<artist>/sets/<slug>`) | refusal naming it: a set is a list of tracks, and one URL is one file |
+| no `__sc_hydration` | refusal (1): a consent wall, a block on this address, or not a track |
+| no page `client_id` | refusal (1), naming `--cookies FILE` |
+| only HLS/opus transcodings | refusal (1): this build demuxes neither opus nor a fragmented audio playlist |
+| no progressive transcoding | refusal (1): a Go+ track, or only a preview of one |
+| the transcoding answers no `url` | refusal (1), which is what a region block looks like |
+
+**What it cannot reach:** Go+ tracks, opus-only renditions, sets, and anything
+behind a consent wall. An MP3 is also the one written file that is **not**
+structurally verified — there is no container to check, so the byte count is the
+whole guarantee.
+
+## 8. What a refusal looks like, and what it does not
 
 A refusal is a **failure**: exit 1, one line on stderr, and — under `--json` —
 an object with `"status": "failed"` and a `reason`. It is not a skip that exits
@@ -299,7 +344,7 @@ Nothing is ever written on a refusal. No empty file, no directory, no truncated
 `.mp4` with a valid header: the extractors run before the first byte of media is
 requested, so a refusal costs one or two page requests and no disk.
 
-## 8. When a site changes
+## 9. When a site changes
 
 Every extractor is written to *fail* rather than to produce something wrong:
 `read_player` returns "no formats" instead of panicking on a missing field, the
@@ -307,7 +352,7 @@ JSON lookup helpers are total, and media URLs are used only when they are
 strings. A changed page therefore produces a refusal with the status the site
 reported, which is the single most useful thing a bug report can contain.
 
-## 9. The escape hatch: `--extractor-args`
+## 10. The escape hatch: `--extractor-args`
 
 Section 6 ends with "a changed page produces a refusal", and a refusal is useful
 but not a download. The flag for the day between the change and the release is

@@ -1199,6 +1199,7 @@ fn print_formats(media: &Media, printer: &Printer) -> Result<()> {
             Container::Ts => "ts",
             Container::Hls => "hls",
             Container::Jpeg => "jpg",
+            Container::Mp3 => "mp3",
             Container::Unknown => "?",
         };
         let size = match format.bytes {

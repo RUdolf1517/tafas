@@ -143,6 +143,14 @@ version; adding a site, a flag or a container is minor. The policy is in
   post, a gallery or a text post and an over-18 post with nothing playable are
   each named. The limitations are in
   [extractors §6](docs/extractors.md#6-reddit).
+- **SoundCloud.** Track URLs and `on.soundcloud.com` short links, read from the
+  page's own hydration document, then the transcoding it names, then the bytes.
+  The result is an **MP3** — the first non-ISO-BMFF media this program writes, and
+  the reason `Container::Mp3` exists: there is no container to rebuild and nothing
+  beyond the byte count to verify, which `docs/cli.md` §3 and
+  [extractors §7](docs/extractors.md#7-soundcloud) both say out loud. A set, a
+  Go+ track, an opus-only rendition and a consent wall are refusals by name; the
+  public `client_id` is scraped from the page rather than hard-coded.
 - **`Url::join`**, with dot-segment removal: playlist URIs are relative far more
   often than they are absolute, and `../` is common.
 - **`--embed-subs`.** The cues of one caption track go *inside* the MP4 as a
