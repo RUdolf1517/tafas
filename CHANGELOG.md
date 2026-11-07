@@ -13,6 +13,16 @@ version; adding a site, a flag or a container is minor. The policy is in
 
 ### Added
 
+- **Fragmented MP4 in HLS** (`src/mp4read.rs`). A playlist with `EXT-X-MAP` is
+  no longer refused: the header is fetched once, `moov`/`trak`/`stsd` are read for
+  the timescale and the codec record (`avcC`, or `esds` down to the two-byte
+  `AudioSpecificConfig`), and each segment's `moof`/`trun`/`tfhd`/`tfdt` becomes
+  the same `Track`/`Sample` pair the transport-stream demuxer produces, so
+  `mp4write` lays both out unchanged. Defaults cascade `trun` → `tfhd` → `trex`,
+  decode times come from `tfdt` and carry across fragments, and every sample
+  offset is bounds-checked against the bytes it came in. `SAMPLE-AES` (`senc`),
+  HEVC and AC-3 sample entries, a swapped `EXT-X-MAP` and a header that is not
+  ISO-BMFF are refused by name. Documented in [docs/hls.md](docs/hls.md).
 - **`--extractor-args SITE:KEY=VALUE`.** A closed, checked escape hatch for the
   day a site reorders the document an extractor reads: `youtube:client=NAME`
   pins one InnerTube client instead of walking the chain, and

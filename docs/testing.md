@@ -25,7 +25,7 @@ this repository opens and closes itself.
 | end-to-end | `tests/cli.rs` | the real binary, spawned, against a local HTTP server this test starts on `127.0.0.1:0` |
 | sidecar | unit tests in `src/info.rs` | the document names the page, the streams and the files, carries no media URL, and is written through a temporary that is gone after the rename |
 | cookies | `tests/cookies.rs` | a jar on disk and a fixture route that answers `403` without the session cookie; host, `Secure` and header-merging rules |
-| HLS | `tests/hls.rs` | a playlist, segments, byte ranges and AES-128 segments on a socket, assembled into an MP4 that `mux::verify` accepts; fMP4, short keys and ignored ranges refused before a file exists |
+| HLS | `tests/hls.rs` | a playlist, segments, byte ranges and AES-128 segments on a socket, assembled into an MP4 that `mux::verify` accepts; the same for a fragmented-MP4 playlist, whose header is fetched once; a swapped header, a header that is not ISO-BMFF, short keys and ignored ranges refused before a file exists |
 | independent reader | `tests/common/mp4.rs`, `tests/mp4.rs` | a second box walker, sharing no code with `mux` or `mp4write`, that reads the written file and checks every sample offset against `mdat`; tested against a file it builds itself byte by byte |
 | packaging | `tests/packaging.rs` | every option in `--help` appears in `man/tafas.1`; no `Command::new` in `src/`; the capability document is valid JSON |
 
@@ -63,6 +63,9 @@ survived the remux and are findable in the output.
 | `--concurrent-fragments 4` over four segments the server holds for 80 ms | the server saw more than one request at once, and the file is still the four segments in playlist order |
 | the same fixtures with the default `1` | the server never saw two requests at once |
 | a 404 on the first segment of a parallel run | the queued segments are never requested, and nothing is written |
+| an `EXT-X-MAP` playlist with two fragments | one request for the header, two for the segments, and the written file verifies |
+| the same playlist with a header that changes half way | refused, naming the segment and both headers, and nothing is written |
+| an `EXT-X-MAP` body that is not ISO-BMFF | refused with the box that failed, not with a panic |
 | `--extractor-args youtube:client=flash` (and five other shapes) | exit 2 before any request, and the message lists the values that would have worked |
 | two `--extractor-args` flags, one per site | both are accepted; the same key named twice is exit 2, not a silent last-one-wins |
 

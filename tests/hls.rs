@@ -8,7 +8,7 @@
 
 mod common;
 
-use common::{temp_dir, ts_segment, Route, TestServer};
+use common::{fmp4_fragment, fmp4_init, fmp4_playlist, temp_dir, ts_segment, Route, TestServer};
 use tafas::hlsfetch;
 use tafas::hlsfetch::Segments;
 use tafas::http::Http;
@@ -124,15 +124,87 @@ fn a_master_playlist_is_walked_to_the_chosen_variant() {
 }
 
 #[test]
-fn an_fmp4_playlist_is_refused_before_a_file_appears() {
-    let playlist = "#EXTM3U\n\
-                    #EXT-X-MAP:URI=\"init.mp4\"\n\
-                    #EXT-X-TARGETDURATION:6\n\
-                    #EXTINF:6.0,\n\
-                    seg1.m4s\n\
-                    #EXT-X-ENDLIST\n";
-    let server = TestServer::start(vec![Route::ok("/media.m3u8", playlist.as_bytes())]);
+fn an_fmp4_playlist_becomes_an_mp4() {
+    let init = fmp4_init();
+    let first = fmp4_fragment(0, &[(b"first-sample", true)]);
+    let second = fmp4_fragment(3_000, &[(b"second-sample", false)]);
+    let playlist = fmp4_playlist(&["seg1.m4s", "seg2.m4s"]);
+    let server = TestServer::start(vec![
+        Route::ok("/media.m3u8", playlist.as_bytes()),
+        Route::ok("/init.mp4", &init),
+        Route::ok("/seg1.m4s", &first),
+        Route::ok("/seg2.m4s", &second),
+    ]);
     let out = temp_dir("hls-fmp4").join("clip.mp4");
+    let url = Url::parse(&server.url("/media.m3u8")).unwrap();
+
+    let mut seen = 0u64;
+    let report = hlsfetch::fetch(
+        &client(),
+        &url,
+        &[],
+        Quality::Best,
+        Segments::default(),
+        &out,
+        &mut |bytes| seen += bytes,
+    )
+    .expect("a fragmented-MP4 playlist should be read");
+
+    assert_eq!(report.segments, 2);
+    assert_eq!(report.video_samples, 2);
+    assert_eq!(report.audio_samples, 0);
+    assert_eq!(
+        seen,
+        (init.len() + first.len() + second.len()) as u64,
+        "the header is bytes on the wire too, so the counter counts it"
+    );
+    assert_eq!(
+        server.hits("/init.mp4"),
+        1,
+        "the header is fetched once, not once per segment"
+    );
+    mux::verify(&out).expect("the written file verifies");
+}
+
+#[test]
+fn an_fmp4_playlist_is_parsed_against_the_header_it_names() {
+    // Two segments, one of them empty of samples: the sample count comes from
+    // the fragments, not from the number of segments.
+    let init = fmp4_init();
+    let busy = fmp4_fragment(0, &[(b"one", true), (b"two", false), (b"three", false)]);
+    let playlist = fmp4_playlist(&["seg1.m4s"]);
+    let server = TestServer::start(vec![
+        Route::ok("/media.m3u8", playlist.as_bytes()),
+        Route::ok("/init.mp4", &init),
+        Route::ok("/seg1.m4s", &busy),
+    ]);
+    let out = temp_dir("hls-fmp4-samples").join("clip.mp4");
+    let url = Url::parse(&server.url("/media.m3u8")).unwrap();
+
+    let report = hlsfetch::fetch(
+        &client(),
+        &url,
+        &[],
+        Quality::Best,
+        Segments::default(),
+        &out,
+        &mut |_| {},
+    )
+    .expect("three samples in one fragment are still one segment");
+    assert_eq!(report.segments, 1);
+    assert_eq!(report.video_samples, 3);
+    mux::verify(&out).expect("the written file verifies");
+}
+
+#[test]
+fn a_header_that_is_not_mp4_is_refused_by_name() {
+    let playlist = fmp4_playlist(&["seg1.m4s"]);
+    let server = TestServer::start(vec![
+        Route::ok("/media.m3u8", playlist.as_bytes()),
+        Route::ok("/init.mp4", b"not an mp4 at all, just text"),
+        Route::ok("/seg1.m4s", &fmp4_fragment(0, &[(b"x", true)])),
+    ]);
+    let out = temp_dir("hls-fmp4-bad-init").join("clip.mp4");
     let url = Url::parse(&server.url("/media.m3u8")).unwrap();
 
     let error = hlsfetch::fetch(
@@ -144,11 +216,41 @@ fn an_fmp4_playlist_is_refused_before_a_file_appears() {
         &out,
         &mut |_| {},
     )
-    .expect_err("fMP4 segments are not read by this build");
+    .expect_err("a header that is not a header is a failure");
     let text = error.to_string();
-    assert!(text.contains("fMP4"), "{text}");
-    assert!(text.contains("EXT-X-MAP"), "{text}");
+    assert!(text.contains("moov") || text.contains("box"), "{text}");
     assert!(!out.exists(), "a refusal leaves no half-written file");
+}
+
+#[test]
+fn a_playlist_that_changes_its_header_is_refused() {
+    let text = "#EXTM3U\n\
+                #EXT-X-TARGETDURATION:6\n\
+                #EXT-X-MAP:URI=\"init.mp4\"\n\
+                #EXTINF:6.0,\n\
+                seg1.m4s\n\
+                #EXT-X-MAP:URI=\"other-init.mp4\"\n\
+                #EXTINF:6.0,\n\
+                seg2.m4s\n\
+                #EXT-X-ENDLIST\n";
+    let server = TestServer::start(vec![Route::ok("/media.m3u8", text.as_bytes())]);
+    let out = temp_dir("hls-fmp4-two-maps").join("clip.mp4");
+    let url = Url::parse(&server.url("/media.m3u8")).unwrap();
+
+    let error = hlsfetch::fetch(
+        &client(),
+        &url,
+        &[],
+        Quality::Best,
+        Segments::default(),
+        &out,
+        &mut |_| {},
+    )
+    .expect_err("two headers describe two track sets");
+    let message = error.to_string();
+    assert!(message.contains("EXT-X-MAP"), "{message}");
+    assert!(message.contains("segment 2"), "{message}");
+    assert!(!out.exists());
 }
 
 #[test]

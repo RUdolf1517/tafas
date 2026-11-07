@@ -124,9 +124,9 @@ fn capabilities() -> String {
         "containers": ["mp4", "m4a"],
         "hls": {
             "playlists": ["master", "media"],
-            "segments": "mpeg-ts",
+            "segments": ["mpeg-ts", "fmp4"],
             "encryption": ["aes-128"],
-            "fmp4": false,
+            "fmp4": true,
             "live": false
         },
         "muxing": {

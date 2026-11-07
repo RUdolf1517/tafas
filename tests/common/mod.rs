@@ -529,3 +529,121 @@ pub fn ts_segment() -> Vec<u8> {
     out.extend_from_slice(&packet(482, true, 1, &pes(0xc0, 93_000, None, &audio)));
     out
 }
+
+// ---------------------------------------------------------------------------
+// fragmented MP4
+// ---------------------------------------------------------------------------
+
+fn boxed(kind: &[u8; 4], payload: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(payload.len() + 8);
+    out.extend_from_slice(&((payload.len() as u32) + 8).to_be_bytes());
+    out.extend_from_slice(kind);
+    out.extend_from_slice(payload);
+    out
+}
+
+fn full_box(kind: &[u8; 4], version: u8, flags: u32, payload: &[u8]) -> Vec<u8> {
+    let mut body = Vec::new();
+    body.push(version);
+    body.extend_from_slice(&flags.to_be_bytes()[1..]);
+    body.extend_from_slice(payload);
+    boxed(kind, &body)
+}
+
+fn joined(parts: &[Vec<u8>]) -> Vec<u8> {
+    let mut out = Vec::new();
+    for part in parts {
+        out.extend_from_slice(part);
+    }
+    out
+}
+
+/// The `EXT-X-MAP` header of a fragmented-MP4 stream: one H.264 track, 90 kHz,
+/// with `trex` defaults for the sample sizes and durations the fragments carry.
+pub fn fmp4_init() -> Vec<u8> {
+    // A baseline `avcC`: profile 0x42, level 0x1e, one SPS and one PPS. The
+    // bytes are not decoded by anything under test, but they are the shape a
+    // player reads, so the fixture does not teach the reader anything false.
+    let avcc = vec![
+        0x01, 0x42, 0xc0, 0x1e, 0xff, 0xe1, 0x00, 0x04, 0x67, 0x42, 0xc0, 0x1e, 0x01, 0x00, 0x04,
+        0x68, 0xce, 0x3c, 0x80,
+    ];
+    let mut entry = vec![0u8; 6];
+    entry.extend_from_slice(&1u16.to_be_bytes()); // data_reference_index
+    entry.extend_from_slice(&[0u8; 70]); // width, height, resolution, depth, …
+    entry.extend_from_slice(&boxed(b"avcC", &avcc));
+    let avc1 = boxed(b"avc1", &entry);
+
+    let stsd = full_box(b"stsd", 0, 0, &joined(&[1u32.to_be_bytes().to_vec(), avc1]));
+    let stbl = boxed(b"stbl", &stsd);
+    let minf = boxed(b"minf", &stbl);
+
+    let mut mdhd_body = Vec::new();
+    mdhd_body.extend_from_slice(&0u32.to_be_bytes()); // creation
+    mdhd_body.extend_from_slice(&0u32.to_be_bytes()); // modification
+    mdhd_body.extend_from_slice(&90_000u32.to_be_bytes());
+    mdhd_body.extend_from_slice(&0u32.to_be_bytes()); // duration
+    mdhd_body.extend_from_slice(&[0u8; 4]); // language + pre_defined
+    let mdhd = full_box(b"mdhd", 0, 0, &mdhd_body);
+    let mdia = boxed(b"mdia", &joined(&[mdhd, minf]));
+
+    let mut tkhd_body = Vec::new();
+    tkhd_body.extend_from_slice(&0u32.to_be_bytes()); // creation
+    tkhd_body.extend_from_slice(&0u32.to_be_bytes()); // modification
+    tkhd_body.extend_from_slice(&1u32.to_be_bytes()); // track_ID
+    tkhd_body.extend_from_slice(&[0u8; 60]);
+    let tkhd = full_box(b"tkhd", 0, 3, &tkhd_body);
+    let trak = boxed(b"trak", &joined(&[tkhd, mdia]));
+
+    let mut trex_body = 1u32.to_be_bytes().to_vec(); // track_ID
+    trex_body.extend_from_slice(&1u32.to_be_bytes()); // sample description index
+    trex_body.extend_from_slice(&3_000u32.to_be_bytes()); // default duration
+    trex_body.extend_from_slice(&0u32.to_be_bytes()); // default size
+    trex_body.extend_from_slice(&0u32.to_be_bytes()); // default flags
+    let trex = full_box(b"trex", 0, 0, &trex_body);
+    let mvex = boxed(b"mvex", &trex);
+
+    let mvhd = full_box(b"mvhd", 0, 0, &[0u8; 96]);
+    let mut ftyp = b"isom".to_vec();
+    ftyp.extend_from_slice(&0x0000_0200u32.to_be_bytes());
+    ftyp.extend_from_slice(b"isomiso6mp41");
+    joined(&[boxed(b"ftyp", &ftyp), boxed(b"moov", &joined(&[mvhd, trak, mvex]))])
+}
+
+/// One media segment: a `moof` and the `mdat` its `trun` points into. Each
+/// sample is `(payload, keyframe)`, decode times start at `base_time`, and each
+/// sample lasts the `trex` default of 3 000 ticks.
+pub fn fmp4_fragment(base_time: u64, samples: &[(&[u8], bool)]) -> Vec<u8> {
+    let moof = |data_offset: i32| {
+        let tfhd = full_box(b"tfhd", 0, 0x020000, &1u32.to_be_bytes()); // default-base-is-moof
+        let tfdt = full_box(b"tfdt", 1, 0, &base_time.to_be_bytes());
+        let mut trun_body = (samples.len() as u32).to_be_bytes().to_vec();
+        trun_body.extend_from_slice(&data_offset.to_be_bytes());
+        for (payload, keyframe) in samples {
+            trun_body.extend_from_slice(&(payload.len() as u32).to_be_bytes());
+            let flags: u32 = if *keyframe { 0x0200_0000 } else { 0x0001_0000 };
+            trun_body.extend_from_slice(&flags.to_be_bytes());
+        }
+        // data offset, per-sample size, per-sample flags; the duration comes
+        // from `trex`, which is what a real fragment does.
+        let trun = full_box(b"trun", 0, 0x000601, &trun_body);
+        let traf = boxed(b"traf", &joined(&[tfhd, tfdt, trun]));
+        boxed(b"moof", &traf)
+    };
+    let header = moof(0);
+    let offset = (header.len() + 8) as i32;
+    let payload = joined(&samples.iter().map(|(payload, _)| payload.to_vec()).collect::<Vec<_>>());
+    joined(&[moof(offset), boxed(b"mdat", &payload)])
+}
+
+/// The playlist a fragmented-MP4 HLS stream is described by.
+pub fn fmp4_playlist(segments: &[&str]) -> String {
+    let mut text = String::from(
+        "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:6\n#EXT-X-MAP:URI=\"init.mp4\"\n",
+    );
+    for segment in segments {
+        text.push_str(&format!("#EXTINF:6.0,\n{segment}\n"));
+    }
+    text.push_str("#EXT-X-ENDLIST\n");
+    text
+}

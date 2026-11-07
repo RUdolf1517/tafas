@@ -18,6 +18,7 @@ pub mod http;
 pub mod info;
 pub mod items;
 pub mod model;
+pub mod mp4read;
 pub mod mp4write;
 pub mod mux;
 pub mod names;

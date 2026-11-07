@@ -707,7 +707,7 @@ mod tests {
         assert!(info.formats.is_empty());
         assert!(describe(&info).contains("Sign in to confirm"));
 
-        let error = refusal("dQw4w9WgXcQ", &[format!("web: {}", describe(&info))]);
+        let error = refusal("dQw4w9WgXcQ", &[format!("web: {}", describe(&info))], None);
         assert!(matches!(error, Error::Refused(_)));
         assert!(error.to_string().contains("sign-in check"));
     }
@@ -725,7 +725,7 @@ mod tests {
         let info = read_player(&document, "test");
         assert_eq!(info.ciphered, 1);
         assert!(info.formats.is_empty());
-        let error = refusal("dQw4w9WgXcQ", &[format!("android_vr: {}", describe(&info))]);
+        let error = refusal("dQw4w9WgXcQ", &[format!("android_vr: {}", describe(&info))], None);
         assert!(error.to_string().contains("signature-protected"));
     }
 

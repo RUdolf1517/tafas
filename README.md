@@ -152,7 +152,7 @@ stream, which is what a phone on a train wants.
 
 A site is listed only because its reader exists and its refusals are written
 down. What each one can and cannot reach — age gates, PO tokens, signature
-ciphers, fMP4 playlists — is one table away in
+ciphers, HEVC fragments — is one table away in
 [docs/extractors.md](docs/extractors.md).
 
 ## Why tafas
@@ -161,7 +161,7 @@ ciphers, fMP4 playlists — is one table away in
 | --- | --- |
 | **It never re-encodes** | Picture and sound are copied as sample tables; the muxer rewrites chunk offsets, track ids and durations in `moov`, and leaves `avcC`, `av1C`, `vpcC` and `esds` byte for byte. Quality is whatever the site served. |
 | **It joins streams itself** | YouTube's 1080p is two files. `tafas` builds the single MP4 in Rust — there is no `ffmpeg` to install, and no subprocess to fail in a way that looks like a network error. |
-| **It refuses instead of guessing** | Cipher-protected formats, fMP4 playlists, age-gated pages and posts that need an account each exit with a named reason and a link to the paragraph that explains it. |
+| **It refuses instead of guessing** | Cipher-protected formats, `SAMPLE-AES` segments, HEVC fragments, age-gated pages and posts that need an account each exit with a named reason and a link to the paragraph that explains it. |
 | **Nothing half-written survives** | Every file lands through `<target>.part` and is renamed only after its byte count matches — and, for a remux, after the result has been re-read from disk and every chunk offset checked against the file it points into. |
 | **Resume is not an afterthought** | `--resume` (the default) continues a `.part` with a range request, notices a server that ignores `Range`, and starts over rather than writing the beginning twice. |
 | **The terminal is the interface** | No config file, no daemon, no environment variables of its own, no state on disk between runs. Every decision is an argument, so the command you ran yesterday is the command that runs today. |
@@ -171,14 +171,16 @@ ciphers, fMP4 playlists — is one table away in
 **Where this is now: v0.3 has started.** v0.2 landed everything but playlist and
 channel *pages* and four packaging channels, and v0.3's first item is in:
 `--concurrent-fragments`, so one HLS list is fetched by several workers while the
-file stays in playlist order. Next is fragmented MP4, which is the gate in front
-of the three sites v0.3 adds.
+file stays in playlist order; `--extractor-args`, the checked escape hatch for a
+site that changed its page; and fragmented MP4, so `EXT-X-MAP` playlists are
+assembled instead of refused. Next are the sites v0.3 adds, which that gate was
+in front of.
 
 | Where it goes | State | What it is |
 | --- | --- | --- |
 | [v0.1.0](docs/roadmap.md#1-v010--shipped) | **shipped** | Three sites, DASH remuxing verified by a second reader, atomic `.part` commit, resume, `--json`, the manual page, completions, `--capabilities`. |
 | [v0.2](docs/roadmap.md#2-v02--the-shapes-users-actually-hit) | **in progress** | **In:** HLS → MP4, AES-128 keys, `--cookies`, `--write-info-json`, `--write-thumbnail`, `--write-subs`/`--sub-langs`, `--playlist-items` over HLS segment lists, an independent test demuxer, `.deb`/`.rpm`, Homebrew, `install.sh`, the per-user Windows installer and the local winget manifests. **Open:** playlist and channel pages; AUR, `.apk`, Scoop, a flake. |
-| [v0.3](docs/roadmap.md#3-v03--reach-and-the-parts-that-are-not-a-url) | **started** | **In:** `--concurrent-fragments`, so an HLS list is fetched by four workers instead of one; `--extractor-args`, the checked escape hatch for a site that changed its page. **Open:** Vimeo, Reddit, SoundCloud, Twitch; fragmented MP4; subtitle tracks *inside* the container; fuzz targets. |
+| [v0.3](docs/roadmap.md#3-v03--reach-and-the-parts-that-are-not-a-url) | **started** | **In:** `--concurrent-fragments`, so an HLS list is fetched by four workers instead of one; `--extractor-args`, the checked escape hatch for a site that changed its page; fragmented MP4 (`EXT-X-MAP`/`moof`), assembled by the same writer as the transport-stream flavour. **Open:** Vimeo, Reddit, SoundCloud, Twitch; subtitle tracks *inside* the container; fuzz targets. |
 | [v0.4](docs/roadmap.md#4-v04--speed-platforms-trust) | planned | `--limit-rate` and per-fragment resume; reproducible builds and signed releases; size and startup budgets in CI; an MSRV job; Windows long paths. |
 | [v0.5](docs/roadmap.md#5-v05--extensibility-without-a-fork) | planned | A stable `Extractor` trait; feature-per-site builds; one documentation page per site. |
 
@@ -195,6 +197,7 @@ only if it says so.
 | --- | --- |
 | [cli](docs/cli.md) | Flags, exit codes, JSON schema, colour and progress, stdout discipline |
 | [extractors](docs/extractors.md) | Per-site routes, the exact refusals, and why each one is a refusal |
+| [hls](docs/hls.md) | Playlists, the two segment containers, the MP4 writer, and what the pipeline refuses |
 | [safety](docs/safety.md) | Atomic commit, resume, path handling, TLS, redirects, limits |
 | [dependencies](docs/dependencies.md) | Every dependency, why it exists, its licence, and where the C code is |
 | [releases](docs/releases.md) · [roadmap](docs/roadmap.md) | Versioning policy, artifacts, channels · what is planned and what is not |

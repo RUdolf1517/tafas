@@ -194,7 +194,7 @@ video; use `--list-formats` to see both.
 
 | Situation | Output |
 | --- | --- |
-| only an fMP4 playlist (`EXT-X-MAP`) | refusal naming `EXT-X-MAP`; fragments are not stitched yet |
+| only a fragmented-MP4 playlist (`EXT-X-MAP`) | read, since v0.3: the header is fetched once and the fragments are stitched ([hls §2](hls.md#2-two-containers-one-writer)) |
 | a `SAMPLE-AES` playlist | refusal at parse time: the cipher is inside the container's framing |
 | tombstone (deleted, protected, age-restricted) | refusal naming the missing account |
 | post with no media at all | `unsupported` |

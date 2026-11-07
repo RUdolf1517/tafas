@@ -1,17 +1,19 @@
 //! Turning a playlist into a file.
 //!
-//! `hls` reads the text and says what the segments are; `ts` and `mp4write`
-//! know what to do with the bytes. This module is the middle: it fetches the
-//! segments, concatenates them, demuxes the transport stream they carry and
-//! hands the samples to the writer.
+//! `hls` reads the text and says what the segments are; `ts`, `mp4read` and
+//! `mp4write` know what to do with the bytes. This module is the middle: it
+//! fetches the segments, concatenates them, demuxes whichever of the two
+//! containers they carry, and hands the samples to the writer. A playlist with
+//! `EXT-X-MAP` is the fragmented-MP4 flavour: its header is fetched once and
+//! every segment is parsed as `moof`+`mdat` against it.
 //!
 //! Two things are done on purpose. The segments are held in memory one at a
 //! time and the concatenation is thrown away as soon as the samples have been
 //! lifted out of it, because a transport stream is a framing that an MP4 does
 //! not need — keeping it would double the memory for nothing. And every gate
-//! between a playlist and a fetch refuses **by name**: an fMP4 playlist, an
-//! encrypted one and an unreadable one produce different messages, so the
-//! reader learns what is missing instead of getting a half-written file.
+//! between a playlist and a fetch refuses **by name**: an encrypted one, a
+//! breaking one and an unreadable one produce different messages, so the reader
+//! learns what is missing instead of getting a half-written file.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -20,12 +22,13 @@ use std::sync::mpsc;
 use std::thread;
 
 use crate::error::{Error, Result};
-use crate::hls::{Encryption, Key, Media, Playlist, Segment};
+use crate::hls::{Encryption, InitSection, Key, Media, Playlist, Segment};
 use crate::http::Http;
 use crate::items::Items;
+use crate::mp4read;
 use crate::mp4write;
 use crate::select::Quality;
-use crate::ts;
+use crate::ts::{self, Track, TrackKind};
 use crate::url::Url;
 
 /// How much of a single segment this build will hold in memory. A segment is
@@ -135,6 +138,10 @@ pub fn fetch(
     let video_media = media_playlist(http, &video_url, &borrowed)?;
     let video_segments = selected(&video_media, items, &video_url)?;
     let mut segments = 0usize;
+    // The init segment is fetched once, before the media segments: it is what
+    // they are parsed against, and a header that cannot be read makes every
+    // segment after it pointless.
+    let video_map = init_section(http, &video_media, &borrowed, on_bytes)?;
     let video_bytes = fetch_media(
         http,
         &video_segments,
@@ -143,12 +150,16 @@ pub fn fetch(
         on_bytes,
         &mut segments,
     )?;
-    let demuxed = ts::demux(&video_bytes)?;
+    let mut tracks = tracks_of(&video_bytes, video_map.as_deref())?;
     let mut duration = video_media.total_duration();
-    let video_has_audio = demuxed.audio().is_some();
+    let video_has_audio = tracks.iter().any(|track| track.kind == TrackKind::Audio);
     let mut warnings = Vec::new();
     if items.is_some() {
-        if let Some(first) = demuxed.video().and_then(|track| track.samples.first()) {
+        if let Some(first) = tracks
+            .iter()
+            .find(|track| track.kind == TrackKind::Video)
+            .and_then(|track| track.samples.first())
+        {
             if !first.keyframe {
                 warnings.push(
                     "the selection does not begin on a keyframe: the file will not play from \
@@ -158,7 +169,6 @@ pub fn fetch(
             }
         }
     }
-    let mut tracks = demuxed.tracks;
 
     // A variant with an audio group usually carries no audio of its own; when
     // it does, that audio is in sync with the video by construction, so the
@@ -166,6 +176,7 @@ pub fn fetch(
     if let Some(audio_url) = audio_url.filter(|_| !video_has_audio) {
         let audio_media = media_playlist(http, &audio_url, &borrowed)?;
         let audio_segments = selected(&audio_media, items, &audio_url)?;
+        let audio_map = init_section(http, &audio_media, &borrowed, on_bytes)?;
         let audio_bytes = fetch_media(
             http,
             &audio_segments,
@@ -174,9 +185,9 @@ pub fn fetch(
             on_bytes,
             &mut segments,
         )?;
-        let audio = ts::demux(&audio_bytes)?;
-        match audio.audio() {
-            Some(track) => tracks.push(track.clone()),
+        let audio = tracks_of(&audio_bytes, audio_map.as_deref())?;
+        match audio.into_iter().find(|track| track.kind == TrackKind::Audio) {
+            Some(track) => tracks.push(track),
             None => {
                 return Err(Error::Parse(format!(
                     "{audio_url}: the audio rendition carries no audio track"
@@ -214,16 +225,36 @@ fn media_playlist(http: &Http, url: &Url, headers: &[(&str, &str)]) -> Result<Me
 
 /// The gates between a playlist and a fetch.
 fn check(media: &Media, url: &Url) -> Result<()> {
-    if let Some(map) = media
+    // `EXT-X-MAP` names the header every following segment is parsed against.
+    // One header per playlist is what this build can honour: a playlist that
+    // swaps headers part way through describes two track sets, and a file made
+    // of both would be neither.
+    if let Some(first) = media
         .segments
         .iter()
         .find_map(|segment| segment.map.as_ref())
     {
-        return Err(Error::Refused(format!(
-            "{url}: this playlist uses fMP4 segments (EXT-X-MAP {}); tafas reads the MPEG-TS \
-             flavour of HLS, and fMP4 is on the roadmap",
-            map.uri
-        )));
+        for (index, segment) in media.segments.iter().enumerate() {
+            match segment.map.as_ref() {
+                Some(map) if map != first => {
+                    return Err(Error::Refused(format!(
+                        "{url}: the playlist changes its EXT-X-MAP at segment {} ({} instead of \
+                         {}), and this build stitches one header per playlist",
+                        index + 1,
+                        map.uri,
+                        first.uri
+                    )));
+                }
+                Some(_) => {}
+                None => {
+                    return Err(Error::Refused(format!(
+                        "{url}: segment {} has no initialisation section although EXT-X-MAP was \
+                         declared before it, so the segments are not one file",
+                        index + 1
+                    )));
+                }
+            }
+        }
     }
     // AES-128 is read: the key is fetched once per URI and every segment is
     // decrypted in memory. The other methods are refused here, before a single
@@ -338,6 +369,44 @@ fn selected<'a>(media: &'a Media, items: Option<&Items>, url: &Url) -> Result<Ve
         )));
     }
     Ok(chosen)
+}
+
+/// The `EXT-X-MAP` header, fetched once, with its byte range when it has one.
+///
+/// A playlist without one is the transport-stream flavour and returns `None`;
+/// the caller then demuxes the bytes instead of parsing them as fragments.
+fn init_section(
+    http: &Http,
+    media: &Media,
+    headers: &[(&str, &str)],
+    on_bytes: &mut dyn FnMut(u64),
+) -> Result<Option<Vec<u8>>> {
+    let map = match media.segments.iter().find_map(|segment| segment.map.as_ref()) {
+        Some(map) => map,
+        None => return Ok(None),
+    };
+    let range = map.range.map(|range| (range.offset, range.length));
+    let bytes = http.get_bytes(
+        "hls-init",
+        &map.uri.to_string(),
+        headers,
+        range,
+        SEGMENT_LIMIT,
+    )?;
+    on_bytes(bytes.len() as u64);
+    Ok(Some(bytes))
+}
+
+/// The tracks of one rendition, whichever container its segments carry.
+///
+/// The two are told apart by the playlist rather than by sniffing the bytes: a
+/// playlist with `EXT-X-MAP` is fragmented MP4 whatever the first bytes look
+/// like, and a playlist without one is a transport stream.
+fn tracks_of(bytes: &[u8], init: Option<&[u8]>) -> Result<Vec<Track>> {
+    match init {
+        Some(init) => mp4read::read(init, bytes),
+        None => Ok(ts::demux(bytes)?.tracks),
+    }
 }
 
 /// One segment, fetched and — if the playlist says so — decrypted.
@@ -508,19 +577,55 @@ mod tests {
     }
 
     #[test]
-    fn an_fmp4_playlist_is_refused_by_name() {
+    fn an_fmp4_playlist_passes_the_gate() {
         let url = Url::parse("https://example.test/media.m3u8").unwrap();
         let text = "#EXTM3U\n\
                     #EXT-X-MAP:URI=\"init.mp4\"\n\
                     #EXTINF:6.0,\n\
                     seg1.m4s\n\
+                    #EXTINF:6.0,\n\
+                    seg2.m4s\n\
+                    #EXT-X-ENDLIST\n";
+        let media = match Playlist::parse(text, &url).unwrap() {
+            Playlist::Media(media) => media,
+            Playlist::Master(_) => panic!("expected a segment list"),
+        };
+        assert!(
+            check(&media, &url).is_ok(),
+            "EXT-X-MAP is a header to read, not a refusal"
+        );
+    }
+
+    #[test]
+    fn a_playlist_that_swaps_its_header_is_refused() {
+        let url = Url::parse("https://example.test/media.m3u8").unwrap();
+        let text = "#EXTM3U\n\
+                    #EXT-X-MAP:URI=\"init.mp4\"\n\
+                    #EXTINF:6.0,\n\
+                    seg1.m4s\n\
+                    #EXT-X-MAP:URI=\"other.mp4\"\n\
+                    #EXTINF:6.0,\n\
+                    seg2.m4s\n\
                     #EXT-X-ENDLIST\n";
         let media = match Playlist::parse(text, &url).unwrap() {
             Playlist::Media(media) => media,
             Playlist::Master(_) => panic!("expected a segment list"),
         };
         let error = check(&media, &url).unwrap_err();
-        assert!(error.to_string().contains("fMP4"), "{error}");
+        let message = error.to_string();
+        assert!(message.contains("EXT-X-MAP"), "{message}");
+        assert!(message.contains("segment 2"), "{message}");
+        assert!(message.contains("init.mp4"), "{message}");
+    }
+
+    #[test]
+    fn the_two_containers_are_told_apart_by_the_playlist() {
+        // The header decides, not a sniff of the bytes: a fragment with no
+        // `EXT-X-MAP` in front of it is read as a transport stream, and the
+        // error says so instead of guessing.
+        let error = tracks_of(b"\x00moof", None).unwrap_err();
+        let text = error.to_string();
+        assert!(text.contains("transport stream"), "{text}");
     }
 
     #[test]

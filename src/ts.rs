@@ -517,8 +517,17 @@ const SAMPLE_RATES: [u32; 13] = [
     7_350,
 ];
 
+/// The sampling frequency a four-bit index names.
+///
+/// Shared with the fragmented-MP4 reader, which meets the same table through an
+/// `AudioSpecificConfig` instead of an ADTS header: the thirteen rates are a
+/// property of AAC, not of the transport.
+pub fn sample_rate(frequency_index: u8) -> Option<u32> {
+    SAMPLE_RATES.get(frequency_index as usize).copied()
+}
+
 fn aac_config(profile: u8, frequency_index: u8, channels: u8) -> Result<AacConfig> {
-    let sample_rate = *SAMPLE_RATES.get(frequency_index as usize).ok_or_else(|| {
+    let sample_rate = sample_rate(frequency_index).ok_or_else(|| {
         Error::Parse(format!(
             "ADTS sampling frequency index {frequency_index} is not one of the thirteen rates"
         ))
