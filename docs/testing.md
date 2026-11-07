@@ -78,6 +78,14 @@ against a real socket rather than a mock.
   the filesystem below it is not.
 - **HTTP/2-specific behaviour.** The client speaks both; the fixture server
   speaks HTTP/1.1.
+- **The Windows installer, from `cargo test`.** `packaging/windows/install.ps1`
+  is PowerShell: it moves directories, writes the user `PATH` and rolls back, so
+  a Rust test asserting on strings would prove almost nothing. It has its own
+  workflow (`windows-installer.yml`), which dot-sources the installer, replaces
+  only its three seams — release resolution, download and directory move — and
+  drives the real code against archives built in the temp directory. No network,
+  no published release. The winget generator is ordinary Python and is tested on
+  Ubuntu by `packaging/winget/tests/check.py`.
 
 ## 6. Fuzzing
 
@@ -98,6 +106,8 @@ include truncated and padded inputs explicitly.
 | `ci.yml` | `test (ubuntu, macos, windows)` | `cargo clippy --all-targets -D warnings`, `cargo test --all-targets`, `cargo build --release` |
 | `format.yml` | `format` | `cargo fmt` plus `cargo generate-lockfile`, committed back to the branch |
 | `release.yml` | `build (five targets)` | `cargo build --release --locked`, archives, `SHA256SUMS`, packages |
+| `windows-installer.yml` | `installer` (windows-latest) | `packaging/windows/tests/Install.Integration.ps1`: install, upgrade, refusal, rollback and uninstall against locally built release fixtures |
+| `windows-installer.yml` | `winget-manifests` (ubuntu-latest) | `packaging/winget/tests/check.py`, plus a render of the manifests from a ZIP built the way the release builds it |
 
 Three platforms, one job each, because the failures this project has actually had
 were platform-shaped: a path joined with `\`, a file renamed while a reader held

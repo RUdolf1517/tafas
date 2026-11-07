@@ -1,0 +1,14 @@
+PackageIdentifier: RUdolf1517.tafas
+PackageVersion: {{PACKAGE_VERSION}}
+InstallerLocale: en-US
+InstallerType: zip
+Installers:
+  - Architecture: x64
+    InstallerUrl: https://github.com/RUdolf1517/tafas/releases/download/{{RELEASE_TAG}}/tafas-x86_64-pc-windows-msvc.zip
+    InstallerSha256: {{WINDOWS_ARCHIVE_SHA256}}
+    NestedInstallerType: portable
+    NestedInstallerFiles:
+      - RelativeFilePath: tafas.exe
+        PortableCommandAlias: tafas
+ManifestType: installer
+ManifestVersion: 1.6.0

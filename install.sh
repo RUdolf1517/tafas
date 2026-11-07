@@ -37,7 +37,7 @@ arch=$(uname -m)
 case "$os" in
   Linux)  triple_os=unknown-linux-musl ;;
   Darwin) triple_os=apple-darwin ;;
-  *) err "unsupported OS: $os (Linux and macOS have prebuilt binaries; on Windows use the zip from Releases)" ;;
+  *) err "unsupported OS: $os (Linux and macOS have prebuilt binaries; on Windows use install.ps1 or the zip from Releases)" ;;
 esac
 case "$arch" in
   x86_64|amd64)  triple_arch=x86_64 ;;

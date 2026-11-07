@@ -172,6 +172,27 @@ jobs:
             bash packaging/linux-packages.sh "${TAG#v}" artifacts
           fi
 
+      - name: Windows installer and local winget manifests
+        shell: bash
+        env:
+          TAG: ${{ inputs.tag || github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          # The installer ships as an asset, so its own bytes are in SHA256SUMS
+          # like every other file and a reader can check the script they run.
+          cp packaging/windows/install.ps1 artifacts/install.ps1
+          # The manifests name the hash of the ZIP that was just built, not a
+          # rebuilt one. Nothing is sent to winget-pkgs.
+          python3 packaging/winget/generate.py \
+            --tag "$TAG" \
+            --windows-archive artifacts/tafas-x86_64-pc-windows-msvc.zip \
+            --output-dir artifacts/winget
+          # The bundle is named by the generator, which normalises the tag; take
+          # whatever single ZIP it wrote rather than re-deriving the name here.
+          mv artifacts/winget/*.zip artifacts/
+          rm -rf artifacts/winget
+          ls -l artifacts/install.ps1 artifacts/tafas-winget-local-manifests-*.zip
+
       - name: Checksums
         run: |
           set -euo pipefail

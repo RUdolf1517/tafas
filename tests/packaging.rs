@@ -158,3 +158,105 @@ fn the_dependency_list_in_the_docs_matches_the_manifest() {
         );
     }
 }
+
+/// The Windows asset name appears in four places that must never drift: the
+/// installer downloads it, the manifest generator hashes it, the release job
+/// builds it, and the documentation tells a reader what to look for.
+#[test]
+fn the_windows_channel_names_the_asset_the_release_builds() {
+    const ASSET: &str = "tafas-x86_64-pc-windows-msvc.zip";
+    for file in [
+        "packaging/windows/install.ps1",
+        "packaging/winget/generate.py",
+        ".github/workflows/release.yml",
+        "docs/releases.md",
+    ] {
+        assert!(
+            read(file).contains(ASSET),
+            "{file} does not name the Windows asset {ASSET}"
+        );
+    }
+}
+
+/// The installer is shipped as an asset and attached to the release, and it must
+/// stay a per-user installer: no elevation, a checksum before an unpack, and an
+/// uninstall path. A drift here is a change in what installing means.
+#[test]
+fn the_windows_installer_is_published_and_verifies_what_it_writes() {
+    let installer = read("packaging/windows/install.ps1");
+    let release = read(".github/workflows/release.yml");
+
+    assert!(
+        release.contains("artifacts/install.ps1"),
+        "the release job must publish install.ps1 as an asset"
+    );
+    assert!(
+        release.contains("packaging/winget/generate.py"),
+        "the release job must render the winget manifests from the shipped ZIP"
+    );
+
+    for required in [
+        "SHA256SUMS",
+        "Get-FileHash",
+        "-Uninstall",
+        "installer = 'tafas-per-user'",
+    ] {
+        assert!(
+            installer.contains(required),
+            "install.ps1 no longer contains {required:?}"
+        );
+    }
+    // No elevation and no machine-wide write: this is a per-user installer.
+    for forbidden in [
+        "RunAs",
+        "EnvironmentVariableTarget]::Machine",
+        "ProgramFiles",
+        "ProgramData",
+    ] {
+        assert!(
+            !installer.contains(forbidden),
+            "install.ps1 mentions {forbidden:?}: this is a per-user installer, not a machine-wide one"
+        );
+    }
+}
+
+/// Every template the generator names must exist and carry the identifier the
+/// bundle is filed under, so `winget install --manifest` finds one package.
+#[test]
+fn the_winget_templates_match_the_generator() {
+    let generator = read("packaging/winget/generate.py");
+    for template in [
+        "version.yaml.in",
+        "installer.yaml.in",
+        "locale.en-US.yaml.in",
+    ] {
+        assert!(
+            generator.contains(template),
+            "generate.py no longer names {template}"
+        );
+        let path = manifest_dir().join("packaging/winget/templates").join(template);
+        assert!(path.is_file(), "{} is missing", path.display());
+        let text = read(&format!("packaging/winget/templates/{template}"));
+        assert!(
+            text.contains("PackageIdentifier: RUdolf1517.tafas"),
+            "{template} does not declare the package identifier"
+        );
+        assert!(
+            text.contains("ManifestVersion: 1.6.0"),
+            "{template} does not declare the manifest schema version"
+        );
+    }
+
+    let installer = read("packaging/winget/templates/installer.yaml.in");
+    for required in [
+        "InstallerType: zip",
+        "NestedInstallerType: portable",
+        "RelativeFilePath: tafas.exe",
+        "PortableCommandAlias: tafas",
+    ] {
+        assert!(
+            installer.contains(required),
+            "the installer template no longer declares {required:?}"
+        );
+    }
+}

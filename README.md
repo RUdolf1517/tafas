@@ -82,9 +82,20 @@ sudo dnf install ./tafas.aarch64.rpm
 
 Both packages install `man tafas` and completion for bash, zsh and fish.
 
-Windows x64 — the archive is `tafas-x86_64-pc-windows-msvc.zip` on
-[Releases](https://github.com/RUdolf1517/tafas/releases/latest); unpack it and put
-`tafas.exe` on `PATH`. No installer, no elevation, no registry.
+Windows x64 — either unpack `tafas-x86_64-pc-windows-msvc.zip` from
+[Releases](https://github.com/RUdolf1517/tafas/releases/latest) and put `tafas.exe`
+on `PATH`, or let the per-user installer do that part:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1              # install
+powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -Uninstall   # undo it
+```
+
+It installs into `%LOCALAPPDATA%\Programs\tafas`, adds one user `PATH` entry,
+checks the archive against `SHA256SUMS` before unpacking it, and never asks for
+elevation. No MSI, no MSIX, nothing machine-wide, and no registry key beyond the
+user `PATH` that `-Uninstall` takes back. Each release also carries a local winget
+manifest bundle: `winget install --manifest <unpacked bundle>`.
 
 </details>
 

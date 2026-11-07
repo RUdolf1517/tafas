@@ -13,6 +13,25 @@ version; adding a site, a flag or a container is minor. The policy is in
 
 ### Added
 
+- **A per-user Windows installer** (`packaging/windows/install.ps1`, published as
+  a release asset and covered by `SHA256SUMS`). Installs into
+  `%LOCALAPPDATA%\Programs\tafas`, adds one user `PATH` entry, and refuses to
+  write anything it has not verified: the archive is checked against the release's
+  `SHA256SUMS`, must contain exactly `tafas.exe` and `LICENSE`, and the extracted
+  binary must report the version the tag names. Replacement is a directory rename
+  with a backup, so a failure puts the previous version back; a directory the
+  installer does not own is never adopted or deleted, and `-Uninstall` removes only
+  the files its own marker lists. No elevation, no MSI, no MSIX, nothing
+  machine-wide.
+- **Local winget manifests generated from the shipped ZIP**
+  (`packaging/winget/`). The release job renders the three manifests from the exact
+  bytes of `tafas-x86_64-pc-windows-msvc.zip`, so `InstallerSha256` is the hash of
+  the asset rather than of a rebuild, and attaches them as a bundle for
+  `winget install --manifest`. Nothing is submitted to `winget-pkgs`.
+- **`windows-installer.yml`**: the installer's integration test (install, upgrade,
+  checksum and version refusals, rollback, uninstall, `PATH` ownership) on
+  `windows-latest`, and the manifest generator's tests on Ubuntu. Both run offline
+  against fixtures built in the job.
 - **HLS playlist parsing** (`src/hls.rs`). Master and media playlists, variant
   selection by height and bandwidth, `EXT-X-MAP` initialisation sections,
   `EXT-X-BYTERANGE` in both the absolute and the continue-from-the-last form,
