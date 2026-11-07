@@ -1,7 +1,5 @@
 #![no_main]
 
-use std::path::PathBuf;
-
 use libfuzzer_sys::fuzz_target;
 
 // The remuxer and the verifier take a path, because the verifier re-reads its
@@ -26,5 +24,4 @@ fuzz_target!(|data: &[u8]| {
 
     let _ = std::fs::remove_file(&input);
     let _ = std::fs::remove_file(&output);
-    let _: PathBuf = dir;
 });
