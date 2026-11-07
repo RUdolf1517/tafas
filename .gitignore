@@ -4,3 +4,6 @@ Cargo.lock.orig
 .DS_Store
 __pycache__/
 *.pyc
+/fuzz/target
+/fuzz/corpus
+/fuzz/artifacts

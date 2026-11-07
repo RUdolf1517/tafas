@@ -154,6 +154,18 @@ fn sub_langs_without_write_subs_is_a_usage_error() {
 }
 
 #[test]
+fn write_subs_and_embed_subs_together_is_a_usage_error() {
+    let output = tafas(&[
+        "--write-subs",
+        "--embed-subs",
+        "https://youtu.be/dQw4w9WgXcQ",
+    ]);
+    assert_eq!(code(&output), 2, "one asks for a file, the other a track");
+    assert!(stdout(&output).is_empty());
+    assert!(stderr(&output).contains("--embed-subs"));
+}
+
+#[test]
 fn a_malformed_sub_langs_list_is_rejected_before_any_request() {
     let output = tafas(&[
         "--write-subs",

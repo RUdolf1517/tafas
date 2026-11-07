@@ -160,6 +160,20 @@ project made for convenience.
 There is no `libav*`, no OpenSSL, no `libcurl`, no `ffmpeg` and no Python. A
 build from source needs a C compiler for `ring`; the released binaries do not.
 
+## 3.1 The fuzz crate, which is not a dependency of the binary
+
+`fuzz/` is its own package: `publish = false`, never built by `cargo build`,
+never linked into a release. Its one dependency does not appear in the binary's
+graph at all.
+
+| Crate | Version | Licence | Why |
+| --- | --- | --- | --- |
+| `libfuzzer-sys` | 0.4 | MIT OR Apache-2.0 | the `cargo fuzz` runtime: a corpus, a coverage signal and a crash report |
+
+Nightly-only, dev-only, and the measurement §4 asks for comes out as zero — no
+byte of the released binary changed. That is a honest measurement, not a missing
+one. The targets themselves are described in [testing §6](testing.md#6-fuzzing).
+
 ## 4. Adding a dependency
 
 Open an issue first. A pull request that adds one is expected to contain:

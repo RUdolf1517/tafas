@@ -103,16 +103,32 @@ rather than an assertion about how long the client took.
 
 ## 6. Fuzzing
 
-The parsers worth fuzzing are the two that read bytes from someone else:
-`mux::scan`/`verify` (ISO-BMFF) and `sites::json_after` (brace matching). Both are
-pure functions over a slice, both are `#![forbid(unsafe_code)]`, and both are
-written to return an error rather than index out of bounds — which is what a fuzz
-target would be asserting.
+The parsers worth fuzzing are the ones that read bytes from someone else, and
+all four are pure functions over a slice: `mp4read::plain` (the `stbl` tables),
+`mp4read::dimensions` (`tkhd`), `subtitles::cues` (a WebVTT body) and
+`sites::json_after` (brace matching in a page). None of them is allowed to panic:
+a panic inside a parser is the bug, not the input that found it.
 
-`mp4read::plain` belongs on that list as well: it now walks sample tables in a
-file it did not write. A fuzz target is planned in
-[roadmap §3](roadmap.md#3-v03--reach-and-the-parts-that-are-not-a-url). Until then, the parser tests
-include truncated and padded inputs explicitly.
+`fuzz/` is a separate crate — `cargo install cargo-fuzz`, a nightly toolchain,
+and nothing it builds ends up in the binary:
+
+```
+cargo +nightly fuzz run mp4_read
+cargo +nightly fuzz run webvtt
+cargo +nightly fuzz run json_after
+```
+
+`.github/workflows/fuzz.yml` runs each target for five minutes, weekly and on
+demand. Nothing about it runs on a pull request, because a fuzzer that gates a
+merge is a fuzzer people learn to ignore. A crash arrives as an artifact under
+`fuzz/artifacts/`; that file is committed with the fix and replayed with
+`cargo fuzz run <target> fuzz/artifacts/<target>/<file>`.
+
+`mux::scan` and `mux::verify` are not targets yet: both take a path, because the
+verifier re-reads a file from disk, so they need a temporary-file wrapper in the
+target itself. The parser tests cover them today, and they include truncated and
+padded inputs explicitly — a plain regression fails in `cargo test`, not only
+under a fuzzer.
 
 ## 7. CI
 

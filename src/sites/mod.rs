@@ -87,7 +87,7 @@ pub(crate) fn list<'a>(value: &'a Value, path: &[&str]) -> &'a [Value] {
 /// Sites inline their state as `var x = {...};`, so the object has to be found
 /// by brace matching that understands strings and escapes — a `}` inside a
 /// title would otherwise truncate the document.
-pub(crate) fn json_after<'a>(page: &'a str, marker: &str) -> Option<&'a str> {
+pub fn json_after<'a>(page: &'a str, marker: &str) -> Option<&'a str> {
     let start = page.find(marker)?;
     let tail = &page[start + marker.len()..];
     let open = tail.find('{')?;
