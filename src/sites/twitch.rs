@@ -183,20 +183,18 @@ fn percent_encode(value: &str) -> String {
 
 fn request_headers() -> Vec<(String, String)> {
     vec![
-        ("user-agent".to_string(), crate::http::UA_DESKTOP.to_string()),
         (
-            "client-id".to_string(),
-            PUBLIC_WEB_CLIENT_ID.to_string(),
+            "user-agent".to_string(),
+            crate::http::UA_DESKTOP.to_string(),
         ),
+        ("client-id".to_string(), PUBLIC_WEB_CLIENT_ID.to_string()),
     ]
 }
 
 /// `/videos/<id>` and nothing else. `/videos` is what every VOD URL has in common.
 fn vod_id(url: &Url) -> Option<String> {
     let segments = url.segments();
-    let index = segments
-        .iter()
-        .position(|segment| *segment == "videos")?;
+    let index = segments.iter().position(|segment| *segment == "videos")?;
     segments
         .get(index + 1)
         .filter(|id| is_id(id))
@@ -249,7 +247,10 @@ mod tests {
         assert_eq!(media.formats.len(), 1);
         assert_eq!(media.formats[0].container, Container::Hls);
         let url = media.formats[0].url.as_deref().unwrap();
-        assert!(url.starts_with("https://usher.ttvnw.net/vod/1234567890.m3u8?"), "{url}");
+        assert!(
+            url.starts_with("https://usher.ttvnw.net/vod/1234567890.m3u8?"),
+            "{url}"
+        );
         assert!(url.contains("nauthsig=abc123signature"), "{url}");
         assert!(
             url.contains("nauth=%7B%22authorization%22"),

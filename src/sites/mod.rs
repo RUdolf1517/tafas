@@ -9,8 +9,8 @@
 
 pub mod reddit;
 pub mod soundcloud;
-pub mod twitch;
 pub mod tiktok;
+pub mod twitch;
 pub mod vimeo;
 pub mod x;
 pub mod youtube;
