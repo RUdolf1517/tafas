@@ -144,13 +144,7 @@ fn transcoding(track: &Value) -> Result<String> {
 pub fn parse(track: &Value, transcoding_url: String, page_url: String) -> Media {
     let id = uint(track, &["id"])
         .map(|id| id.to_string())
-        .unwrap_or_else(|| {
-            page_url
-                .rsplit('/')
-                .next()
-                .unwrap_or("track")
-                .to_string()
-        });
+        .unwrap_or_else(|| page_url.rsplit('/').next().unwrap_or("track").to_string());
     let mut media = Media::new(Site::SoundCloud, id, page_url);
     media.title = text(track, &["title"]).unwrap_or_default();
     media.uploader = text(track, &["user", "username"]);

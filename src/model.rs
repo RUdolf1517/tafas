@@ -331,7 +331,10 @@ mod tests {
             site("https://soundcloud.com/artist/track"),
             Some(Site::SoundCloud)
         );
-        assert_eq!(site("https://on.soundcloud.com/abc"), Some(Site::SoundCloud));
+        assert_eq!(
+            site("https://on.soundcloud.com/abc"),
+            Some(Site::SoundCloud)
+        );
         assert_eq!(site("https://notsoundcloud.com/1"), None);
         assert_eq!(site("https://t.co/abc"), Some(Site::X));
     }
