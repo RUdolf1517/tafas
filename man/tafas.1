@@ -179,6 +179,20 @@ playlist order whatever order they arrive in, and the first failure stops the
 ones still queued. It applies to a segment list only; on any other selection it
 prints a note and changes nothing.
 .TP
+.B \-\-limit\-rate \fIRATE\fR
+Cap a transfer at
+.I RATE
+bytes per second, written with an optional
+.BR K ,
+.B M
+or
+.B G
+suffix in powers of 1024 (500K, 2M, 1.5M). One budget is shared by every body
+and every segment in flight, so
+.B \-\-concurrent\-fragments
+divides the rate rather than multiplying it. Below 1K the run is refused rather
+than clamped; metadata requests are not charged. The default is no limit.
+.TP
 .B \-\-cookies \fIFILE\fR
 Send the cookies in a Netscape cookie file, in the format curl writes and every
 browser exports. The file is read once at startup, sent only to the hosts its

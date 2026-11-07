@@ -160,6 +160,7 @@ by name rather than converted.
 | `--cookies FILE` | send the cookies in a Netscape cookie file (read once, never written back) |
 | `--playlist-items ITEMS` | take only these entries of a list: `3`, `1-5`, `2-`, mixed with commas |
 | `--concurrent-fragments N` | fetch this many HLS segments at once (`1`–`16`, default `1`) |
+| `--limit-rate RATE` | cap a transfer at `RATE` bytes per second (`500K`, `2M`, `1.5M`; default no limit) |
 | `--extractor-args SITE:KEY=VALUE` | narrow an extractor's route by hand (repeatable; see below) |
 
 Retried: transport failures, `429`, and `5xx`, with a growing delay (0.4 s,
@@ -184,6 +185,19 @@ is still read in full, so the count in the refusal is the count the server
 served. A selection that matches no segment is a refusal (1); one that does not
 start on a keyframe is written, with a warning that the first frames will not
 decode.
+
+`--limit-rate RATE` caps the media bytes this run pulls: a progressive body and
+every segment of a list are charged against one budget, so `--concurrent-fragments
+4` divides the rate rather than multiplying it. `RATE` is bytes per second with an
+optional `K`, `M` or `G` suffix in powers of 1024, decimals allowed, checked
+before the first request: below `1K` the run would be slower than its own
+timeouts, so that is a usage error rather than a clamp, and above `1G` the flag
+asks for nothing. Metadata — the page, the JSON, a thumbnail — is not charged;
+the budget is for the bytes a shared line is spent on. The limiter is an average
+and not a sleep per chunk: each chunk reserves the time it is worth, the worker
+waits until its turn, and the wait happens with no lock held so several segments
+still overlap. One chunk of slack is deliberate — the first read is never
+delayed — so a run can overshoot by a buffer and converges from there.
 
 `--concurrent-fragments N` decides how many segments of one HLS list are in
 flight at once; the default, `1`, fetches them one after another, so the flag is

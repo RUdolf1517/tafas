@@ -178,7 +178,8 @@ fn capabilities() -> String {
             "atomic_commit": true,
             "retries_default": 3,
             "max_redirects": 10,
-            "concurrent_fragments": { "default": 1, "max": 16 }
+            "concurrent_fragments": { "default": 1, "max": 16 },
+            "limit_rate": { "default": "unlimited", "min": 1024, "max": 1073741824 }
         },
         "external_binaries": [],
         "tls": "rustls (ring provider)",

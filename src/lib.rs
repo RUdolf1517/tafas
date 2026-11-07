@@ -23,6 +23,7 @@ pub mod mp4write;
 pub mod mux;
 pub mod names;
 pub mod progress;
+pub mod ratelimit;
 pub mod report;
 pub mod select;
 pub mod sites;

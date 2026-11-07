@@ -139,6 +139,10 @@ pub struct Args {
     #[arg(long, value_name = "SECS", default_value_t = 60)]
     pub timeout: u64,
 
+    /// Cap a transfer at this many bytes per second (500K, 2M, 1.5M)
+    #[arg(long, value_name = "RATE", value_parser = parse_limit_rate)]
+    pub limit_rate: Option<u64>,
+
     /// Take only these segments of an HLS list: 3, 1-5, 2- (1-based)
     #[arg(long, value_name = "ITEMS", value_parser = parse_items)]
     pub playlist_items: Option<crate::items::Items>,
@@ -213,6 +217,12 @@ fn parse_sub_langs(text: &str) -> Result<crate::subtitles::Selection, String> {
 
 fn parse_items(text: &str) -> Result<crate::items::Items, String> {
     crate::items::Items::parse(text).map_err(|error| error.to_string())
+}
+
+/// `--limit-rate RATE`: the syntax lives in `ratelimit` so the message and the
+/// bound are one piece of code, checked before the first request.
+fn parse_limit_rate(text: &str) -> Result<u64, String> {
+    crate::ratelimit::parse(text)
 }
 
 fn parse_color(text: &str) -> Result<Choice, String> {
@@ -299,6 +309,7 @@ impl Args {
             jobs: self.jobs(),
             retries: self.retries,
             timeout: self.timeout,
+            limit_rate: self.limit_rate,
             cookies: self.cookies.clone(),
             extractor_args: self.extractor_args()?,
             playlist_items: self.playlist_items.clone(),

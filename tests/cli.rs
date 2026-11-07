@@ -254,6 +254,25 @@ fn concurrent_fragments_is_bounded_before_anything_is_requested() {
 }
 
 #[test]
+fn limit_rate_is_bounded_before_anything_is_requested() {
+    // Each of these is wrong in a different way — zero, a rate the program
+    // would spend all its time honouring, a rate above the ceiling, and words —
+    // and all of them are wrong before a request, so the exit code is the usage
+    // one and the message names the spelling that would have worked.
+    for bad in ["0", "1", "5G", "fast"] {
+        let output = tafas(&["--limit-rate", bad, "https://youtu.be/aqz-KE-bpKQ"]);
+        assert_eq!(code(&output), 2, "--limit-rate {bad}");
+        assert!(stdout(&output).is_empty());
+        let text = stderr(&output);
+        assert!(text.contains("--limit-rate"), "{text}");
+        assert!(
+            text.contains("500K"),
+            "the message says what a rate looks like: {text}"
+        );
+    }
+}
+
+#[test]
 fn extractor_args_are_checked_against_a_closed_vocabulary() {
     // Every one of these is wrong in a different way and all of them are wrong
     // before a request, so the exit code is the usage one and the message names

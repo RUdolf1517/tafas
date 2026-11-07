@@ -67,6 +67,7 @@ survived the remux and are findable in the output.
 | an `EXT-X-MAP` playlist with two fragments | one request for the header, two for the segments, and the written file verifies |
 | the same playlist with a header that changes half way | refused, naming the segment and both headers, and nothing is written |
 | an `EXT-X-MAP` body that is not ISO-BMFF | refused with the box that failed, not with a panic |
+| `--limit-rate 0`, `1`, `5G`, `fast` | exit 2 before any request, and the message shows the spelling that would have worked |
 | `--extractor-args youtube:client=flash` (and five other shapes) | exit 2 before any request, and the message lists the values that would have worked |
 | two `--extractor-args` flags, one per site | both are accepted; the same key named twice is exit 2, not a silent last-one-wins |
 

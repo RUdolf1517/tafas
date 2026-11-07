@@ -118,6 +118,7 @@ tafas https://x.com/user/status/123 --cookies ~/cookies.txt  # a session, if you
 tafas https://youtu.be/aqz-KE-bpKQ --write-info-json # a sidecar describing the choice
 tafas https://x.com/user/status/123 --playlist-items 1-5  # part of an HLS list
 tafas https://x.com/user/status/123 --concurrent-fragments 4  # four segments at once
+tafas https://vimeo.com/76979871 --limit-rate 2M  # leave the line usable for others
 tafas https://youtu.be/dQw4w9WgXcQ --extractor-args youtube:client=ios  # one client only
 tafas https://youtu.be/aqz-KE-bpKQ --write-thumbnail  # the poster, beside the file
 tafas https://youtu.be/aqz-KE-bpKQ --write-subs --sub-langs en,ru  # WebVTT captions

@@ -13,6 +13,16 @@ version; adding a site, a flag or a container is minor. The policy is in
 
 ### Added
 
+- **`--limit-rate RATE`.** One budget for the bytes coming off the wire: a
+  progressive body and every segment of an HLS list are charged against the same
+  clock, so `--concurrent-fragments 4` divides the rate rather than multiplying
+  it. `RATE` takes an optional `K`, `M` or `G` suffix in powers of 1024 with
+  decimals allowed; below `1K` the run would be slower than its own timeouts so
+  that is a usage error (2) rather than a clamp, and the ceiling is `1G`.
+  Metadata — the page, the JSON, a thumbnail — is not charged. The wait happens
+  outside the budget's lock, so concurrent segments still overlap, and one
+  chunk of slack at the start keeps the first read instant. Documented in
+  [docs/cli.md](docs/cli.md#4-transfer).
 - **Fragmented MP4 in HLS** (`src/mp4read.rs`). A playlist with `EXT-X-MAP` is
   no longer refused: the header is fetched once, `moov`/`trak`/`stsd` are read for
   the timescale and the codec record (`avcC`, or `esds` down to the two-byte

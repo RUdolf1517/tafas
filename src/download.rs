@@ -68,6 +68,9 @@ pub struct Options {
     pub jobs: usize,
     pub retries: u32,
     pub timeout: u64,
+    /// `--limit-rate`: the average a transfer may not exceed, in bytes per
+    /// second. `None` means no limit at all.
+    pub limit_rate: Option<u64>,
     /// A Netscape cookie file to send from, when the user named one.
     pub cookies: Option<PathBuf>,
     /// `--playlist-items`: which segments of an HLS list to take.
@@ -105,6 +108,7 @@ impl Default for Options {
             jobs: 1,
             retries: 3,
             timeout: 60,
+            limit_rate: None,
             cookies: None,
             playlist_items: None,
             concurrent_fragments: 1,
@@ -200,6 +204,7 @@ pub fn run(urls: &[String], options: &Options) -> u8 {
             }
         },
     };
+    let http = http.with_limit_rate(options.limit_rate);
     let printer = Printer::new(options);
 
     let mut items: Vec<Item> = if options.jobs <= 1 || urls.len() <= 1 {

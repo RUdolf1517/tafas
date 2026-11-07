@@ -51,7 +51,7 @@ thumbnails, live streams, more than four sites.
 
 | Item | Why |
 | --- | --- |
-| **`--limit-rate`, per-fragment resume** | A downloader that saturates a shared line is a downloader people stop using. |
+| **`--limit-rate`** — *done: one budget over the media bytes, `K`/`M`/`G` suffixes, a `1K` floor and a `1G` ceiling, charged per chunk with the wait outside the lock*; **per-fragment resume** — *open* | A downloader that saturates a shared line is a downloader people stop using. The rate is an average over one run, checked before the first request, and shared by every segment in flight so concurrency divides it instead of multiplying it. |
 | **Reproducible builds and signed releases** | `SOURCE_DATE_EPOCH`, `--remap-path-prefix`, a minisign key next to `SHA256SUMS`, and an SBOM in the archive. The checksum proves the file matches the release; a signature proves the release is ours. |
 | **Budgets in CI** | Binary size and `--version` startup time, asserted with a tolerance. A downloader is allowed to grow; it is not allowed to grow silently. |
 | **MSRV job** | Once the dependency floor stops moving, a `1.82` build joins the matrix instead of being a line in the release procedure. |
