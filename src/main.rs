@@ -199,7 +199,11 @@ mod tests {
         let value: serde_json::Value = serde_json::from_str(&capabilities()).unwrap();
         assert_eq!(value["capabilities_schema_version"], 1);
         assert_eq!(value["result_schema_version"], RESULT_SCHEMA_VERSION);
-        assert_eq!(value["sites"].as_array().unwrap().len(), 3);
+        assert_eq!(
+            value["sites"].as_array().unwrap().len(),
+            SITES.len(),
+            "the document lists every site the build reads"
+        );
         assert_eq!(value["muxing"]["reencode"], false);
         assert_eq!(value["external_binaries"].as_array().unwrap().len(), 0);
     }
