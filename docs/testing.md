@@ -20,7 +20,7 @@ this repository opens and closes itself.
 
 | Layer | Where | What it proves |
 | --- | --- | --- |
-| unit | `#[cfg(test)]` in each module | URL parsing and rejection, title sanitising, format classification, selection rules, box parsing and patching, exit-code mapping, colour precedence |
+| unit | `#[cfg(test)]` in each module | URL parsing and rejection, title sanitising, format classification, selection rules, box parsing and patching, the `--extractor-args` vocabulary, exit-code mapping, colour precedence |
 | remux | `src/mux.rs` tests | a synthetic two-file remux produces one file with both tracks, both payloads intact, `moov` first, and `verify` accepting it |
 | end-to-end | `tests/cli.rs` | the real binary, spawned, against a local HTTP server this test starts on `127.0.0.1:0` |
 | sidecar | unit tests in `src/info.rs` | the document names the page, the streams and the files, carries no media URL, and is written through a temporary that is gone after the rename |
@@ -63,6 +63,8 @@ survived the remux and are findable in the output.
 | `--concurrent-fragments 4` over four segments the server holds for 80 ms | the server saw more than one request at once, and the file is still the four segments in playlist order |
 | the same fixtures with the default `1` | the server never saw two requests at once |
 | a 404 on the first segment of a parallel run | the queued segments are never requested, and nothing is written |
+| `--extractor-args youtube:client=flash` (and five other shapes) | exit 2 before any request, and the message lists the values that would have worked |
+| two `--extractor-args` flags, one per site | both are accepted; the same key named twice is exit 2, not a silent last-one-wins |
 
 The local server is a few dozen lines of `std::net::TcpListener`: it parses the
 request line and headers, answers a canned body, and can be told to fail a given

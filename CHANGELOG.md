@@ -13,6 +13,14 @@ version; adding a site, a flag or a container is minor. The policy is in
 
 ### Added
 
+- **`--extractor-args SITE:KEY=VALUE`.** A closed, checked escape hatch for the
+  day a site reorders the document an extractor reads: `youtube:client=NAME`
+  pins one InnerTube client instead of walking the chain, and
+  `tiktok:route=web|app` drops one of TikTok's two routes. The vocabulary is
+  validated before the first request — an unknown key or value is exit 2 with
+  the accepted spellings in the message — a pinned route is named in the
+  refusal it causes, and `--capabilities` publishes the same lists under
+  `extractor_args`. Nothing can be enabled that a release did not ship.
 - **`--concurrent-fragments N`.** Fetch up to sixteen segments of one HLS list
   at once instead of one after another; the default of `1` is the behaviour that
   existed before. Arrivals are written into their own slot, so the file is the

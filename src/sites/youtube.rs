@@ -18,6 +18,7 @@
 use serde_json::{json, Value};
 
 use crate::error::{Error, Result};
+use crate::extractor_args::ExtractorArgs;
 use crate::http::{Http, UA_ANDROID, UA_DESKTOP, UA_IOS};
 use crate::model::{Container, Format, Image, Media, Site, StreamKind, Subtitle};
 use crate::sites::{at, json_after, list, text, uint};
@@ -40,7 +41,7 @@ const PAGE_HEADERS: [(&str, &str); 3] = [
     ("accept", "text/html,application/xhtml+xml"),
 ];
 
-pub fn extract(http: &Http, url: &Url, raw: &str) -> Result<Media> {
+pub fn extract(http: &Http, url: &Url, raw: &str, args: &ExtractorArgs) -> Result<Media> {
     let id = video_id(url).ok_or_else(|| {
         Error::Usage(format!(
             "{raw} is not a YouTube video URL: expected /watch?v=ID, /shorts/ID or youtu.be/ID"
@@ -54,16 +55,30 @@ pub fn extract(http: &Http, url: &Url, raw: &str) -> Result<Media> {
     );
     let mut notes: Vec<String> = Vec::new();
 
+    let pinned = args.get("youtube", "client");
+
     let watch_url =
         format!("https://www.youtube.com/watch?v={id}&hl=en&bpctr=9999999999&has_verified=1");
-    let page = match http.get_text(&watch_url, &PAGE_HEADERS) {
-        Ok(page) => Some(page),
-        Err(error) => {
-            // A missing watch page is not fatal: the API route below does not
-            // need it. It costs the API key, so the fallback key is used.
-            notes.push(format!("watch page: {error}"));
+    let page = match pinned {
+        // A pinned client means the watch page is not asked at all. Its formats
+        // come out of the web player response, which is the one route the pin
+        // is there to avoid; asking it and then discarding the answer would only
+        // cost a request and confuse the notes.
+        Some(name) => {
+            notes.push(format!(
+                "watch page: not asked, --extractor-args pinned youtube:client={name}"
+            ));
             None
         }
+        None => match http.get_text(&watch_url, &PAGE_HEADERS) {
+            Ok(page) => Some(page),
+            Err(error) => {
+                // A missing watch page is not fatal: the API route below does not
+                // need it. It costs the API key, so the fallback key is used.
+                notes.push(format!("watch page: {error}"));
+                None
+            }
+        },
     };
 
     let mut api_key = FALLBACK_API_KEY.to_string();
@@ -88,6 +103,11 @@ pub fn extract(http: &Http, url: &Url, raw: &str) -> Result<Media> {
     let endpoint =
         format!("https://www.youtube.com/youtubei/v1/player?key={api_key}&prettyPrint=false");
     for (name, user_agent, context) in clients() {
+        if let Some(pinned) = pinned {
+            if name != pinned {
+                continue;
+            }
+        }
         let body = json!({
             "context": context,
             "videoId": id,
@@ -111,13 +131,13 @@ pub fn extract(http: &Http, url: &Url, raw: &str) -> Result<Media> {
         }
     }
 
-    Err(refusal(&id, &notes))
+    Err(refusal(&id, &notes, pinned))
 }
 
 /// Turns the accumulated failure reasons into the one sentence the user gets.
 /// A bot check and a cipher are different problems with different answers, so
 /// they are named separately instead of being flattened into "failed".
-fn refusal(id: &str, notes: &[String]) -> Error {
+fn refusal(id: &str, notes: &[String], pinned: Option<&str>) -> Error {
     let joined = notes.join("; ").to_ascii_lowercase();
     if joined.contains("sign in to confirm") || joined.contains("not a bot") {
         return Error::Refused(format!(
@@ -139,14 +159,19 @@ fn refusal(id: &str, notes: &[String]) -> Error {
              with an export from a signed-in browser (docs/extractors.md §3)"
         ));
     }
-    Error::Refused(format!(
-        "youtube: {id} could not be read: {}",
-        if notes.is_empty() {
-            "no client returned a playable format".to_string()
-        } else {
-            notes.join("; ")
-        }
-    ))
+    let tried = if notes.is_empty() {
+        "no client returned a playable format".to_string()
+    } else {
+        notes.join("; ")
+    };
+    let tried = match pinned {
+        Some(pinned) => format!(
+            "{tried}; --extractor-args pinned youtube:client={pinned}, so the other clients were \
+             not tried"
+        ),
+        None => tried,
+    };
+    Error::Refused(format!("youtube: {id} could not be read: {tried}"))
 }
 
 fn first_bot_sentence(notes: &[String]) -> String {

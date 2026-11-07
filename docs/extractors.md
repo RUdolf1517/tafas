@@ -222,6 +222,37 @@ JSON lookup helpers are total, and media URLs are used only when they are
 strings. A changed page therefore produces a refusal with the status the site
 reported, which is the single most useful thing a bug report can contain.
 
+## 7. The escape hatch: `--extractor-args`
+
+Section 6 ends with "a changed page produces a refusal", and a refusal is useful
+but not a download. The flag for the day between the change and the release is
+`--extractor-args SITE:KEY=VALUE`, and it is deliberately the smallest thing that
+could work.
+
+There are two keys, both of them routes this build already has:
+
+| value | what it does | when it helps |
+| --- | --- | --- |
+| `youtube:client=NAME` | asks one InnerTube client and drops the rest of the chain (`android_vr`, `ios`, `android`, `tv_embedded`, `web`) | one client still answers while the default order trips a bot check |
+| `tiktok:route=web` | reads the page only, never the mobile feed | the page works and the feed 403s, so the fallback wastes a request |
+| `tiktok:route=app` | asks the feed only, never the page | the desktop page serves a verification wall and the feed does not |
+
+Three rules make it an escape hatch rather than a configuration language. The
+vocabulary is **closed**: a site's keys, and each key's values, are constants in
+`src/extractor_args.rs`, and `--capabilities` publishes the same lists, so the
+set of values a release accepts is documented where a script can read it. It is
+**checked before the first request**, so `youtube:client=flash` is exit 2 with
+`android_vr|ios|android|tv_embedded|web` in the message, not a download that
+quietly used the default. And it **only narrows**: there is no value that turns
+on a route the build does not already try by default, so a pinned client is a
+subset of the chain, and the failure for a pinned route names the pin — "no
+other client was tried" is the difference between a site problem and a
+self-inflicted one.
+
+A pinned route is never silent in the other direction either: dropping a route
+puts a note in the failure that names the flag, and `youtube:client=NAME` skips
+the watch page instead of asking it and discarding the answer.
+
 If a site changes and tafas writes a file that a player rejects, that is the
 highest-priority bug class in this project. [SECURITY.md](../SECURITY.md) covers
 the private channel for anything that looks like more than a compatibility

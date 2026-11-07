@@ -70,6 +70,8 @@ pub struct Options {
     pub playlist_items: Option<items::Items>,
     /// `--concurrent-fragments`: how many segments of one list may be in flight.
     pub concurrent_fragments: usize,
+    /// `--extractor-args`: a site's route, narrowed by hand.
+    pub extractor_args: crate::extractor_args::ExtractorArgs,
     pub verbose: u8,
     pub color: style::Choice,
 }
@@ -101,6 +103,7 @@ impl Default for Options {
             cookies: None,
             playlist_items: None,
             concurrent_fragments: 1,
+            extractor_args: crate::extractor_args::ExtractorArgs::default(),
             verbose: 0,
             color: style::Choice::Auto,
         }
@@ -322,7 +325,7 @@ fn handle(
     printer: &Printer,
     item: &mut Item,
 ) -> Result<Status> {
-    let media = sites::extract(http, url)?;
+    let media = sites::extract(http, url, &options.extractor_args)?;
     item.site = media.site.as_str().to_string();
     item.id = media.id.clone();
     item.title = media.title.clone();

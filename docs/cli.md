@@ -127,6 +127,7 @@ on.
 | `--cookies FILE` | send the cookies in a Netscape cookie file (read once, never written back) |
 | `--playlist-items ITEMS` | take only these entries of a list: `3`, `1-5`, `2-`, mixed with commas |
 | `--concurrent-fragments N` | fetch this many HLS segments at once (`1`–`16`, default `1`) |
+| `--extractor-args SITE:KEY=VALUE` | narrow an extractor's route by hand (repeatable; see below) |
 
 Retried: transport failures, `429`, and `5xx`, with a growing delay (0.4 s,
 0.8 s, 1.6 s, 3.2 s, capped at 5 s). Not retried: `400`, `401`, `403`, `404`,
@@ -163,6 +164,27 @@ they are written. The first failure cancels the segments still queued — the re
 would be bytes for a file that is not going to exist. Like `--playlist-items`,
 it applies to a segment list only: on a progressive download it prints a note and
 changes nothing.
+
+`--extractor-args SITE:KEY=VALUE` is the escape hatch for the day a site
+changes the document an extractor reads. Its vocabulary is closed and small, and
+it is checked before the first request, so a typo is exit 2 with the accepted
+spellings in the message rather than a download that quietly took the default
+route:
+
+| value | effect |
+| --- | --- |
+| `youtube:client=NAME` | use only this InnerTube client: `android_vr`, `ios`, `android`, `tv_embedded` (or `tv`), `web`; the watch page is not asked, because its formats are the web client's |
+| `tiktok:route=web` | read the page's rehydration document only; the mobile feed is not asked |
+| `tiktok:route=app` | ask only the mobile feed; the page is not asked |
+
+The flag is repeatable, one occurrence per site, and the occurrences are folded
+into one table. Naming the same key twice — in one occurrence or across two — is
+a usage error: the flag is repeatable so that each site gets its own occurrence,
+not so that two of them can disagree. A route the flag excludes is named in the
+failure the extractor prints, so "the site said no twice" and "you told me to ask
+once" never look the same. Every value here is a route the build already has;
+nothing can be switched on that a release did not ship, which is why
+`--capabilities` lists the whole vocabulary under `extractor_args`.
 
 A media transfer has no total deadline: a 500 MiB file on a slow line is not an
 error. A resumed transfer sends `Range: bytes=N-`; a server that answers `200`

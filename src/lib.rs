@@ -11,6 +11,7 @@ pub mod cli;
 pub mod cookies;
 pub mod download;
 pub mod error;
+pub mod extractor_args;
 pub mod hls;
 pub mod hlsfetch;
 pub mod http;

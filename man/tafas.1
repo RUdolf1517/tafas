@@ -143,6 +143,16 @@ browser exports. The file is read once at startup, sent only to the hosts its
 domains match, never written back and never logged. It is the only credential
 this program accepts, and it stores nothing between runs.
 .TP
+.B \-\-extractor\-args \fISITE:KEY=VALUE\fR
+Narrow one extractor's route by hand, for the day a site reorders the document
+the extractor reads. The vocabulary is closed and checked before the first
+request: \fByoutube:client=\fR (\fBandroid_vr\fR, \fBios\fR, \fBandroid\fR,
+\fBtv_embedded\fR, \fBweb\fR) pins one InnerTube client and drops the others
+from the chain, and \fBtiktok:route=\fR (\fBweb\fR, \fBapp\fR) drops one of
+TikTok's two routes. Repeat the flag once per site; naming the same key twice is
+a usage error, not a silent last\-one\-wins, and a key or value this build does
+not know is refused with the accepted spellings in the message.
+.TP
 .B \-\-playlist\-items \fIITEMS\fR
 Take only these entries of a list: \fB3\fR, \fB1\-5\fR, \fB2\-\fR or any
 comma\-separated mix, counted from one. Today the lists are the segment lists of

@@ -232,3 +232,61 @@ fn concurrent_fragments_is_bounded_before_anything_is_requested() {
         );
     }
 }
+
+#[test]
+fn extractor_args_are_checked_against_a_closed_vocabulary() {
+    // Every one of these is wrong in a different way and all of them are wrong
+    // before a request, so the exit code is the usage one and the message names
+    // the spellings that would have worked.
+    for bad in [
+        "youtube:client=flash",
+        "youtube:client",
+        "youtube",
+        "x:route=web",
+        "tiktok:route=mobile",
+    ] {
+        let output = tafas(&["--extractor-args", bad, "https://youtu.be/aqz-KE-bpKQ"]);
+        assert_eq!(code(&output), 2, "--extractor-args {bad}");
+        assert!(stdout(&output).is_empty());
+        let text = stderr(&output);
+        assert!(text.contains("--extractor-args"), "{bad}: {text}");
+        assert!(
+            text.contains("android_vr"),
+            "the refusal lists what is accepted: {bad}: {text}"
+        );
+    }
+}
+
+#[test]
+fn extractor_args_are_folded_from_several_flags() {
+    // One flag per site is the shape the option is meant to be used in, so both
+    // are accepted; the run then stops for the older reason, which is the proof
+    // that neither occurrence was rejected.
+    let output = tafas(&[
+        "--extractor-args",
+        "youtube:client=ios",
+        "--extractor-args",
+        "tiktok:route=app",
+    ]);
+    assert_eq!(code(&output), 2);
+    let text = stderr(&output);
+    assert!(text.contains("no URL given"), "{text}");
+}
+
+#[test]
+fn one_key_named_twice_is_a_usage_error() {
+    let output = tafas(&[
+        "--extractor-args",
+        "youtube:client=ios",
+        "--extractor-args",
+        "youtube:client=web",
+        "https://youtu.be/aqz-KE-bpKQ",
+    ]);
+    assert_eq!(code(&output), 2);
+    assert!(stdout(&output).is_empty());
+    let text = stderr(&output);
+    assert!(
+        text.contains("youtube:client twice"),
+        "the duplicate is named, not silently resolved: {text}"
+    );
+}

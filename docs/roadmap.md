@@ -44,7 +44,7 @@ thumbnails, live streams, more than three sites.
 | **Subtitle tracks inside MP4** | `wvtt` (WebVTT) and `stpp` (TTML) sample entries, written by the same track builder the muxer uses. Sidecars ship first because they cannot break a video. |
 | **`--concurrent-fragments N`** — *done: 1–16 workers over one segment list, written in playlist order, first failure cancels the queue* | Segmented sources make parallelism worth it; progressive files do not. Same flag name `yt-dlp` uses, because muscle memory is a feature. |
 | **`cargo fuzz` targets** | `mux::scan`, `mux::verify` and `sites::json_after` are the parsers that read bytes from someone else. A corpus plus a nightly job, run out of band. |
-| **`--extractor-args SITE:key=value`** | An escape hatch so a site change does not need a release. Deliberately ugly, deliberately undocumented beyond one table: it is a pressure valve, not an interface. |
+| **`--extractor-args SITE:key=value`** — *done: a closed vocabulary (`youtube:client`, `tiktok:route`), checked before the first request and published by `--capabilities`* | An escape hatch so a site change does not need a release. Deliberately ugly, deliberately documented as one table in [extractors §7](extractors.md#7-the-escape-hatch---extractor-args): it is a pressure valve, not an interface. It only narrows — every value is a route the build already tries. |
 
 ## 4. v0.4 — speed, platforms, trust
 

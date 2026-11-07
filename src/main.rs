@@ -59,7 +59,13 @@ fn main() -> ExitCode {
         return ExitCode::from(2);
     }
 
-    let options = args.options();
+    let options = match args.options() {
+        Ok(options) => options,
+        Err(error) => {
+            usage(&args, &error.to_string());
+            return ExitCode::from(2);
+        }
+    };
     let code = download::run(&args.urls, &options);
     ExitCode::from(code)
 }
@@ -110,6 +116,10 @@ fn capabilities() -> String {
                 "hls": true,
                 "cookies": "user-supplied (--cookies FILE)"
             }
+        },
+        "extractor_args": {
+            "youtube:client": crate::extractor_args::YOUTUBE_CLIENTS,
+            "tiktok:route": crate::extractor_args::TIKTOK_ROUTES
         },
         "containers": ["mp4", "m4a"],
         "hls": {
