@@ -67,27 +67,50 @@ pub struct Report {
     pub warnings: Vec<String>,
 }
 
+/// What the caller decides about *which* segments are taken and how many are in
+/// flight: `--playlist-items` and `--concurrent-fragments` together, because
+/// they are two answers to one question and eight positional arguments was one
+/// too many.
+#[derive(Debug, Clone, Copy)]
+pub struct Segments<'a> {
+    /// `--playlist-items`: positions into the list, 1-based, `None` for all.
+    pub items: Option<&'a Items>,
+    /// `--concurrent-fragments`: how many may be in flight. A `0` is treated as
+    /// `1` here; the command line refuses it before a request is made.
+    pub concurrent: usize,
+}
+
+impl<'a> Default for Segments<'a> {
+    fn default() -> Segments<'a> {
+        Segments {
+            items: None,
+            concurrent: 1,
+        }
+    }
+}
+
 /// Fetches `url` and writes an MP4 at `out`.
 ///
 /// `headers` are the site's request headers (a referrer, usually); every
 /// request in the walk carries them. `items` is `--playlist-items`: positions
 /// into the segment list, 1-based, or `None` for all of them. `concurrency` is
-/// `--concurrent-fragments`: how many segments of *one* list may be in flight
-/// at once, clamped to `1..=CONCURRENCY_LIMIT`. `on_bytes` is called with the
-/// size of each segment as it lands — in whatever order they land, because it
-/// feeds a byte counter, not a file — so the caller's progress bar moves while
-/// the file does not exist yet.
+/// `segments` carries `--playlist-items` and `--concurrent-fragments`: which
+/// segments of the list are taken, and how many of those may be in flight at
+/// once, clamped to `1..=CONCURRENCY_LIMIT`. `on_bytes` is called with the size
+/// of each segment as it lands — in whatever order they land, because it feeds
+/// a byte counter, not a file — so the caller's progress bar moves while the
+/// file does not exist yet.
 pub fn fetch(
     http: &Http,
     url: &Url,
     headers: &[(String, String)],
     quality: Quality,
-    items: Option<&Items>,
-    concurrency: usize,
+    segments: Segments<'_>,
     out: &Path,
     on_bytes: &mut dyn FnMut(u64),
 ) -> Result<Report> {
-    let concurrency = concurrency.clamp(1, CONCURRENCY_LIMIT);
+    let items = segments.items;
+    let concurrency = segments.concurrent.clamp(1, CONCURRENCY_LIMIT);
     let borrowed: Vec<(&str, &str)> = headers
         .iter()
         .map(|(name, value)| (name.as_str(), value.as_str()))
@@ -386,7 +409,7 @@ fn fetch_media(
 
     if workers == 1 {
         for (index, (segment, key)) in chosen.iter().zip(keys.iter()).enumerate() {
-            let bytes = fetch_segment(http, *segment, headers, *key)?;
+            let bytes = fetch_segment(http, segment, headers, *key)?;
             on_bytes(bytes.len() as u64);
             pieces[index] = Some(bytes);
         }

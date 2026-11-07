@@ -10,6 +10,7 @@ mod common;
 
 use common::{temp_dir, ts_segment, Route, TestServer};
 use tafas::hlsfetch;
+use tafas::hlsfetch::Segments;
 use tafas::http::Http;
 use tafas::items::Items;
 use tafas::mux;
@@ -63,8 +64,7 @@ fn a_media_playlist_becomes_an_mp4() {
         &url,
         &[],
         Quality::Best,
-        None,
-        1,
+        Segments::default(),
         &out,
         &mut |bytes| seen += bytes,
     )
@@ -109,8 +109,7 @@ fn a_master_playlist_is_walked_to_the_chosen_variant() {
         &url,
         &[],
         Quality::Height(720),
-        None,
-        1,
+        Segments::default(),
         &out,
         &mut |_| {},
     )
@@ -136,17 +135,8 @@ fn an_fmp4_playlist_is_refused_before_a_file_appears() {
     let out = temp_dir("hls-fmp4").join("clip.mp4");
     let url = Url::parse(&server.url("/media.m3u8")).unwrap();
 
-    let error = hlsfetch::fetch(
-        &client(),
-        &url,
-        &[],
-        Quality::Best,
-        None,
-        1,
-        &out,
-        &mut |_| {},
-    )
-    .expect_err("fMP4 segments are not read by this build");
+    let error = hlsfetch::fetch(&client(), &url, &[], Quality::Best, Segments::default(), &out, &mut |_| {})
+        .expect_err("fMP4 segments are not read by this build");
     let text = error.to_string();
     assert!(text.contains("fMP4"), "{text}");
     assert!(text.contains("EXT-X-MAP"), "{text}");
@@ -174,17 +164,8 @@ fn byte_ranged_segments_are_cut_out_of_one_object() {
     let out = temp_dir("hls-range").join("clip.mp4");
     let url = Url::parse(&server.url("/media.m3u8")).unwrap();
 
-    let report = hlsfetch::fetch(
-        &client(),
-        &url,
-        &[],
-        Quality::Best,
-        None,
-        1,
-        &out,
-        &mut |_| {},
-    )
-    .expect("a byte-range playlist should be assembled");
+    let report = hlsfetch::fetch(&client(), &url, &[], Quality::Best, Segments::default(), &out, &mut |_| {})
+        .expect("a byte-range playlist should be assembled");
 
     assert_eq!(report.segments, 2);
     assert_eq!(report.video_samples, 2);
@@ -208,17 +189,8 @@ fn a_server_that_ignores_byte_ranges_is_refused() {
     let out = temp_dir("hls-range-ignored").join("clip.mp4");
     let url = Url::parse(&server.url("/media.m3u8")).unwrap();
 
-    let error = hlsfetch::fetch(
-        &client(),
-        &url,
-        &[],
-        Quality::Best,
-        None,
-        1,
-        &out,
-        &mut |_| {},
-    )
-    .expect_err("a 200 in place of a 206 means the window is wrong");
+    let error = hlsfetch::fetch(&client(), &url, &[], Quality::Best, Segments::default(), &out, &mut |_| {})
+        .expect_err("a 200 in place of a 206 means the window is wrong");
     assert!(
         error.to_string().contains("byte-range"),
         "the refusal should name the byte range, not the codec: {error}"
@@ -261,17 +233,8 @@ fn aes128_segments_are_decrypted_and_the_key_is_fetched_once() {
     let out = temp_dir("hls-aes").join("clip.mp4");
     let url = Url::parse(&server.url("/media.m3u8")).unwrap();
 
-    let report = hlsfetch::fetch(
-        &client(),
-        &url,
-        &[],
-        Quality::Best,
-        None,
-        1,
-        &out,
-        &mut |_| {},
-    )
-    .expect("an AES-128 playlist should decrypt into the same file");
+    let report = hlsfetch::fetch(&client(), &url, &[], Quality::Best, Segments::default(), &out, &mut |_| {})
+        .expect("an AES-128 playlist should decrypt into the same file");
 
     assert_eq!(report.segments, 2);
     assert_eq!(report.video_samples, 2);
@@ -303,17 +266,8 @@ fn a_key_of_the_wrong_size_is_refused() {
     let out = temp_dir("hls-aes-short-key").join("clip.mp4");
     let url = Url::parse(&server.url("/media.m3u8")).unwrap();
 
-    let error = hlsfetch::fetch(
-        &client(),
-        &url,
-        &[],
-        Quality::Best,
-        None,
-        1,
-        &out,
-        &mut |_| {},
-    )
-    .expect_err("eight bytes are not a key");
+    let error = hlsfetch::fetch(&client(), &url, &[], Quality::Best, Segments::default(), &out, &mut |_| {})
+        .expect_err("eight bytes are not a key");
     let text = error.to_string();
     assert!(text.contains("16 bytes"), "{text}");
     assert!(!out.exists());
@@ -346,8 +300,10 @@ fn a_playlist_selection_fetches_only_the_segments_it_names() {
         &url,
         &[],
         Quality::Best,
-        Some(&items),
-        1,
+        Segments {
+            items: Some(&items),
+            ..Segments::default()
+        },
         &out,
         &mut |_| {},
     )
@@ -381,8 +337,10 @@ fn a_selection_that_matches_nothing_is_refused() {
         &url,
         &[],
         Quality::Best,
-        Some(&items),
-        1,
+        Segments {
+            items: Some(&items),
+            ..Segments::default()
+        },
         &out,
         &mut |_| {},
     )
@@ -406,17 +364,8 @@ fn an_independent_reader_agrees_with_the_written_file() {
     let out = temp_dir("hls-independent").join("clip.mp4");
     let url = Url::parse(&server.url("/media.m3u8")).unwrap();
 
-    hlsfetch::fetch(
-        &client(),
-        &url,
-        &[],
-        Quality::Best,
-        None,
-        1,
-        &out,
-        &mut |_| {},
-    )
-    .expect("the pipeline should accept a plain media playlist");
+    hlsfetch::fetch(&client(), &url, &[], Quality::Best, Segments::default(), &out, &mut |_| {})
+        .expect("the pipeline should accept a plain media playlist");
 
     let bytes = std::fs::read(&out).expect("the file is on disk");
     let movie = common::mp4::read(&bytes).expect("the independent reader accepts it");
@@ -481,19 +430,17 @@ fn segments_are_fetched_in_parallel_when_more_than_one_worker_is_asked_for() {
         &url,
         &[],
         Quality::Best,
-        None,
-        4,
+        Segments {
+            concurrent: 4,
+            ..Segments::default()
+        },
         &out,
         &mut |bytes| seen += bytes,
     )
     .expect("four segments and four workers");
 
     assert_eq!(report.segments, 4);
-    assert_eq!(
-        seen,
-        (segment.len() * count) as u64,
-        "every byte counted once"
-    );
+    assert_eq!(seen, (segment.len() * count) as u64, "every byte counted once");
     assert!(
         server.peak_concurrent() >= 2,
         "the segments overlapped on the server: peak {}",
@@ -510,11 +457,7 @@ fn segments_are_fetched_in_parallel_when_more_than_one_worker_is_asked_for() {
         "every segment contributed its samples"
     );
     for index in 1..=count {
-        assert_eq!(
-            server.hits(&format!("/seg{index}.ts")),
-            1,
-            "segment {index}"
-        );
+        assert_eq!(server.hits(&format!("/seg{index}.ts")), 1, "segment {index}");
     }
 }
 
@@ -537,8 +480,7 @@ fn one_worker_fetches_one_segment_at_a_time() {
         &url,
         &[],
         Quality::Best,
-        None,
-        1,
+        Segments::default(),
         &out,
         &mut |_| {},
     )
@@ -577,8 +519,10 @@ fn a_failed_segment_cancels_the_segments_that_are_still_queued() {
         &url,
         &[],
         Quality::Best,
-        None,
-        2,
+        Segments {
+            concurrent: 2,
+            ..Segments::default()
+        },
         &out,
         &mut |_| {},
     )

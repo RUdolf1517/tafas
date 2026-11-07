@@ -742,8 +742,10 @@ fn fetch_hls(
         &url,
         &request_headers(format),
         options.quality,
-        options.playlist_items.as_ref(),
-        options.concurrent_fragments,
+        hlsfetch::Segments {
+            items: options.playlist_items.as_ref(),
+            concurrent: options.concurrent_fragments,
+        },
         &part,
         &mut |bytes| progress.add(bytes),
     );
