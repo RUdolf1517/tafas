@@ -209,7 +209,7 @@ pub fn init(data: &[u8]) -> Result<Init> {
 
     let mut tracks = Vec::new();
     for trak in children.iter().filter(|bx| &bx.kind == b"trak") {
-        let mut track = parse_trak(data, trak)?;
+        let (mut track, _) = parse_trak(data, trak)?;
         if let Some((_, [duration, size, flags])) = defaults.iter().find(|(id, _)| *id == track.id)
         {
             track.default_duration = *duration;
@@ -232,7 +232,8 @@ pub fn init(data: &[u8]) -> Result<Init> {
     Ok(Init { tracks })
 }
 
-fn parse_trak(data: &[u8], trak: &Bx) -> Result<InitTrack> {
+/// Reads one `trak`: what the track is, and where its sample table starts.
+fn parse_trak(data: &[u8], trak: &Bx) -> Result<(InitTrack, Bx)> {
     let children = scan(data, trak.body_start, trak.end)?;
     let tkhd = children
         .iter()
@@ -293,15 +294,18 @@ fn parse_trak(data: &[u8], trak: &Bx) -> Result<InitTrack> {
         })?;
     let (kind, codec) = parse_stsd(data, &stsd)?;
 
-    Ok(InitTrack {
-        id,
-        timescale,
-        kind,
-        codec,
-        default_duration: 0,
-        default_size: 0,
-        default_flags: 0,
-    })
+    Ok((
+        InitTrack {
+            id,
+            timescale,
+            kind,
+            codec,
+            default_duration: 0,
+            default_size: 0,
+            default_flags: 0,
+        },
+        stbl,
+    ))
 }
 
 fn parse_stsd(data: &[u8], stsd: &Bx) -> Result<(TrackKind, Codec)> {
@@ -461,6 +465,295 @@ fn aac_config(asc: &[u8]) -> Result<AacConfig> {
         object_type,
         frame_samples: 1024,
     })
+}
+
+// ---------------------------------------------------------------------------
+// a whole, unfragmented file
+// ---------------------------------------------------------------------------
+
+/// Reads a plain MP4 — `moov` with a sample table per track, one `mdat` — into
+/// the same [`Track`]/[`Sample`] pair as everything else here.
+///
+/// This is the reader for a file somebody else wrote, which is what turning a
+/// finished download into one with a track added needs. A file with a `moof`
+/// box is refused here by name: [`read`] is the function for fragments, and a
+/// caller that confuses the two is told which one it has.
+pub fn plain(bytes: &[u8]) -> Result<Vec<Track>> {
+    let top = scan(bytes, 0, bytes.len())?;
+    if let Some(moof) = top.iter().find(|bx| &bx.kind == b"moof") {
+        return Err(Error::Refused(format!(
+            "this file is fragmented: a moof box starts at byte {} of {}, so it needs the \
+             fragment reader rather than the sample tables",
+            moof.start,
+            bytes.len()
+        )));
+    }
+    let moov = top
+        .iter()
+        .find(|bx| &bx.kind == b"moov")
+        .ok_or_else(|| Error::Parse("the file has no moov box".into()))?;
+
+    let mut tracks = Vec::new();
+    for trak in scan(bytes, moov.body_start, moov.end)?
+        .iter()
+        .filter(|bx| &bx.kind == b"trak")
+    {
+        let (info, stbl) = parse_trak(bytes, trak)?;
+        let samples = samples_of(bytes, &stbl, info.kind)?;
+        if samples.is_empty() {
+            continue;
+        }
+        tracks.push(Track {
+            kind: info.kind,
+            codec: info.codec,
+            timescale: info.timescale,
+            samples,
+        });
+    }
+    if tracks.is_empty() {
+        return Err(Error::Parse(
+            "the file's moov box declares no track with samples in it".into(),
+        ));
+    }
+    Ok(tracks)
+}
+
+/// Walk `stbl` into samples: sizes from `stsz`, decode times from `stts`,
+/// presentation offsets from `ctts`, keyframes from `stss`, and where the bytes
+/// live from `stco`/`co64` with `stsc` saying how many samples a chunk holds.
+fn samples_of(data: &[u8], stbl: &Bx, kind: TrackKind) -> Result<Vec<Sample>> {
+    let boxes = scan(data, stbl.body_start, stbl.end)?;
+    let entry = |wanted: &[u8; 4]| boxes.iter().find(|bx| &bx.kind == wanted);
+    let of = |wanted: &[u8; 4], missing: &str| -> Result<Bx> {
+        boxes
+            .iter()
+            .find(|bx| &bx.kind == wanted)
+            .copied()
+            .ok_or_else(|| Error::Parse(missing.to_string()))
+    };
+
+    let stsz = of(
+        b"stsz",
+        "a track has no stsz box, so its sample sizes are unknown",
+    )?;
+    let sizes = sample_sizes(data, &stsz)?;
+    let count = sizes.len();
+    if count == 0 {
+        return Ok(Vec::new());
+    }
+
+    let stts = of(b"stts", "a track has no stts box, so its timing is unknown")?;
+    let durations = sample_durations(data, &stts, count)?;
+    let offsets = match entry(b"ctts") {
+        Some(ctts) => composition_offsets(data, ctts, count)?,
+        None => vec![0i64; count],
+    };
+    let sync = match entry(b"stss") {
+        Some(stss) => Some(sync_samples(data, stss)?),
+        None => None,
+    };
+    let chunks = match entry(b"stco") {
+        Some(stco) => chunk_offsets(data, stco)?,
+        None => match entry(b"co64") {
+            Some(co64) => chunk_offsets_64(data, co64)?,
+            None => {
+                return Err(Error::Parse(
+                    "a track has neither a stco nor a co64 box, so its samples have no offset"
+                        .into(),
+                ))
+            }
+        },
+    };
+    let stsc = of(
+        b"stsc",
+        "a track has no stsc box, so the samples cannot be placed in chunks",
+    )?;
+    let table = samples_per_chunk(data, &stsc)?;
+    if table.is_empty() {
+        return Err(Error::Parse(
+            "a track's stsc box is empty, so no chunk holds any sample".into(),
+        ));
+    }
+
+    let mut samples = Vec::with_capacity(count);
+    let mut index = 0usize;
+    let mut dts = 0u64;
+    'chunks: for (position, offset) in chunks.iter().enumerate() {
+        let per_chunk = table
+            .iter()
+            .rev()
+            .find(|(first, _, _)| *first as usize <= position + 1)
+            .map(|(_, per, _)| *per as usize)
+            .unwrap_or(1);
+        let mut at = usize::try_from(*offset).map_err(|_| {
+            Error::Parse(format!(
+                "a chunk of the {kind:?} track starts at byte {offset}, past this machine's memory"
+            ))
+        })?;
+        for _ in 0..per_chunk {
+            if index >= count {
+                break 'chunks;
+            }
+            let size = sizes[index] as usize;
+            let end = at.checked_add(size).filter(|end| *end <= data.len());
+            let end = end.ok_or_else(|| {
+                Error::Parse(format!(
+                    "sample {} of the {:?} track needs {size} bytes at {at} and the file is {} \
+                     bytes",
+                    index + 1,
+                    kind,
+                    data.len()
+                ))
+            })?;
+            let pts = i64::try_from(dts)
+                .unwrap_or(i64::MAX)
+                .saturating_add(offsets[index])
+                .max(0) as u64;
+            samples.push(Sample {
+                data: data[at..end].to_vec(),
+                pts: Some(pts),
+                dts: Some(dts),
+                keyframe: match &sync {
+                    Some(list) => list.contains(&(index as u32 + 1)),
+                    // No `stss` means every sample is a sync sample.
+                    None => true,
+                },
+            });
+            at = end;
+            dts += u64::from(durations[index]);
+            index += 1;
+        }
+    }
+    if index != count {
+        return Err(Error::Parse(format!(
+            "the sample table describes {count} samples and the chunks hold {index}"
+        )));
+    }
+    Ok(samples)
+}
+
+fn sample_sizes(data: &[u8], stsz: &Bx) -> Result<Vec<u32>> {
+    let mut reader = Reader::new(&data[stsz.body_start..stsz.end]);
+    reader.skip(4)?; // version + flags
+    let uniform = reader.u32()?;
+    let count = reader.u32()?;
+    if count > SAMPLE_LIMIT {
+        return Err(Error::Limit(format!(
+            "a track declares {count} samples, past this build's limit of {SAMPLE_LIMIT}"
+        )));
+    }
+    if uniform != 0 {
+        return Ok(vec![uniform; count as usize]);
+    }
+    let mut sizes = Vec::with_capacity(count as usize);
+    for _ in 0..count {
+        sizes.push(reader.u32()?);
+    }
+    Ok(sizes)
+}
+
+fn sample_durations(data: &[u8], stts: &Bx, count: usize) -> Result<Vec<u32>> {
+    let mut reader = Reader::new(&data[stts.body_start..stts.end]);
+    reader.skip(4)?;
+    let entries = reader.u32()?;
+    let mut durations = Vec::with_capacity(count);
+    for _ in 0..entries {
+        let repeat = reader.u32()?;
+        let delta = reader.u32()?;
+        for _ in 0..repeat {
+            if durations.len() == count {
+                break;
+            }
+            durations.push(delta);
+        }
+    }
+    if durations.len() != count {
+        return Err(Error::Parse(format!(
+            "the stts box times {} samples and the stsz box describes {count}",
+            durations.len()
+        )));
+    }
+    Ok(durations)
+}
+
+fn composition_offsets(data: &[u8], ctts: &Bx, count: usize) -> Result<Vec<i64>> {
+    let mut reader = Reader::new(&data[ctts.body_start..ctts.end]);
+    let version = reader.u8()?;
+    reader.skip(3)?;
+    let entries = reader.u32()?;
+    let mut offsets = Vec::with_capacity(count);
+    for _ in 0..entries {
+        let repeat = reader.u32()?;
+        // Version 0 stores the offset unsigned, version 1 signed; a file that
+        // was written from decode times uses version 1.
+        let offset = match version {
+            0 => i64::from(reader.u32()?),
+            1 => i64::from(reader.u32()? as i32),
+            other => {
+                return Err(Error::Parse(format!(
+                    "a ctts box has version {other}, which the specification does not define"
+                )))
+            }
+        };
+        for _ in 0..repeat {
+            if offsets.len() == count {
+                break;
+            }
+            offsets.push(offset);
+        }
+    }
+    while offsets.len() < count {
+        offsets.push(0);
+    }
+    Ok(offsets)
+}
+
+fn sync_samples(data: &[u8], stss: &Bx) -> Result<Vec<u32>> {
+    let mut reader = Reader::new(&data[stss.body_start..stss.end]);
+    reader.skip(4)?;
+    let entries = reader.u32()?;
+    let mut numbers = Vec::with_capacity(entries as usize);
+    for _ in 0..entries {
+        numbers.push(reader.u32()?);
+    }
+    Ok(numbers)
+}
+
+fn chunk_offsets(data: &[u8], stco: &Bx) -> Result<Vec<u64>> {
+    let mut reader = Reader::new(&data[stco.body_start..stco.end]);
+    reader.skip(4)?;
+    let entries = reader.u32()?;
+    let mut offsets = Vec::with_capacity(entries as usize);
+    for _ in 0..entries {
+        offsets.push(u64::from(reader.u32()?));
+    }
+    Ok(offsets)
+}
+
+fn chunk_offsets_64(data: &[u8], co64: &Bx) -> Result<Vec<u64>> {
+    let mut reader = Reader::new(&data[co64.body_start..co64.end]);
+    reader.skip(4)?;
+    let entries = reader.u32()?;
+    let mut offsets = Vec::with_capacity(entries as usize);
+    for _ in 0..entries {
+        offsets.push(reader.u64()?);
+    }
+    Ok(offsets)
+}
+
+/// `(first chunk, samples in that chunk, description index)`, 1-based chunks.
+fn samples_per_chunk(data: &[u8], stsc: &Bx) -> Result<Vec<(u32, u32, u32)>> {
+    let mut reader = Reader::new(&data[stsc.body_start..stsc.end]);
+    reader.skip(4)?;
+    let entries = reader.u32()?;
+    let mut table = Vec::with_capacity(entries as usize);
+    for _ in 0..entries {
+        let first = reader.u32()?;
+        let per = reader.u32()?;
+        let description = reader.u32()?;
+        table.push((first, per, description));
+    }
+    Ok(table)
 }
 
 // ---------------------------------------------------------------------------
@@ -1038,6 +1331,91 @@ mod tests {
         assert!(run.samples[0].keyframe);
         assert!(!run.samples[1].keyframe);
         assert_eq!(run.samples[0].size, 4);
+    }
+
+    #[test]
+    fn a_written_file_reads_back_as_the_tracks_that_were_written() {
+        // `mp4write` is the fixture generator here: whatever it wrote, this
+        // reader has to hand back the same samples, which is the property the
+        // subtitle work needs and the remux path will want.
+        let avcc = vec![0x01, 0x64, 0x00, 0x1f, 0xff, 0xe1, 0x00, 0x04, 0x67, 0x64, 0x00, 0x1f];
+        let asc = AacConfig {
+            asc: [0x12, 0x10],
+            sample_rate: 44_100,
+            channels: 2,
+            object_type: 2,
+            frame_samples: 1024,
+        };
+        let video = Track {
+            kind: TrackKind::Video,
+            codec: Codec::Avc { avcc },
+            timescale: 90_000,
+            samples: vec![
+                Sample {
+                    data: b"first-frame".to_vec(),
+                    pts: Some(0),
+                    dts: Some(0),
+                    keyframe: true,
+                },
+                Sample {
+                    data: b"second-frame".to_vec(),
+                    pts: Some(3_000),
+                    dts: Some(3_000),
+                    keyframe: false,
+                },
+            ],
+        };
+        let audio = Track {
+            kind: TrackKind::Audio,
+            codec: Codec::Aac(asc),
+            timescale: 44_100,
+            samples: vec![
+                Sample {
+                    data: b"aaa".to_vec(),
+                    pts: Some(0),
+                    dts: Some(0),
+                    keyframe: true,
+                },
+                Sample {
+                    data: b"bbb".to_vec(),
+                    pts: Some(1_024),
+                    dts: Some(1_024),
+                    keyframe: true,
+                },
+            ],
+        };
+        let dir = std::env::temp_dir().join(format!("tafas-mp4read-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("round-trip.mp4");
+        let written = [video, audio];
+        crate::mp4write::write(&written, (640, 360), &path).unwrap();
+
+        let bytes = std::fs::read(&path).unwrap();
+        let read_back = plain(&bytes).unwrap();
+        assert_eq!(read_back.len(), 2);
+        for (before, after) in written.iter().zip(&read_back) {
+            assert_eq!(before.kind, after.kind);
+            assert_eq!(before.timescale, after.timescale);
+            assert_eq!(before.samples.len(), after.samples.len());
+            for (original, copy) in before.samples.iter().zip(&after.samples) {
+                assert_eq!(original.data, copy.data, "sample bytes survive the round trip");
+                assert_eq!(original.pts, copy.pts, "presentation times survive");
+                assert_eq!(original.dts, copy.dts, "decode times survive");
+                assert_eq!(original.keyframe, copy.keyframe, "keyframes survive");
+            }
+        }
+        std::fs::remove_dir_all(&dir).expect("the temporary directory is ours to remove");
+    }
+
+    #[test]
+    fn a_fragmented_file_is_refused_by_the_sample_table_reader() {
+        let init = moov(1, 90_000, avc1(&[0x01, 0x64, 0x00, 0x1f]), 3_000);
+        let media = fragment(1, 0, &[(4, true)], b"AAAA");
+        let error = plain(&media).unwrap_err();
+        assert!(error.to_string().contains("moof"), "{error}");
+        assert!(error.to_string().contains("fragmented"), "{error}");
+        // and the fragment reader still reads it
+        assert_eq!(read(&init, &media).unwrap().len(), 1);
     }
 
     #[test]
