@@ -662,11 +662,16 @@ fn a_failed_segment_cancels_the_segments_that_are_still_queued() {
     let count = 4usize;
     // `seg1.ts` has no route, so the server answers 404: a failure on the very
     // first segment, with three more already queued behind it.
+    // The slow segments have to outlast the failing one by a wide margin, or the
+    // assertion below becomes a race: a worker that finishes a 40 ms segment can
+    // reach for the next one before the 404 on `seg1.ts` has been processed, and
+    // that is a scheduling fact about the machine rather than a bug. 400 ms is
+    // an order of magnitude past anything a 404 needs on a loaded runner.
     let routes = vec![
         Route::ok("/media.m3u8", playlist_of(count).as_bytes()),
-        Route::slow("/seg2.ts", &segment, 40),
-        Route::slow("/seg3.ts", &segment, 40),
-        Route::slow("/seg4.ts", &segment, 40),
+        Route::slow("/seg2.ts", &segment, 400),
+        Route::slow("/seg3.ts", &segment, 400),
+        Route::slow("/seg4.ts", &segment, 400),
     ];
     let server = TestServer::start(routes);
     let out = temp_dir("hls-cancel").join("clip.mp4");
@@ -692,5 +697,9 @@ fn a_failed_segment_cancels_the_segments_that_are_still_queued() {
         server.hits("/seg4.ts"),
         0,
         "the queue stopped when the first worker failed"
+    );
+    assert!(
+        server.hits("/seg3.ts") <= 1,
+        "at most the one segment already in flight may have been started"
     );
 }
