@@ -80,10 +80,7 @@ fn nodes(data: &[u8], base: usize) -> Result<Vec<Node<'_>>, String> {
     let mut at = base;
     while !rest.is_empty() {
         if rest.len() < 8 {
-            return Err(format!(
-                "{at}: {} bytes are fewer than a box header",
-                rest.len()
-            ));
+            return Err(format!("{at}: {} bytes are fewer than a box header", rest.len()));
         }
         let declared = u32::from_be_bytes(rest[0..4].try_into().expect("four bytes")) as usize;
         let kind: [u8; 4] = rest[4..8].try_into().expect("four bytes");
@@ -94,10 +91,7 @@ fn nodes(data: &[u8], base: usize) -> Result<Vec<Node<'_>>, String> {
                     return Err(format!("{}: a 64-bit size is truncated", name(&kind)));
                 }
                 let size = u64::from_be_bytes(rest[8..16].try_into().expect("eight bytes"));
-                (
-                    usize::try_from(size).map_err(|_| "a size past this machine".to_string())?,
-                    16,
-                )
+                (usize::try_from(size).map_err(|_| "a size past this machine".to_string())?, 16)
             }
             size => (size, 8),
         };
@@ -155,7 +149,7 @@ fn u64_at(body: &[u8], at: usize, what: &str) -> Result<u64, String> {
 }
 
 /// Header of a full box: `(version, payload after the four header bytes)`.
-fn full(body: &[u8], what: &str) -> Result<(u8, &[u8]), String> {
+fn full<'a>(body: &'a [u8], what: &str) -> Result<(u8, &'a [u8]), String> {
     require(body, 4, what)?;
     Ok((body[0], &body[4..]))
 }
@@ -222,7 +216,10 @@ fn read_track(trak: &Node<'_>) -> Result<Track, String> {
     let stsd = child_or_fail(&stbl, b"stsd")?;
     let (_, stsd_payload) = full(stsd.body, "stsd")?;
     // entry_count, then the entries themselves, each an ordinary box.
-    let entries = nodes(stsd_payload.get(4..).unwrap_or_default(), stsd.body_at + 4)?;
+    let entries = nodes(
+        stsd_payload.get(4..).unwrap_or_default(),
+        stsd.body_at + 4,
+    )?;
     let codec = entries
         .first()
         .map(|entry| name(&entry.kind))
