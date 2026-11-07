@@ -53,7 +53,7 @@ thumbnails, live streams, more than four sites.
 | --- | --- |
 | **`--limit-rate`** — *done: one budget over the media bytes, `K`/`M`/`G` suffixes, a `1K` floor and a `1G` ceiling, charged per chunk with the wait outside the lock*; **per-fragment resume** — *open* | A downloader that saturates a shared line is a downloader people stop using. The rate is an average over one run, checked before the first request, and shared by every segment in flight so concurrency divides it instead of multiplying it. |
 | **Reproducible builds and signed releases** | `SOURCE_DATE_EPOCH`, `--remap-path-prefix`, a minisign key next to `SHA256SUMS`, and an SBOM in the archive. The checksum proves the file matches the release; a signature proves the release is ours. |
-| **Budgets in CI** | Binary size and `--version` startup time, asserted with a tolerance. A downloader is allowed to grow; it is not allowed to grow silently. |
+| **Budgets in CI** — *done: `packaging/budgets.json` and a `budgets` job that compares the size of the binary and the median of seven `--version` starts against it, ten percent of slack plus fifteen milliseconds on the clock; a failure is posted to the pull request with the numbers* | A downloader is allowed to grow; it is not allowed to grow silently. The budget moves in a commit of its own, so "why is this 40 MiB" has an answer that is a diff. |
 | **MSRV job** | Once the dependency floor stops moving, a `1.82` build joins the matrix instead of being a line in the release procedure. |
 | **Windows polish** | Long paths (`\\?\`), progress width on narrow consoles, and a `.zip` that keeps the manual page. |
 

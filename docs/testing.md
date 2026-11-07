@@ -146,6 +146,7 @@ regression fails in `cargo test` rather than only under a fuzzer.
 | `format.yml` | `format` | `cargo fmt` plus `cargo generate-lockfile`, committed back to the branch |
 | `release.yml` | `build (five targets)` | `cargo build --release --locked`, archives, `SHA256SUMS`, packages |
 | `windows-installer.yml` | `installer` (windows-latest) | `packaging/windows/tests/Install.Integration.ps1`: install, upgrade, refusal, rollback and uninstall against locally built release fixtures |
+| `ci.yml` | `budgets` (ubuntu-latest) | `cargo build --release --locked`, then `packaging/tests/budgets.py`: the size of the binary and the median of seven `--version` starts, compared against `packaging/budgets.json` |
 | `windows-installer.yml` | `winget-manifests` (ubuntu-latest) | `packaging/winget/tests/check.py`, plus a render of the manifests from a ZIP built the way the release builds it |
 
 Three platforms, one job each, because the failures this project has actually had
