@@ -46,7 +46,10 @@ impl<'a> Reader<'a> {
     }
 
     fn bytes(&mut self, count: usize) -> Result<&'a [u8]> {
-        let end = self.at.checked_add(count).filter(|end| *end <= self.data.len());
+        let end = self
+            .at
+            .checked_add(count)
+            .filter(|end| *end <= self.data.len());
         let end = end.ok_or_else(|| {
             Error::Parse(format!(
                 "an fMP4 box ended {} bytes before its reader wanted {count}",
@@ -118,12 +121,7 @@ fn scan(data: &[u8], from: usize, to: usize) -> Result<Vec<Bx>> {
         }
         let mut reader = Reader::new(&data[at..to]);
         let size32 = reader.u32()?;
-        let kind = [
-            data[at + 4],
-            data[at + 5],
-            data[at + 6],
-            data[at + 7],
-        ];
+        let kind = [data[at + 4], data[at + 5], data[at + 6], data[at + 7]];
         let (size, header) = match size32 {
             // Zero means "to the end of the enclosing box", which is what a
             // final `mdat` in a segment uses.
@@ -212,8 +210,7 @@ pub fn init(data: &[u8]) -> Result<Init> {
     let mut tracks = Vec::new();
     for trak in children.iter().filter(|bx| &bx.kind == b"trak") {
         let mut track = parse_trak(data, trak)?;
-        if let Some((_, [duration, size, flags])) =
-            defaults.iter().find(|(id, _)| *id == track.id)
+        if let Some((_, [duration, size, flags])) = defaults.iter().find(|(id, _)| *id == track.id)
         {
             track.default_duration = *duration;
             track.default_size = *size;
@@ -555,7 +552,9 @@ pub fn fragments(init: &Init, media: &[u8]) -> Result<Vec<Track>> {
                 let run = parse_trun(media, trun, &defaults)?;
                 let mut at = match run.data_offset {
                     Some(offset) => {
-                        let at = i64::try_from(base).unwrap_or(i64::MAX).saturating_add(i64::from(offset));
+                        let at = i64::try_from(base)
+                            .unwrap_or(i64::MAX)
+                            .saturating_add(i64::from(offset));
                         usize::try_from(at).map_err(|_| {
                             Error::Parse(format!(
                                 "a trun of track {} points {} bytes before its fragment",
@@ -885,11 +884,7 @@ mod tests {
             trun_body.extend_from_slice(&data_offset.to_be_bytes());
             for (size, keyframe) in samples {
                 trun_body.extend_from_slice(&size.to_be_bytes());
-                let flags: u32 = if *keyframe {
-                    0x0200_0000
-                } else {
-                    0x0001_0000
-                };
+                let flags: u32 = if *keyframe { 0x0200_0000 } else { 0x0001_0000 };
                 trun_body.extend_from_slice(&flags.to_be_bytes());
             }
             // data offset, per-sample size and per-sample flags.

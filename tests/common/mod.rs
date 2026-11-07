@@ -607,7 +607,10 @@ pub fn fmp4_init() -> Vec<u8> {
     let mut ftyp = b"isom".to_vec();
     ftyp.extend_from_slice(&0x0000_0200u32.to_be_bytes());
     ftyp.extend_from_slice(b"isomiso6mp41");
-    joined(&[boxed(b"ftyp", &ftyp), boxed(b"moov", &joined(&[mvhd, trak, mvex]))])
+    joined(&[
+        boxed(b"ftyp", &ftyp),
+        boxed(b"moov", &joined(&[mvhd, trak, mvex])),
+    ])
 }
 
 /// One media segment: a `moof` and the `mdat` its `trun` points into. Each
@@ -632,7 +635,12 @@ pub fn fmp4_fragment(base_time: u64, samples: &[(&[u8], bool)]) -> Vec<u8> {
     };
     let header = moof(0);
     let offset = (header.len() + 8) as i32;
-    let payload = joined(&samples.iter().map(|(payload, _)| payload.to_vec()).collect::<Vec<_>>());
+    let payload = joined(
+        &samples
+            .iter()
+            .map(|(payload, _)| payload.to_vec())
+            .collect::<Vec<_>>(),
+    );
     joined(&[moof(offset), boxed(b"mdat", &payload)])
 }
 

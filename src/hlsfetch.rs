@@ -186,7 +186,10 @@ pub fn fetch(
             &mut segments,
         )?;
         let audio = tracks_of(&audio_bytes, audio_map.as_deref())?;
-        match audio.into_iter().find(|track| track.kind == TrackKind::Audio) {
+        match audio
+            .into_iter()
+            .find(|track| track.kind == TrackKind::Audio)
+        {
             Some(track) => tracks.push(track),
             None => {
                 return Err(Error::Parse(format!(
@@ -381,7 +384,11 @@ fn init_section(
     headers: &[(&str, &str)],
     on_bytes: &mut dyn FnMut(u64),
 ) -> Result<Option<Vec<u8>>> {
-    let map = match media.segments.iter().find_map(|segment| segment.map.as_ref()) {
+    let map = match media
+        .segments
+        .iter()
+        .find_map(|segment| segment.map.as_ref())
+    {
         Some(map) => map,
         None => return Ok(None),
     };
