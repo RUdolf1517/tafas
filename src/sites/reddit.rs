@@ -73,7 +73,8 @@ pub fn parse(value: &Value, id: &str, page_url: String) -> Result<Media> {
     let video = at(post, &["secure_media", "reddit_video"])
         .or_else(|| at(post, &["media", "reddit_video"]));
 
-    let (Some(video), Some(hls)) = (video, video.and_then(|video| text(video, &["hls_url"]))) else {
+    let (Some(video), Some(hls)) = (video, video.and_then(|video| text(video, &["hls_url"])))
+    else {
         return Err(refusal(post, id));
     };
 
@@ -106,7 +107,9 @@ pub fn parse(value: &Value, id: &str, page_url: String) -> Result<Media> {
 
 /// Why a post that has no playlist cannot be captured, as one sentence.
 fn refusal(post: &Value, id: &str) -> Error {
-    if post.get("gallery_data").is_some() || text(post, &["post_hint"]).is_some_and(|hint| hint.contains("image")) {
+    if post.get("gallery_data").is_some()
+        || text(post, &["post_hint"]).is_some_and(|hint| hint.contains("image"))
+    {
         return Error::Refused(format!(
             "reddit: {id}: the post is a gallery or a photo; an image is not a video, and images \
              are only written for posts that carry them as media"
@@ -203,7 +206,10 @@ fn request_headers() -> Vec<(String, String)> {
 fn post_id(url: &Url) -> Option<String> {
     let segments = url.segments();
     if url.host() == Some("redd.it") {
-        return segments.first().filter(|id| is_id(id)).map(|id| id.to_string());
+        return segments
+            .first()
+            .filter(|id| is_id(id))
+            .map(|id| id.to_string());
     }
     let at_comments = segments.iter().position(|segment| *segment == "comments")?;
     segments
@@ -213,7 +219,10 @@ fn post_id(url: &Url) -> Option<String> {
 }
 
 fn media_hash(url: &Url) -> Option<String> {
-    url.segments().first().filter(|hash| is_id(hash)).map(|hash| hash.to_string())
+    url.segments()
+        .first()
+        .filter(|hash| is_id(hash))
+        .map(|hash| hash.to_string())
 }
 
 /// Reddit ids are base 36: letters and digits, no punctuation.
@@ -324,7 +333,10 @@ mod tests {
             id("https://old.reddit.com/comments/abc123def45"),
             Some("abc123def45".into())
         );
-        assert_eq!(id("https://redd.it/abc123def45"), Some("abc123def45".into()));
+        assert_eq!(
+            id("https://redd.it/abc123def45"),
+            Some("abc123def45".into())
+        );
         assert_eq!(id("https://www.reddit.com/r/aww/"), None);
     }
 }
