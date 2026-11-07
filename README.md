@@ -11,7 +11,7 @@
 [![rust](https://img.shields.io/badge/rust-1.82%2B-dea584?style=flat-square)](https://www.rust-lang.org/)
 [![license](https://img.shields.io/badge/license-MIT-0b3d91?style=flat-square)](LICENSE)
 
-[Install](#install) · [Usage](#usage) · [Sites](#sites) · [Why tafas](#why-tafas) · [Docs](#documentation) · [Contact](#contact)
+[Install](#install) · [Usage](#usage) · [Sites](#sites) · [Why tafas](#why-tafas) · [Roadmap](#roadmap) · [Docs](#documentation)
 
 </div>
 
@@ -117,6 +117,7 @@ tafas https://youtu.be/aqz-KE-bpKQ -o - | mpv -     # bytes on stdout
 tafas https://x.com/user/status/123 --cookies ~/cookies.txt  # a session, if you have one
 tafas https://youtu.be/aqz-KE-bpKQ --write-info-json # a sidecar describing the choice
 tafas https://x.com/user/status/123 --playlist-items 1-5  # part of an HLS list
+tafas https://x.com/user/status/123 --concurrent-fragments 4  # four segments at once
 tafas https://youtu.be/aqz-KE-bpKQ --write-thumbnail  # the poster, beside the file
 tafas https://youtu.be/aqz-KE-bpKQ --write-subs --sub-langs en,ru  # WebVTT captions
 ```
@@ -164,6 +165,29 @@ ciphers, fMP4 playlists — is one table away in
 | **Resume is not an afterthought** | `--resume` (the default) continues a `.part` with a range request, notices a server that ignores `Range`, and starts over rather than writing the beginning twice. |
 | **The terminal is the interface** | No config file, no daemon, no environment variables of its own, no state on disk between runs. Every decision is an argument, so the command you ran yesterday is the command that runs today. |
 
+## Roadmap
+
+**Where this is now: v0.3 has started.** v0.2 landed everything but playlist and
+channel *pages* and four packaging channels, and v0.3's first item is in:
+`--concurrent-fragments`, so one HLS list is fetched by several workers while the
+file stays in playlist order. Next is fragmented MP4, which is the gate in front
+of the three sites v0.3 adds.
+
+| Where it goes | State | What it is |
+| --- | --- | --- |
+| [v0.1.0](docs/roadmap.md#1-v010--shipped) | **shipped** | Three sites, DASH remuxing verified by a second reader, atomic `.part` commit, resume, `--json`, the manual page, completions, `--capabilities`. |
+| [v0.2](docs/roadmap.md#2-v02--the-shapes-users-actually-hit) | **in progress** | **In:** HLS → MP4, AES-128 keys, `--cookies`, `--write-info-json`, `--write-thumbnail`, `--write-subs`/`--sub-langs`, `--playlist-items` over HLS segment lists, an independent test demuxer, `.deb`/`.rpm`, Homebrew, `install.sh`, the per-user Windows installer and the local winget manifests. **Open:** playlist and channel pages; AUR, `.apk`, Scoop, a flake. |
+| [v0.3](docs/roadmap.md#3-v03--reach-and-the-parts-that-are-not-a-url) | **started** | **In:** `--concurrent-fragments`, so an HLS list is fetched by four workers instead of one. **Open:** Vimeo, Reddit, SoundCloud, Twitch; fragmented MP4; subtitle tracks *inside* the container; fuzz targets; `--extractor-args`. |
+| [v0.4](docs/roadmap.md#4-v04--speed-platforms-trust) | planned | `--limit-rate` and per-fragment resume; reproducible builds and signed releases; size and startup budgets in CI; an MSRV job; Windows long paths. |
+| [v0.5](docs/roadmap.md#5-v05--extensibility-without-a-fork) | planned | A stable `Extractor` trait; feature-per-site builds; one documentation page per site. |
+
+A version is a plan, not a promise. The promise is
+[§7 of the roadmap](docs/roadmap.md#7-what-will-not-happen) — the list of things
+this project will not do — together with the rule that an item moves up only when
+someone can name the URL that fails without it. Whatever stays unsupported gets a
+refusal text in [extractors](docs/extractors.md), because "not yet" is a feature
+only if it says so.
+
 ## Documentation
 
 | Document | Contents |
@@ -185,35 +209,6 @@ open. The word carries no promise about the file's future: what tafas checks
 before it renames a file, and where that check is weaker than it looks, is
 written down in [docs/guarantees.md](docs/guarantees.md) rather than implied by
 a slogan.
-
-## Contact
-
-A bug, a refusal that names the wrong thing, a site that changed its pages:
-[open an issue](https://github.com/RUdolf1517/tafas/issues) with the URL and the
-message you got. The refusal tables in [docs/extractors.md](docs/extractors.md)
-exist so that a report can point at one line instead of describing a mood.
-
-Anything that should not be public goes to the repository's
-[Security tab](https://github.com/RUdolf1517/tafas/security), or to
-[rudolfzinovev@protonmail.com](mailto:rudolfzinovev@protonmail.com).
-[SECURITY.md](SECURITY.md) says what counts as a vulnerability here and what does
-not: a page that changed shape and now produces a wrong refusal is a
-compatibility issue with a patch release behind it, not a CVE.
-
-## Written by AI
-
-The code, the documentation, the tests and the commit messages are drafted by an
-AI assistant. The direction is [RUdolf1517](https://github.com/RUdolf1517)'s, and
-so is the decision about what ships.
-
-That is worth writing down only because the repository makes it checkable rather
-than asking to be trusted: every refusal has a name and a paragraph that explains
-it, every flag in `--help` is compared against the manual page by
-[`tests/packaging.rs`](tests/packaging.rs), formatting is committed by CI instead
-of demanded from contributors, and where a check is weaker than it looks — a
-container verified structurally but not decoded, a site route that cannot reach a
-signed format — [docs/guarantees.md](docs/guarantees.md) says so before the code
-does. A change that cannot be verified this way is not one this project ships.
 
 Written by AI. Directed by [RUdolf1517](https://github.com/RUdolf1517) ·
 [rudolfzinovev@protonmail.com](mailto:rudolfzinovev@protonmail.com)

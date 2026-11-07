@@ -143,6 +143,15 @@ pub struct Args {
     #[arg(long, value_name = "ITEMS", value_parser = parse_items)]
     pub playlist_items: Option<crate::items::Items>,
 
+    /// Fetch this many HLS segments at once (1 = one after another)
+    #[arg(
+        long,
+        value_name = "N",
+        default_value_t = 1,
+        value_parser = parse_concurrency
+    )]
+    pub concurrent_fragments: usize,
+
     /// Send cookies from a Netscape cookie file (read once, never written back)
     #[arg(long, value_name = "FILE")]
     pub cookies: Option<PathBuf>,
@@ -197,6 +206,22 @@ fn parse_color(text: &str) -> Result<Choice, String> {
     Choice::parse(text)
 }
 
+/// `--concurrent-fragments N`: at least one, and no more than the fetch path
+/// will actually run — a number the program silently reduced would be a lie
+/// about what it did.
+fn parse_concurrency(text: &str) -> Result<usize, String> {
+    let limit = crate::hlsfetch::CONCURRENCY_LIMIT;
+    let value: usize = text.trim().parse().map_err(|_| {
+        format!("--concurrent-fragments takes a whole number between 1 and {limit}, not {text:?}")
+    })?;
+    if value == 0 || value > limit {
+        return Err(format!(
+            "--concurrent-fragments must be between 1 and {limit}, not {value}"
+        ));
+    }
+    Ok(value)
+}
+
 impl Args {
     /// The colour decision after `--no-color` has had its say.
     pub fn color(&self) -> Choice {
@@ -243,6 +268,7 @@ impl Args {
             timeout: self.timeout,
             cookies: self.cookies.clone(),
             playlist_items: self.playlist_items.clone(),
+            concurrent_fragments: self.concurrent_fragments,
             verbose: self.verbose,
             color: self.color(),
         }

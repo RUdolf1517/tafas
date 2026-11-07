@@ -42,7 +42,7 @@ thumbnails, live streams, more than three sites.
 | **More sites** | Vimeo, Reddit (`v.redd.it`), SoundCloud (audio-only), Twitch VODs. Each one needs HLS from v0.2, its own refusal table, and a fixture. A site is added only when the shapes it *cannot* reach are written down. |
 | **Fragmented MP4** | DASH `SegmentBase` and live recordings arrive as `moof`/`mdat` fragments. The remuxer refuses them by name today; stitching them is the same work as HLS, applied to a second container. |
 | **Subtitle tracks inside MP4** | `wvtt` (WebVTT) and `stpp` (TTML) sample entries, written by the same track builder the muxer uses. Sidecars ship first because they cannot break a video. |
-| **`--concurrent-fragments N`** | Segmented sources make parallelism worth it; progressive files do not. Same flag name `yt-dlp` uses, because muscle memory is a feature. |
+| **`--concurrent-fragments N`** — *done: 1–16 workers over one segment list, written in playlist order, first failure cancels the queue* | Segmented sources make parallelism worth it; progressive files do not. Same flag name `yt-dlp` uses, because muscle memory is a feature. |
 | **`cargo fuzz` targets** | `mux::scan`, `mux::verify` and `sites::json_after` are the parsers that read bytes from someone else. A corpus plus a nightly job, run out of band. |
 | **`--extractor-args SITE:key=value`** | An escape hatch so a site change does not need a release. Deliberately ugly, deliberately undocumented beyond one table: it is a pressure valve, not an interface. |
 

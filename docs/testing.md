@@ -60,11 +60,16 @@ survived the remux and are findable in the output.
 | a server that ignores `Range` | the file restarts rather than doubling its beginning |
 | a body shorter than `Content-Length` | exit 4, no destination, `.part` kept |
 | a closed stdout pipe | exit 0, no panic, no error text |
+| `--concurrent-fragments 4` over four segments the server holds for 80 ms | the server saw more than one request at once, and the file is still the four segments in playlist order |
+| the same fixtures with the default `1` | the server never saw two requests at once |
+| a 404 on the first segment of a parallel run | the queued segments are never requested, and nothing is written |
 
 The local server is a few dozen lines of `std::net::TcpListener`: it parses the
 request line and headers, answers a canned body, and can be told to fail a given
-number of times first. It exists so that the resume and retry paths are tested
-against a real socket rather than a mock.
+number of times first. It serves each connection on its own thread, so a test can
+ask for several things at once, and a route can be told to hold its answer for a
+moment — the overlap in the parallel test is a fact about the server's clock
+rather than an assertion about how long the client took.
 
 ## 5. Not covered, and said so
 

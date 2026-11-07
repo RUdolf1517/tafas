@@ -126,6 +126,7 @@ on.
 | `-j, --jobs N` | how many URLs to work on at once (default 1; `0` means four) |
 | `--cookies FILE` | send the cookies in a Netscape cookie file (read once, never written back) |
 | `--playlist-items ITEMS` | take only these entries of a list: `3`, `1-5`, `2-`, mixed with commas |
+| `--concurrent-fragments N` | fetch this many HLS segments at once (`1`–`16`, default `1`) |
 
 Retried: transport failures, `429`, and `5xx`, with a growing delay (0.4 s,
 0.8 s, 1.6 s, 3.2 s, capped at 5 s). Not retried: `400`, `401`, `403`, `404`,
@@ -149,6 +150,19 @@ is still read in full, so the count in the refusal is the count the server
 served. A selection that matches no segment is a refusal (1); one that does not
 start on a keyframe is written, with a warning that the first frames will not
 decode.
+
+`--concurrent-fragments N` decides how many segments of one HLS list are in
+flight at once; the default, `1`, fetches them one after another, so the flag is
+the only thing that changes the order requests are made in. `N` is bounded to
+`1`–`16` before the first request, because every worker holds its segment in
+memory until the writer has it, and a number the program quietly reduced would be
+a lie about what it did. Segments arrive out of order and are written into their
+own slot, so the file is the playlist's order however the network interleaves
+them; the byte counter behind the progress line moves as segments land, not as
+they are written. The first failure cancels the segments still queued — the rest
+would be bytes for a file that is not going to exist. Like `--playlist-items`,
+it applies to a segment list only: on a progressive download it prints a note and
+changes nothing.
 
 A media transfer has no total deadline: a 500 MiB file on a slow line is not an
 error. A resumed transfer sends `Range: bytes=N-`; a server that answers `200`

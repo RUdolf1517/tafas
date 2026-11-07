@@ -213,3 +213,22 @@ fn a_cookie_file_with_no_cookies_in_it_is_a_usage_error() {
     );
     assert!(stderr(&output).contains("Netscape"), "{}", stderr(&output));
 }
+
+#[test]
+fn concurrent_fragments_is_bounded_before_anything_is_requested() {
+    for bad in ["0", "17", "four"] {
+        let output = tafas(&[
+            "--concurrent-fragments",
+            bad,
+            "https://youtu.be/aqz-KE-bpKQ",
+        ]);
+        assert_eq!(code(&output), 2, "--concurrent-fragments {bad}");
+        assert!(stdout(&output).is_empty());
+        let text = stderr(&output);
+        assert!(text.contains("--concurrent-fragments"), "{text}");
+        assert!(
+            text.contains("between 1 and 16"),
+            "the bound is named, not just rejected: {text}"
+        );
+    }
+}

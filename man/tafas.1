@@ -130,6 +130,13 @@ deadline.
 .B \-j, \-\-jobs \fIN\fR
 How many URLs to work on at once (default 1; \fB0\fR means four).
 .TP
+.B \-\-concurrent\-fragments \fIN\fR
+How many segments of one HLS list to fetch at once, \fB1\fR to \fB16\fR
+(default 1, which fetches them one after another). The segments are written in
+playlist order whatever order they arrive in, and the first failure stops the
+ones still queued. It applies to a segment list only; on any other selection it
+prints a note and changes nothing.
+.TP
 .B \-\-cookies \fIFILE\fR
 Send the cookies in a Netscape cookie file, in the format curl writes and every
 browser exports. The file is read once at startup, sent only to the hosts its

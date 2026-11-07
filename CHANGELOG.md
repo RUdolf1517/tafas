@@ -13,6 +13,14 @@ version; adding a site, a flag or a container is minor. The policy is in
 
 ### Added
 
+- **`--concurrent-fragments N`.** Fetch up to sixteen segments of one HLS list
+  at once instead of one after another; the default of `1` is the behaviour that
+  existed before. Arrivals are written into their own slot, so the file is the
+  playlist's order whatever the network does; the progress counter moves as
+  segments land. A failure cancels the segments still queued rather than
+  fetching bytes for a file that will not exist, and the flag is bounded to
+  `1`–`16` before the first request. Like `--playlist-items` it applies to a
+  segment list only, and says so when it does not.
 - **A per-user Windows installer** (`packaging/windows/install.ps1`, published as
   a release asset and covered by `SHA256SUMS`). Installs into
   `%LOCALAPPDATA%\Programs\tafas`, adds one user `PATH` entry, and refuses to
