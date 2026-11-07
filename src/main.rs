@@ -118,8 +118,8 @@ fn capabilities() -> String {
             }
         },
         "extractor_args": {
-            "youtube:client": crate::extractor_args::YOUTUBE_CLIENTS,
-            "tiktok:route": crate::extractor_args::TIKTOK_ROUTES
+            "youtube:client": tafas::extractor_args::YOUTUBE_CLIENTS,
+            "tiktok:route": tafas::extractor_args::TIKTOK_ROUTES
         },
         "containers": ["mp4", "m4a"],
         "hls": {
