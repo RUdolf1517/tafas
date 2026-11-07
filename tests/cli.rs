@@ -144,7 +144,11 @@ fn format_requires_exactly_one_url() {
 #[test]
 fn sub_langs_without_write_subs_is_a_usage_error() {
     let output = tafas(&["--sub-langs", "en", "https://youtu.be/dQw4w9WgXcQ"]);
-    assert_eq!(code(&output), 2, "a flag that would do nothing is a mistake");
+    assert_eq!(
+        code(&output),
+        2,
+        "a flag that would do nothing is a mistake"
+    );
     assert!(stdout(&output).is_empty());
     assert!(stderr(&output).contains("--write-subs"));
 }
