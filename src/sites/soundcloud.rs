@@ -85,7 +85,7 @@ pub fn extract(http: &Http, url: &Url, raw: &str) -> Result<Media> {
 
 /// The track object and its progressive transcoding URL, out of the hydration
 /// array.
-pub fn sound<'a>(value: &'a Value) -> Result<(&'a Value, String)> {
+pub fn sound(value: &Value) -> Result<(&Value, String)> {
     let mut saw_playlist = false;
     for entry in value.as_array().map(|list| list.as_slice()).unwrap_or(&[]) {
         match text(entry, &["hydratable"]).as_deref() {
