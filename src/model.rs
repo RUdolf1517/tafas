@@ -1,6 +1,6 @@
 use std::fmt;
 
-/// The six sites this build knows how to read.
+/// The seven sites this build knows how to read.
 ///
 /// A site is a *reader*, not a guarantee: `Site::from_url` answering `Some`
 /// only means the URL names the site, not that the page can be captured. The
@@ -13,6 +13,7 @@ pub enum Site {
     Vimeo,
     Reddit,
     SoundCloud,
+    Twitch,
 }
 
 impl Site {
@@ -24,6 +25,7 @@ impl Site {
             Site::Vimeo => "vimeo",
             Site::Reddit => "reddit",
             Site::SoundCloud => "soundcloud",
+            Site::Twitch => "twitch",
         }
     }
 
@@ -40,6 +42,7 @@ impl Site {
             "vimeo.com" | "player.vimeo.com" => Some(Site::Vimeo),
             "reddit.com" | "old.reddit.com" | "redd.it" | "v.redd.it" => Some(Site::Reddit),
             "soundcloud.com" | "on.soundcloud.com" => Some(Site::SoundCloud),
+            "twitch.tv" => Some(Site::Twitch),
             _ => None,
         }
     }
@@ -336,6 +339,12 @@ mod tests {
             Some(Site::SoundCloud)
         );
         assert_eq!(site("https://notsoundcloud.com/1"), None);
+        assert_eq!(
+            site("https://www.twitch.tv/videos/1234567890"),
+            Some(Site::Twitch)
+        );
+        assert_eq!(site("https://m.twitch.tv/videos/42"), Some(Site::Twitch));
+        assert_eq!(site("https://nottwitch.tv/videos/1"), None);
         assert_eq!(site("https://t.co/abc"), Some(Site::X));
     }
 

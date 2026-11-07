@@ -151,6 +151,15 @@ version; adding a site, a flag or a container is minor. The policy is in
   [extractors §7](docs/extractors.md#7-soundcloud) both say out loud. A set, a
   Go+ track, an opus-only rendition and a consent wall are refusals by name; the
   public `client_id` is scraped from the page rather than hard-coded.
+- **Twitch VODs.** `twitch.tv/videos/<id>`, through one batched GraphQL request:
+  `PlaybackAccessToken` (asked by persisted-query hash, with the public web
+  client id — not a credential, and `SECURITY.md` now says so beside YouTube's
+  key) and a `video(id:)` query for the title, the uploader, the length and the
+  poster. The token is a JSON document, so it is percent-encoded into
+  `nauth`/`nauthsig` on the usher playlist, which `hlsfetch` assembles like any
+  other list. A channel (a live stream has no end), a clip, a subscriber-only
+  recording and an API error are refusals that say which they are;
+  [extractors §8](docs/extractors.md#8-twitch).
 - **`Url::join`**, with dot-segment removal: playlist URIs are relative far more
   often than they are absolute, and `../` is common.
 - **`--embed-subs`.** The cues of one caption track go *inside* the MP4 as a

@@ -75,8 +75,15 @@ ours, and the only thing associated with it is the caller's IP address. The
 watch page's own `INNERTUBE_API_KEY` is preferred whenever the page can be read;
 the constant only covers the case where the page could not be fetched at all.
 
+A second public string arrived with Twitch support:
+`PUBLIC_WEB_CLIENT_ID` in `src/sites/twitch.rs`. It is the client id every
+`twitch.tv` page embeds for its own player, it is tied to no account, and the
+GraphQL endpoint refuses a request that names no client. It is not a credential
+either.
+
 So: when GitHub's secret scanning reports a **Google API Key** in
-`src/sites/youtube.rs`, that alert is a false positive. Dismiss it with reason
+`src/sites/youtube.rs`, or a Twitch client id in `src/sites/twitch.rs`, that
+alert is a false positive. Dismiss it with reason
 **"Won't fix"** or **"False positive"** and the comment that the string is
 YouTube's public web-client key, not a secret; there is nothing to rotate.
 Dismissing it is not a blanket permission to stop looking: any *other* alert

@@ -142,6 +142,12 @@ fn capabilities() -> String {
                 "container": "mp3, copied verbatim",
                 "hls_opus": false,
                 "cookies": "user-supplied (--cookies FILE)"
+            },
+            "twitch": {
+                "routes": ["gql playback token, then the usher playlist"],
+                "hls": true,
+                "live": false,
+                "cookies": "user-supplied (--cookies FILE)"
             }
         },
         "extractor_args": {
@@ -191,7 +197,7 @@ fn info(args: &Args) -> String {
         env!("CARGO_PKG_VERSION")
     ));
     out.push_str(
-        "capture YouTube, TikTok, X, Vimeo and Reddit as one playable MP4, and SoundCloud as an MP3, without re-encoding\n\n",
+        "capture YouTube, TikTok, X, Vimeo, Reddit and Twitch as one playable MP4, and SoundCloud as an MP3, without re-encoding\n\n",
     );
     out.push_str(&format!("sites        {}\n", SITES.join(", ")));
     out.push_str("muxing       mp4 (streams copied, index rebuilt, output verified)\n");

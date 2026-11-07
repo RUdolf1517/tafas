@@ -76,6 +76,13 @@ short links, read from the page's own hydration document. The track is written a
 an \fBMP3\fR, copied byte for byte from the CDN address the site's transcoding
 names. A set, a Go+ track, an opus-only rendition and a consent wall are refusals
 that name themselves; a set is a list, and one URL is one file.
+.TP
+.B Twitch
+\fBtwitch.tv/videos/<id>\fR, through one batched GraphQL request: the playback
+token, and the title, length and poster that name the file. The playlist the
+token unlocks is assembled into an MP4 like any other HLS list. A channel, a clip
+and a subscriber\-only recording are refusals that name themselves; the client id
+is public and is not a credential.
 .SH OPTIONS
 .SS Destination
 .TP
@@ -108,7 +115,7 @@ quietly, and a photo post is skipped by name: every image is already a file.
 Write the page's caption tracks beside each file, as WebVTT:
 \fI<name>.<language>.vtt\fR, or \fI<name>.<language>.auto.vtt\fR when the site
 transcribed the audio instead of a person writing the cues. One file per track;
-nothing is merged. YouTube is the only site of the six that lists tracks, so
+nothing is merged. YouTube is the only site of the seven that lists tracks, so
 elsewhere this is a note rather than a file.
 .TP
 .B \-\-embed\-subs

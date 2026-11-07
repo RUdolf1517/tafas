@@ -24,6 +24,7 @@ rather than with an empty file.
 | `vimeo.com`, `player.vimeo.com` | Vimeo |
 | `reddit.com`, `old.reddit.com`, `redd.it`, `v.redd.it` | Reddit |
 | `soundcloud.com`, `on.soundcloud.com` | SoundCloud |
+| `twitch.tv` | Twitch |
 
 `m.` and `mobile.` prefixes are stripped before the comparison, and so is a
 trailing dot. `notyoutube.com` and `youtube.com.evil.example` are **not**
@@ -334,7 +335,39 @@ behind a consent wall. An MP3 is also the one written file that is **not**
 structurally verified — there is no container to check, so the byte count is the
 whole guarantee.
 
-## 8. What a refusal looks like, and what it does not
+## 8. Twitch
+
+### 8.1 Route
+
+One batched GraphQL request carries two operations:
+
+1. `PlaybackAccessToken`, asked by persisted-query hash with the **public web
+   client id** in a `client-id` header. It answers `value` and `signature`;
+2. `video(id:)` for the title, the uploader, the length and the poster — so a
+   capture does not pay a second round trip just to name the file.
+
+Those two values become the playlist URL:
+`https://usher.ttvnw.net/vod/<id>.m3u8?...&nauth=<token>&nauthsig=<signature>`.
+`value` is a JSON document, so it is percent-encoded before it goes in the query
+string; `signature` is a signature over it and is sent as it arrived. `hlsfetch`
+then assembles the playlist like any other — the renditions are MPEG-TS, and the
+audio-only variant is offered by the same master list.
+
+### 8.2 Refused
+
+| Situation | Result |
+| --- | --- |
+| a channel URL (`twitch.tv/<name>`) | unsupported (1): a live stream has no end, and a file needs one |
+| `streamPlaybackAccessToken` null | refusal (1): expired, deleted, or subscriber-only; `--cookies FILE` is named |
+| a token without `value` or without `signature` | refusal (1) naming which field is missing |
+| an `errors` array in the answer | refusal (1) quoting the API's own message, because a changed persisted-query hash arrives exactly that way |
+
+**What it cannot reach:** live channels, clips (`clips.twitch.tv` has no reader
+here), subscriber-only VODs without a session, and anything Twitch has already
+expired. The client id is public and is not a credential — `SECURITY.md` says so
+next to YouTube's key.
+
+## 9. What a refusal looks like, and what it does not
 
 A refusal is a **failure**: exit 1, one line on stderr, and — under `--json` —
 an object with `"status": "failed"` and a `reason`. It is not a skip that exits
@@ -344,7 +377,7 @@ Nothing is ever written on a refusal. No empty file, no directory, no truncated
 `.mp4` with a valid header: the extractors run before the first byte of media is
 requested, so a refusal costs one or two page requests and no disk.
 
-## 9. When a site changes
+## 10. When a site changes
 
 Every extractor is written to *fail* rather than to produce something wrong:
 `read_player` returns "no formats" instead of panicking on a missing field, the
@@ -352,7 +385,7 @@ JSON lookup helpers are total, and media URLs are used only when they are
 strings. A changed page therefore produces a refusal with the status the site
 reported, which is the single most useful thing a bug report can contain.
 
-## 10. The escape hatch: `--extractor-args`
+## 11. The escape hatch: `--extractor-args`
 
 Section 6 ends with "a changed page produces a refusal", and a refusal is useful
 but not a download. The flag for the day between the change and the release is

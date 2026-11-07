@@ -9,6 +9,7 @@
 
 pub mod reddit;
 pub mod soundcloud;
+pub mod twitch;
 pub mod tiktok;
 pub mod vimeo;
 pub mod x;
@@ -31,7 +32,7 @@ pub fn extract(http: &Http, raw_url: &str, args: &ExtractorArgs) -> Result<Media
     let url = Url::parse(raw_url)?;
     let site = Site::from_url(&url).ok_or_else(|| {
         Error::Unsupported(format!(
-            "no extractor for {raw_url}: this build reads youtube, tiktok, x, vimeo, reddit and soundcloud"
+            "no extractor for {raw_url}: this build reads youtube, tiktok, x, vimeo, reddit, soundcloud and twitch"
         ))
     })?;
     match site {
@@ -41,12 +42,21 @@ pub fn extract(http: &Http, raw_url: &str, args: &ExtractorArgs) -> Result<Media
         Site::Vimeo => vimeo::extract(http, &url, raw_url),
         Site::Reddit => reddit::extract(http, &url, raw_url),
         Site::SoundCloud => soundcloud::extract(http, &url, raw_url),
+        Site::Twitch => twitch::extract(http, &url, raw_url),
     }
 }
 
 /// The site names this build reads, for `--capabilities` and for the error
 /// message above.
-pub const SITES: [&str; 6] = ["youtube", "tiktok", "x", "vimeo", "reddit", "soundcloud"];
+pub const SITES: [&str; 7] = [
+    "youtube",
+    "tiktok",
+    "x",
+    "vimeo",
+    "reddit",
+    "soundcloud",
+    "twitch",
+];
 
 // --- small JSON helpers ----------------------------------------------------
 //
