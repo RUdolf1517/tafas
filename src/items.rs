@@ -121,7 +121,9 @@ mod tests {
     fn ranges_are_inclusive_at_both_ends() {
         let list = items("1-3");
         assert_eq!(
-            (1..=5).filter(|index| list.contains(*index)).collect::<Vec<_>>(),
+            (1..=5)
+                .filter(|index| list.contains(*index))
+                .collect::<Vec<_>>(),
             vec![1, 2, 3]
         );
     }

@@ -282,7 +282,9 @@ fn selected<'a>(media: &'a Media, items: Option<&Items>, url: &Url) -> Result<Ve
         )));
     }
     if chosen.is_empty() {
-        return Err(Error::Refused(format!("{url}: the playlist names no segments")));
+        return Err(Error::Refused(format!(
+            "{url}: the playlist names no segments"
+        )));
     }
     Ok(chosen)
 }

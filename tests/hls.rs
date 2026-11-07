@@ -58,9 +58,15 @@ fn a_media_playlist_becomes_an_mp4() {
     let url = Url::parse(&server.url("/media.m3u8")).unwrap();
 
     let mut seen = 0u64;
-    let report = hlsfetch::fetch(&client(), &url, &[], Quality::Best, None, &out, &mut |bytes| {
-        seen += bytes
-    })
+    let report = hlsfetch::fetch(
+        &client(),
+        &url,
+        &[],
+        Quality::Best,
+        None,
+        &out,
+        &mut |bytes| seen += bytes,
+    )
     .expect("the pipeline should accept a plain media playlist");
 
     assert_eq!(report.segments, 1);
@@ -101,7 +107,8 @@ fn a_master_playlist_is_walked_to_the_chosen_variant() {
         &client(),
         &url,
         &[],
-        Quality::Height(720), None,
+        Quality::Height(720),
+        None,
         &out,
         &mut |_| {},
     )
@@ -300,7 +307,11 @@ fn a_playlist_selection_fetches_only_the_segments_it_names() {
 
     assert_eq!(report.segments, 1);
     assert_eq!(server.hits("/seg1.ts"), 1);
-    assert_eq!(server.hits("/seg2.ts"), 0, "an unselected segment is not fetched");
+    assert_eq!(
+        server.hits("/seg2.ts"),
+        0,
+        "an unselected segment is not fetched"
+    );
     assert_eq!(server.hits("/seg3.ts"), 0);
     let verified = mux::verify(&out).expect("the assembled file should be readable");
     assert_eq!(verified.sample_total(), 4);
