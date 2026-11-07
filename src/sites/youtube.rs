@@ -571,10 +571,7 @@ mod tests {
         assert_eq!(info.subtitles.len(), 2, "both tracks are recorded");
 
         assert_eq!(info.subtitles[0].language, "en");
-        assert!(
-            !info.subtitles[0].automatic,
-            "no kind means a person wrote it"
-        );
+        assert!(!info.subtitles[0].automatic, "no kind means a person wrote it");
         assert_eq!(info.subtitles[0].name.as_deref(), Some("English"));
         assert!(
             info.subtitles[0].url.ends_with("&fmt=vtt"),

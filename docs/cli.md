@@ -95,7 +95,8 @@ offers no poster, and a photo post, whose images are already files.
 `--write-subs` writes one WebVTT file per selected track:
 `<name>.<language>.vtt`, or `<name>.<language>.auto.vtt` for a machine
 transcript. `--sub-langs` takes `all` (the default when the flag is absent), an
-exact code, a prefix with a trailing `*`, or a comma-separated union of them,
+exact code, a language with a trailing `*` — `en*` is `en`, `en-US` and
+`en-GB`, but not `eng` — or a comma-separated union of them,
 case-insensitively. Three outcomes are told apart:
 
 | Situation | Result |

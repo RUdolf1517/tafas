@@ -437,10 +437,7 @@ fn write_subtitles(
     options: &Options,
     printer: &Printer,
 ) -> Result<()> {
-    let selection = options
-        .sub_langs
-        .clone()
-        .unwrap_or_else(subtitles::Selection::all);
+    let selection = options.sub_langs.clone().unwrap_or_else(subtitles::Selection::all);
     let chosen: Vec<&Subtitle> = media
         .subtitles
         .iter()

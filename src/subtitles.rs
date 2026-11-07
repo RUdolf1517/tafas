@@ -25,9 +25,10 @@ pub const LIMIT: u64 = 16 * 1024 * 1024;
 
 /// `--sub-langs`: which languages to take.
 ///
-/// `all`, an exact code (`en`, `pt-BR`), or a prefix written with a trailing
-/// `*` (`en*` covers `en` and `en-US`). Comparisons ignore case, because a
-/// language code is not a password.
+/// `all`, an exact code (`en`, `pt-BR`), or a language with a trailing `*`,
+/// which means the language and its regional variants: `en*` is `en`, `en-US`
+/// and `en-GB`, but not `eng`. Comparisons ignore case, because a language code
+/// is not a password.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Selection {
     /// The text the user typed, kept for messages.
@@ -91,11 +92,15 @@ impl Selection {
         }
         let language = language.to_ascii_lowercase();
         self.patterns.iter().any(|(pattern, is_prefix)| {
-            if *is_prefix {
-                language.starts_with(pattern.as_str())
-            } else {
-                language == *pattern
+            if !is_prefix {
+                return language == *pattern;
             }
+            // `en*` is a language and its variants, not every code that starts
+            // with the same three letters: `eng` is not English here.
+            language == *pattern
+                || language
+                    .strip_prefix(pattern.as_str())
+                    .is_some_and(|rest| rest.starts_with('-'))
         })
     }
 }
@@ -207,12 +212,13 @@ mod tests {
     }
 
     #[test]
-    fn a_star_is_a_prefix() {
+    fn a_star_is_a_language_and_its_variants() {
         let selection = Selection::parse("en*").unwrap();
         assert!(selection.matches("en"));
         assert!(selection.matches("en-US"));
         assert!(selection.matches("en-GB"));
-        assert!(!selection.matches("eng"));
+        assert!(!selection.matches("eng"), "a different language with the same prefix");
+        assert!(!selection.matches("en_US"), "the separator is the tag's own");
     }
 
     #[test]

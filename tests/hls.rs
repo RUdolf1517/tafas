@@ -378,10 +378,7 @@ fn an_independent_reader_agrees_with_the_written_file() {
             sample.offset,
             sample.size
         );
-        assert!(
-            sample.size > 0,
-            "an empty sample is a rewrite that lost data"
-        );
+        assert!(sample.size > 0, "an empty sample is a rewrite that lost data");
     }
     assert_eq!(video.keyframes(), 2, "both slices are IDRs");
 }
