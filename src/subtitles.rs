@@ -217,8 +217,14 @@ mod tests {
         assert!(selection.matches("en"));
         assert!(selection.matches("en-US"));
         assert!(selection.matches("en-GB"));
-        assert!(!selection.matches("eng"), "a different language with the same prefix");
-        assert!(!selection.matches("en_US"), "the separator is the tag's own");
+        assert!(
+            !selection.matches("eng"),
+            "a different language with the same prefix"
+        );
+        assert!(
+            !selection.matches("en_US"),
+            "the separator is the tag's own"
+        );
     }
 
     #[test]
