@@ -1,6 +1,6 @@
 {
-  "measured_on": "unmeasured: the first budgets job records this",
+  "measured_on": "ubuntu-latest, release x86_64-unknown-linux-gnu, build 3b27b4b",
   "tolerance_percent": 10,
-  "binary_bytes": 0,
-  "startup_millis": 0
+  "binary_bytes": 4107600,
+  "startup_millis": 1
 }
