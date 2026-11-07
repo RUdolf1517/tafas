@@ -15,6 +15,9 @@
 
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::mpsc;
+use std::thread;
 
 use crate::error::{Error, Result};
 use crate::hls::{Encryption, Key, Media, Playlist, Segment};
@@ -34,6 +37,12 @@ pub const SEGMENT_LIMIT: u64 = 64 * 1024 * 1024;
 /// answers with a megabyte is not a key.
 const KEY_BYTES: usize = 16;
 const KEY_LIMIT: u64 = 1024;
+
+/// The most segments this build will have in flight at once. A segment may be
+/// as large as `SEGMENT_LIMIT`, so this is a memory bound as much as a
+/// politeness one: the bytes of every worker's segment are held until the
+/// writer has them in order.
+pub const CONCURRENCY_LIMIT: usize = 16;
 
 /// How many segments a playlist may name before this build stops reading it.
 /// Ten hours of six-second segments is six thousand, so this is slack, not a
@@ -62,18 +71,23 @@ pub struct Report {
 ///
 /// `headers` are the site's request headers (a referrer, usually); every
 /// request in the walk carries them. `items` is `--playlist-items`: positions
-/// into the segment list, 1-based, or `None` for all of them. `on_bytes` is
-/// called with the size of each segment as it lands, so the caller's progress
-/// bar moves while the file does not exist yet.
+/// into the segment list, 1-based, or `None` for all of them. `concurrency` is
+/// `--concurrent-fragments`: how many segments of *one* list may be in flight
+/// at once, clamped to `1..=CONCURRENCY_LIMIT`. `on_bytes` is called with the
+/// size of each segment as it lands — in whatever order they land, because it
+/// feeds a byte counter, not a file — so the caller's progress bar moves while
+/// the file does not exist yet.
 pub fn fetch(
     http: &Http,
     url: &Url,
     headers: &[(String, String)],
     quality: Quality,
     items: Option<&Items>,
+    concurrency: usize,
     out: &Path,
     on_bytes: &mut dyn FnMut(u64),
 ) -> Result<Report> {
+    let concurrency = concurrency.clamp(1, CONCURRENCY_LIMIT);
     let borrowed: Vec<(&str, &str)> = headers
         .iter()
         .map(|(name, value)| (name.as_str(), value.as_str()))
@@ -98,7 +112,14 @@ pub fn fetch(
     let video_media = media_playlist(http, &video_url, &borrowed)?;
     let video_segments = selected(&video_media, items, &video_url)?;
     let mut segments = 0usize;
-    let video_bytes = fetch_media(http, &video_segments, &borrowed, on_bytes, &mut segments)?;
+    let video_bytes = fetch_media(
+        http,
+        &video_segments,
+        &borrowed,
+        concurrency,
+        on_bytes,
+        &mut segments,
+    )?;
     let demuxed = ts::demux(&video_bytes)?;
     let mut duration = video_media.total_duration();
     let video_has_audio = demuxed.audio().is_some();
@@ -122,7 +143,14 @@ pub fn fetch(
     if let Some(audio_url) = audio_url.filter(|_| !video_has_audio) {
         let audio_media = media_playlist(http, &audio_url, &borrowed)?;
         let audio_segments = selected(&audio_media, items, &audio_url)?;
-        let audio_bytes = fetch_media(http, &audio_segments, &borrowed, on_bytes, &mut segments)?;
+        let audio_bytes = fetch_media(
+            http,
+            &audio_segments,
+            &borrowed,
+            concurrency,
+            on_bytes,
+            &mut segments,
+        )?;
         let audio = ts::demux(&audio_bytes)?;
         match audio.audio() {
             Some(track) => tracks.push(track.clone()),
@@ -289,40 +317,133 @@ fn selected<'a>(media: &'a Media, items: Option<&Items>, url: &Url) -> Result<Ve
     Ok(chosen)
 }
 
+/// One segment, fetched and — if the playlist says so — decrypted.
+fn fetch_segment(
+    http: &Http,
+    segment: &Segment,
+    headers: &[(&str, &str)],
+    key: Option<[u8; KEY_BYTES]>,
+) -> Result<Vec<u8>> {
+    let range = segment.range.map(|range| (range.offset, range.length));
+    let mut bytes = http.get_bytes(
+        "hls-segment",
+        &segment.uri.to_string(),
+        headers,
+        range,
+        SEGMENT_LIMIT,
+    )?;
+    if let Some(key_bytes) = key {
+        bytes = decrypt(&bytes, key_bytes, key.iv_for(segment.sequence))?;
+    }
+    Ok(bytes)
+}
+
 /// Every segment of one playlist, concatenated.
 ///
 /// Transport streams are packet-aligned, so a segment boundary is always
 /// between two 188-byte packets and the concatenation is itself a stream.
+///
+/// With more than one worker the segments are fetched out of order and written
+/// into their own slot, so the concatenation below is in playlist order however
+/// the arrivals interleave. One failure cancels the rest: the remaining
+/// segments would be bytes nobody writes.
 fn fetch_media(
     http: &Http,
     chosen: &[&Segment],
     headers: &[(&str, &str)],
+    concurrency: usize,
     on_bytes: &mut dyn FnMut(u64),
     segments: &mut usize,
 ) -> Result<Vec<u8>> {
-    let mut keys: HashMap<String, [u8; KEY_BYTES]> = HashMap::new();
-    let mut data = Vec::new();
+    // Keys are resolved before any worker starts. A playlist repeats the same
+    // `EXT-X-KEY` before every segment, so the cache is filled once, in order,
+    // and is read-only afterwards: no lock in the fetch path, and no key
+    // fetched twice because two workers reached the same URI together.
+    let mut cache: HashMap<String, [u8; KEY_BYTES]> = HashMap::new();
+    let mut keys: Vec<Option<[u8; KEY_BYTES]>> = Vec::with_capacity(chosen.len());
     for segment in chosen {
-        let range = segment.range.map(|range| (range.offset, range.length));
-        let mut bytes = http.get_bytes(
-            "hls-segment",
-            &segment.uri.to_string(),
-            headers,
-            range,
-            SEGMENT_LIMIT,
-        )?;
-        if let Some(key) = segment
+        let key = match segment
             .key
             .as_ref()
             .filter(|key| key.method == Encryption::Aes128)
         {
-            let key_bytes = resolve_key(http, key, headers, &mut keys)?;
-            bytes = decrypt(&bytes, key_bytes, key.iv_for(segment.sequence))?;
-        }
-        on_bytes(bytes.len() as u64);
-        data.extend_from_slice(&bytes);
-        *segments += 1;
+            Some(key) => Some(resolve_key(http, key, headers, &mut cache)?),
+            None => None,
+        };
+        keys.push(key);
     }
+
+    let workers = concurrency.clamp(1, chosen.len().max(1));
+    let mut pieces: Vec<Option<Vec<u8>>> = (0..chosen.len()).map(|_| None).collect();
+    let mut failure: Option<Error> = None;
+
+    if workers == 1 {
+        for (index, (segment, key)) in chosen.iter().zip(keys.iter()).enumerate() {
+            let bytes = fetch_segment(http, *segment, headers, *key)?;
+            on_bytes(bytes.len() as u64);
+            pieces[index] = Some(bytes);
+        }
+    } else {
+        let next = AtomicUsize::new(0);
+        let cancelled = AtomicBool::new(false);
+        let (sender, receiver) = mpsc::channel();
+        thread::scope(|scope| {
+            for _ in 0..workers {
+                let sender = sender.clone();
+                let next = &next;
+                let cancelled = &cancelled;
+                let keys = &keys;
+                scope.spawn(move || loop {
+                    if cancelled.load(Ordering::SeqCst) {
+                        break;
+                    }
+                    let index = next.fetch_add(1, Ordering::SeqCst);
+                    if index >= chosen.len() {
+                        break;
+                    }
+                    let outcome = fetch_segment(http, chosen[index], headers, keys[index]);
+                    if outcome.is_err() {
+                        cancelled.store(true, Ordering::SeqCst);
+                    }
+                    if sender.send((index, outcome)).is_err() {
+                        break;
+                    }
+                });
+            }
+            // The original sender has to go or `iter` below never ends.
+            drop(sender);
+            for (index, outcome) in receiver.iter() {
+                match outcome {
+                    Ok(bytes) => {
+                        on_bytes(bytes.len() as u64);
+                        pieces[index] = Some(bytes);
+                    }
+                    Err(error) => {
+                        if failure.is_none() {
+                            failure = Some(error);
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    if let Some(error) = failure {
+        return Err(error);
+    }
+
+    let mut data = Vec::new();
+    for (index, piece) in pieces.into_iter().enumerate() {
+        let bytes = piece.ok_or_else(|| {
+            Error::Internal(format!(
+                "segment {} of {} was never fetched",
+                index + 1,
+                chosen.len()
+            ))
+        })?;
+        data.extend_from_slice(&bytes);
+    }
+    *segments += chosen.len();
     Ok(data)
 }
 

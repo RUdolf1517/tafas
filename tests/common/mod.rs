@@ -32,6 +32,10 @@ pub struct Route {
     /// Answer only when the request carries this header with this value, and
     /// `403` otherwise: the shape a site with a session check has.
     pub requires_header: Option<(String, String)>,
+    /// Hold the response for this long. A test that fetches segments in
+    /// parallel needs the requests to overlap on the server, and a delay is a
+    /// larger signal than a wall-clock assertion on a loaded runner.
+    pub delay_ms: u64,
 }
 
 impl Route {
@@ -43,6 +47,16 @@ impl Route {
             support_range: true,
             truncate_by: 0,
             requires_header: None,
+            delay_ms: 0,
+        }
+    }
+
+    /// A route that answers after `delay_ms`, so two requests can be in flight
+    /// at once even when the body is tiny.
+    pub fn slow(path: &str, body: &[u8], delay_ms: u64) -> Route {
+        Route {
+            delay_ms,
+            ..Route::ok(path, body)
         }
     }
 
@@ -84,6 +98,9 @@ pub struct TestServer {
     /// Requests per path, so a test can assert that a resource was fetched
     /// once rather than counting connections.
     hits: Arc<Mutex<HashMap<String, usize>>>,
+    /// Requests being served right now, and the highest number seen at once.
+    live: Arc<AtomicUsize>,
+    peak: Arc<AtomicUsize>,
 }
 
 impl TestServer {
@@ -97,9 +114,13 @@ impl TestServer {
         let stop = Arc::new(AtomicBool::new(false));
         let requests = Arc::new(AtomicUsize::new(0));
         let hits = Arc::new(Mutex::new(HashMap::new()));
+        let live = Arc::new(AtomicUsize::new(0));
+        let peak = Arc::new(AtomicUsize::new(0));
         let stop_flag = Arc::clone(&stop);
         let counter = Arc::clone(&requests);
         let path_hits = Arc::clone(&hits);
+        let live_now = Arc::clone(&live);
+        let peak_now = Arc::clone(&peak);
         let routes = Arc::new(routes);
 
         let handle = thread::spawn(move || {
@@ -107,7 +128,21 @@ impl TestServer {
                 match listener.accept() {
                     Ok((stream, _)) => {
                         counter.fetch_add(1, Ordering::SeqCst);
-                        let _ = handle_connection(stream, &routes, &path_hits);
+                        // One thread per connection, so a client that asks for
+                        // several things at once is served them at once.
+                        let routes = Arc::clone(&routes);
+                        let path_hits = Arc::clone(&path_hits);
+                        let live = Arc::clone(&live_now);
+                        let peak = Arc::clone(&peak_now);
+                        thread::spawn(move || {
+                            let _ = handle_connection(
+                                stream,
+                                routes.as_slice(),
+                                &path_hits,
+                                &live,
+                                &peak,
+                            );
+                        });
                     }
                     Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                         thread::sleep(Duration::from_millis(2));
@@ -123,7 +158,16 @@ impl TestServer {
             handle: Some(handle),
             requests,
             hits,
+            live,
+            peak,
         }
+    }
+
+    /// The most requests that were ever held back at the same moment. Only
+    /// routes built with `Route::slow` are counted, because those are the ones
+    /// whose overlap is a fact rather than a race.
+    pub fn peak_concurrent(&self) -> usize {
+        self.peak.load(Ordering::SeqCst)
     }
 
     /// How many requests a path received.
@@ -154,6 +198,8 @@ fn handle_connection(
     mut stream: TcpStream,
     routes: &[Route],
     hits: &Mutex<HashMap<String, usize>>,
+    live: &AtomicUsize,
+    peak: &AtomicUsize,
 ) -> std::io::Result<()> {
     stream.set_read_timeout(Some(Duration::from_secs(5)))?;
     let mut reader = BufReader::new(stream.try_clone()?);
@@ -221,6 +267,17 @@ fn handle_connection(
         if !carried {
             return write_response(&mut stream, 403, "Forbidden", b"no session", None);
         }
+    }
+
+    // The delay is where a request is observably in flight. Counting it here —
+    // rather than around the whole connection — is what makes "one at a time"
+    // and "two at a time" deterministic instead of a race with the client
+    // reading the answer and asking for the next segment.
+    if route.delay_ms > 0 {
+        let in_flight = live.fetch_add(1, Ordering::SeqCst) + 1;
+        peak.fetch_max(in_flight, Ordering::SeqCst);
+        thread::sleep(Duration::from_millis(route.delay_ms));
+        live.fetch_sub(1, Ordering::SeqCst);
     }
 
     let already = FAILURES.load(Ordering::SeqCst);

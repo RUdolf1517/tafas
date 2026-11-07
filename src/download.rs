@@ -68,6 +68,8 @@ pub struct Options {
     pub cookies: Option<PathBuf>,
     /// `--playlist-items`: which segments of an HLS list to take.
     pub playlist_items: Option<items::Items>,
+    /// `--concurrent-fragments`: how many segments of one list may be in flight.
+    pub concurrent_fragments: usize,
     pub verbose: u8,
     pub color: style::Choice,
 }
@@ -98,6 +100,7 @@ impl Default for Options {
             timeout: 60,
             cookies: None,
             playlist_items: None,
+            concurrent_fragments: 1,
             verbose: 0,
             color: style::Choice::Auto,
         }
@@ -342,12 +345,17 @@ fn handle(
     )?;
     item.selection = plan.describe();
 
-    if options.playlist_items.is_some()
-        && !matches!(&plan, Plan::Single(format) if format.container == Container::Hls)
-    {
+    let hls_plan = matches!(&plan, Plan::Single(format) if format.container == Container::Hls);
+    if options.playlist_items.is_some() && !hls_plan {
         printer.warn(
             "note: --playlist-items applies to an HLS segment list; this selection is not \
              one, so it was ignored",
+        );
+    }
+    if options.concurrent_fragments > 1 && !hls_plan {
+        printer.warn(
+            "note: --concurrent-fragments applies to the segments of an HLS list; this \
+             selection is not one, so it was ignored",
         );
     }
 
@@ -735,6 +743,7 @@ fn fetch_hls(
         &request_headers(format),
         options.quality,
         options.playlist_items.as_ref(),
+        options.concurrent_fragments,
         &part,
         &mut |bytes| progress.add(bytes),
     );

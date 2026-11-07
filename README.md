@@ -117,6 +117,7 @@ tafas https://youtu.be/aqz-KE-bpKQ -o - | mpv -     # bytes on stdout
 tafas https://x.com/user/status/123 --cookies ~/cookies.txt  # a session, if you have one
 tafas https://youtu.be/aqz-KE-bpKQ --write-info-json # a sidecar describing the choice
 tafas https://x.com/user/status/123 --playlist-items 1-5  # part of an HLS list
+tafas https://x.com/user/status/123 --concurrent-fragments 4  # four segments at once
 tafas https://youtu.be/aqz-KE-bpKQ --write-thumbnail  # the poster, beside the file
 tafas https://youtu.be/aqz-KE-bpKQ --write-subs --sub-langs en,ru  # WebVTT captions
 ```
@@ -166,16 +167,17 @@ ciphers, fMP4 playlists — is one table away in
 
 ## Roadmap
 
-**Where this is now: v0.2, most of it landed.** The HLS pipeline, AES-128
-segments, `--cookies`, the three sidecar flags, `--playlist-items` over HLS
-segment lists and every packaging channel but four are in. What is still open in
-v0.2 is playlist and channel *pages*, and AUR, Alpine `.apk`, Scoop and a flake.
+**Where this is now: v0.3 has started.** v0.2 landed everything but playlist and
+channel *pages* and four packaging channels, and v0.3's first item is in:
+`--concurrent-fragments`, so one HLS list is fetched by several workers while the
+file stays in playlist order. Next is fragmented MP4, which is the gate in front
+of the three sites v0.3 adds.
 
 | Where it goes | State | What it is |
 | --- | --- | --- |
 | [v0.1.0](docs/roadmap.md#1-v010--shipped) | **shipped** | Three sites, DASH remuxing verified by a second reader, atomic `.part` commit, resume, `--json`, the manual page, completions, `--capabilities`. |
 | [v0.2](docs/roadmap.md#2-v02--the-shapes-users-actually-hit) | **in progress** | **In:** HLS → MP4, AES-128 keys, `--cookies`, `--write-info-json`, `--write-thumbnail`, `--write-subs`/`--sub-langs`, `--playlist-items` over HLS segment lists, an independent test demuxer, `.deb`/`.rpm`, Homebrew, `install.sh`, the per-user Windows installer and the local winget manifests. **Open:** playlist and channel pages; AUR, `.apk`, Scoop, a flake. |
-| [v0.3](docs/roadmap.md#3-v03--reach-and-the-parts-that-are-not-a-url) | next | Vimeo, Reddit, SoundCloud, Twitch; fragmented MP4; subtitle tracks *inside* the container; `--concurrent-fragments`; fuzz targets; `--extractor-args`. |
+| [v0.3](docs/roadmap.md#3-v03--reach-and-the-parts-that-are-not-a-url) | **started** | **In:** `--concurrent-fragments`, so an HLS list is fetched by four workers instead of one. **Open:** Vimeo, Reddit, SoundCloud, Twitch; fragmented MP4; subtitle tracks *inside* the container; fuzz targets; `--extractor-args`. |
 | [v0.4](docs/roadmap.md#4-v04--speed-platforms-trust) | planned | `--limit-rate` and per-fragment resume; reproducible builds and signed releases; size and startup budgets in CI; an MSRV job; Windows long paths. |
 | [v0.5](docs/roadmap.md#5-v05--extensibility-without-a-fork) | planned | A stable `Extractor` trait; feature-per-site builds; one documentation page per site. |
 
