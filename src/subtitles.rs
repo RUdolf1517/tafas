@@ -276,7 +276,7 @@ fn timing_pair(line: &str) -> Result<(u64, u64)> {
         .ok_or_else(|| Error::Parse(format!("a cue timing line has no -->: {line:?}")))?;
     let start = timestamp(left.trim())?;
     // The end time is followed by optional cue settings.
-    let end_text = right.trim().split_whitespace().next().unwrap_or("");
+    let end_text = right.split_whitespace().next().unwrap_or("");
     let end = timestamp(end_text)?;
     Ok((start, end))
 }
