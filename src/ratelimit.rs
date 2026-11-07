@@ -39,7 +39,9 @@ pub fn parse(text: &str) -> Result<u64, String> {
     };
     let number = number.trim();
     let value: f64 = match number.parse::<f64>() {
-        Ok(value) if value.is_finite() && value > 0.0 => value,
+        // Zero is allowed here and caught by the floor below, so that a rate of
+        // zero is told about the floor rather than about the syntax.
+        Ok(value) if value.is_finite() && value >= 0.0 => value,
         _ => return Err(wrong_shape(text)),
     };
     let bytes = (value * scale as f64).round();

@@ -265,11 +265,14 @@ fn limit_rate_is_bounded_before_anything_is_requested() {
         assert!(stdout(&output).is_empty());
         let text = stderr(&output);
         assert!(text.contains("--limit-rate"), "{text}");
-        assert!(
-            text.contains("500K"),
-            "the message says what a rate looks like: {text}"
-        );
     }
+    // What a rate looks like is in the message for a value that is not one.
+    let output = tafas(&["--limit-rate", "fast", "https://youtu.be/aqz-KE-bpKQ"]);
+    assert!(
+        stderr(&output).contains("500K"),
+        "the message says what a rate looks like: {}",
+        stderr(&output)
+    );
 }
 
 #[test]
