@@ -22,7 +22,7 @@ use std::sync::mpsc;
 use std::thread;
 
 use crate::error::{Error, Result};
-use crate::hls::{Encryption, InitSection, Key, Media, Playlist, Segment};
+use crate::hls::{Encryption, Key, Media, Playlist, Segment};
 use crate::http::Http;
 use crate::items::Items;
 use crate::mp4read;
