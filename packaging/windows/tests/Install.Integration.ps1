@@ -155,17 +155,21 @@ function New-DownloadStub {
 
     # Replaces the network download: the URI must be the release URL this tag
     # would really use, and the bytes come from the fixture directory.
+    #
+    # The table is script-scoped rather than closed over: `GetNewClosure()` gives
+    # the block a scope of its own, and the assertions below stop resolving.
+    $script:DownloadReleases = $Releases
     return {
         param($Uri, $Destination)
         $match = [regex]::Match([string]$Uri, '/releases/download/(?<tag>v[0-9.]+)/(?<name>[^/]+)$')
         Assert-True $match.Success "download URI has the release shape: $Uri"
         $tag = $match.Groups['tag'].Value
         $name = $match.Groups['name'].Value
-        Assert-True ($Releases.ContainsKey($tag)) "tag $tag is a known fixture"
-        $source = Join-Path $Releases[$tag].Directory $name
+        Assert-True ($script:DownloadReleases.ContainsKey($tag)) "tag $tag is a known fixture"
+        $source = Join-Path $script:DownloadReleases[$tag].Directory $name
         Assert-True (Test-Path -LiteralPath $source -PathType Leaf) "fixture provides $name for $tag"
         Copy-Item -LiteralPath $source -Destination $Destination -Force
-    }.GetNewClosure()
+    }
 }
 
 function Get-UserPathEntries {
@@ -402,7 +406,8 @@ try {
     Invoke-Case 'a revision three install cleans up after itself' {
         Invoke-TafasUninstallCore -InstallRoot $defaultInstallPath
         $leftovers = @(Get-ChildItem -LiteralPath (Split-Path -Parent $defaultInstallPath) -Force -Filter '.tafas-*')
-        Assert-True ($leftovers.Count -eq 0) "no staging directories survived: $($leftovers.Name -join ', ')"
+        $leftoverNames = ($leftovers | ForEach-Object { $_.Name }) -join ', '
+        Assert-True ($leftovers.Count -eq 0) "no staging directories survived: $leftoverNames"
         Assert-True (@(Get-UserPathEntries | Where-Object { $_ -ieq $defaultInstallPath }).Count -eq 0) 'the default PATH entry is gone'
     }
 }
