@@ -881,7 +881,7 @@ mod tests {
         let moof = |data_offset: i32| {
             let tfhd = full(b"tfhd", 0, 0x020000, &id.to_be_bytes()); // default-base-is-moof
             let tfdt = full(b"tfdt", 1, 0, &base_time.to_be_bytes());
-            let mut trun_body = samples.len().to_be_bytes().to_vec();
+            let mut trun_body = (samples.len() as u32).to_be_bytes().to_vec();
             trun_body.extend_from_slice(&data_offset.to_be_bytes());
             for (size, keyframe) in samples {
                 trun_body.extend_from_slice(&size.to_be_bytes());
@@ -997,30 +997,27 @@ mod tests {
     }
 
     #[test]
-    fn the_fixture_has_the_boxes_the_reader_walks() {
+    fn the_fixture_is_the_shape_the_reader_walks() {
+        // A fragment is only a fixture if it is the box tree the parser
+        // expects, and this is cheaper to debug than a sample count that came
+        // out zero.
         let media = fragment(1, 0, &[(4, true), (4, false)], b"AAAABBBB");
-        let top = scan(&media, 0, media.len()).unwrap();
-        let kinds: Vec<String> = top
-            .iter()
-            .map(|bx| format!("{}({}..{})", name(&bx.kind), bx.start, bx.end))
-            .map(|k| k.to_string())
-            .collect();
-        let moof = top.into_iter().find(|bx| &bx.kind == b"moof").unwrap();
-        let inside: Vec<String> = scan(&media, moof.body_start, moof.end)
+        let top: Vec<String> = scan(&media, 0, media.len())
             .unwrap()
             .iter()
-            .map(|bx| format!("{}({}..{})", name(&bx.kind), bx.body_start, bx.end))
+            .map(|bx| name(&bx.kind))
             .collect();
+        assert_eq!(top, vec!["moof", "mdat"]);
+        let moof = scan(&media, 0, media.len())
+            .unwrap()
+            .into_iter()
+            .find(|bx| &bx.kind == b"moof")
+            .unwrap();
         let traf = scan(&media, moof.body_start, moof.end)
             .unwrap()
             .into_iter()
             .find(|bx| &bx.kind == b"traf")
             .unwrap();
-        let parts: Vec<String> = scan(&media, traf.body_start, traf.end)
-            .unwrap()
-            .iter()
-            .map(|bx| format!("{}:{:02x?}", name(&bx.kind), &media[bx.body_start..bx.end]))
-            .collect();
         let trun = scan(&media, traf.body_start, traf.end)
             .unwrap()
             .into_iter()
@@ -1034,8 +1031,13 @@ mod tests {
                 size: 0,
                 flags: 0,
             },
-        );
-        panic!("top {kinds:?} inside {inside:?} parts {parts:?} run {run:?}");
+        )
+        .unwrap();
+        assert_eq!(run.samples.len(), 2);
+        assert_eq!(run.data_offset, Some((moof.end + 8) as i32));
+        assert!(run.samples[0].keyframe);
+        assert!(!run.samples[1].keyframe);
+        assert_eq!(run.samples[0].size, 4);
     }
 
     #[test]
