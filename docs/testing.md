@@ -116,6 +116,7 @@ and nothing it builds ends up in the binary:
 cargo +nightly fuzz run mp4_read
 cargo +nightly fuzz run webvtt
 cargo +nightly fuzz run json_after
+cargo +nightly fuzz run mux_file
 ```
 
 `.github/workflows/fuzz.yml` runs each target for five minutes, weekly and on
@@ -124,11 +125,17 @@ merge is a fuzzer people learn to ignore. A crash arrives as an artifact under
 `fuzz/artifacts/`; that file is committed with the fix and replayed with
 `cargo fuzz run <target> fuzz/artifacts/<target>/<file>`.
 
-`mux::scan` and `mux::verify` are not targets yet: both take a path, because the
-verifier re-reads a file from disk, so they need a temporary-file wrapper in the
-target itself. The parser tests cover them today, and they include truncated and
-padded inputs explicitly — a plain regression fails in `cargo test`, not only
-under a fuzzer.
+`mux::verify` and `mux::remux` are reached through a fourth target, `mux_file`,
+which writes the input to a temporary file first: both take a path, because the
+verifier re-reads its own output from disk. That makes it the slow one — a few
+hundred executions a second rather than a hundred thousand — so its corpus is
+worth a shorter run. It asks two things of the same bytes: that `verify` walks
+any file at all without panicking, and that `remux` refuses anything that is not
+two ISO-BMFF tracks instead of guessing at offsets.
+
+A five-minute weekly run is not a proof of anything; it is a smoke detector. The
+parser tests still include truncated and padded inputs explicitly, so a plain
+regression fails in `cargo test` rather than only under a fuzzer.
 
 ## 7. CI
 

@@ -22,7 +22,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [mp4_read, webvtt, json_after]
+        target: [mp4_read, webvtt, json_after, mux_file]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly

@@ -35,3 +35,10 @@ path = "fuzz_targets/json_after.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "mux_file"
+path = "fuzz_targets/mux_file.rs"
+test = false
+doc = false
+bench = false
