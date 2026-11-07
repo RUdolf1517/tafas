@@ -116,8 +116,8 @@ impl Http {
     /// divide the rate rather than multiply it. Metadata is not charged: it is
     /// read in full and bounded by its own limits, not streamed.
     pub fn with_limit_rate(mut self, bytes_per_second: Option<u64>) -> Http {
-        self.limit = bytes_per_second
-            .map(|rate| std::sync::Mutex::new(crate::ratelimit::Budget::new(rate)));
+        self.limit =
+            bytes_per_second.map(|rate| std::sync::Mutex::new(crate::ratelimit::Budget::new(rate)));
         self
     }
 
