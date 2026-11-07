@@ -32,6 +32,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write
 
 jobs:
   installer:
@@ -76,6 +77,33 @@ jobs:
           path: artifacts/
           if-no-files-found: warn
           retention-days: 30
+
+      # The transcript also goes into the pull request. A failed run's log is not
+      # reachable from every environment this project is developed in, and a
+      # failure nobody can read is not a report.
+      - name: Publish the transcript to the pull request
+        if: failure()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
+          set -uo pipefail
+          number="$(gh pr list --state open --json number,headRefName \
+            --jq "[.[] | select(.headRefName == \"$HEAD_BRANCH\")] | .[0].number" 2>/dev/null || true)"
+          if [ -z "$number" ] || [ "$number" = "null" ]; then
+            echo "no open pull request for $HEAD_BRANCH; the transcript is in the job log"
+            exit 0
+          fi
+          log="artifacts/installer-integration.log"
+          {
+            echo "### windows installer — the integration test failed"
+            echo
+            echo '```'
+            if [ -f "$log" ]; then tail -n 150 "$log"; else echo "the harness wrote no transcript"; fi
+            echo '```'
+          } > failure.md
+          gh pr comment "$number" --body-file failure.md || true
 
   winget-manifests:
     name: local winget manifests describe the exact ZIP
