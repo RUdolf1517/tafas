@@ -11,7 +11,7 @@
 [![rust](https://img.shields.io/badge/rust-1.82%2B-dea584?style=flat-square)](https://www.rust-lang.org/)
 [![license](https://img.shields.io/badge/license-MIT-0b3d91?style=flat-square)](LICENSE)
 
-[Install](#install) · [Usage](#usage) · [Sites](#sites) · [Why tafas](#why-tafas) · [Docs](#documentation)
+[Install](#install) · [Usage](#usage) · [Sites](#sites) · [Why tafas](#why-tafas) · [Docs](#documentation) · [Contact](#contact)
 
 </div>
 
@@ -185,6 +185,35 @@ open. The word carries no promise about the file's future: what tafas checks
 before it renames a file, and where that check is weaker than it looks, is
 written down in [docs/guarantees.md](docs/guarantees.md) rather than implied by
 a slogan.
+
+## Contact
+
+A bug, a refusal that names the wrong thing, a site that changed its pages:
+[open an issue](https://github.com/RUdolf1517/tafas/issues) with the URL and the
+message you got. The refusal tables in [docs/extractors.md](docs/extractors.md)
+exist so that a report can point at one line instead of describing a mood.
+
+Anything that should not be public goes to the repository's
+[Security tab](https://github.com/RUdolf1517/tafas/security), or to
+[rudolfzinovev@protonmail.com](mailto:rudolfzinovev@protonmail.com).
+[SECURITY.md](SECURITY.md) says what counts as a vulnerability here and what does
+not: a page that changed shape and now produces a wrong refusal is a
+compatibility issue with a patch release behind it, not a CVE.
+
+## Written by AI
+
+The code, the documentation, the tests and the commit messages are drafted by an
+AI assistant. The direction is [RUdolf1517](https://github.com/RUdolf1517)'s, and
+so is the decision about what ships.
+
+That is worth writing down only because the repository makes it checkable rather
+than asking to be trusted: every refusal has a name and a paragraph that explains
+it, every flag in `--help` is compared against the manual page by
+[`tests/packaging.rs`](tests/packaging.rs), formatting is committed by CI instead
+of demanded from contributors, and where a check is weaker than it looks — a
+container verified structurally but not decoded, a site route that cannot reach a
+signed format — [docs/guarantees.md](docs/guarantees.md) says so before the code
+does. A change that cannot be verified this way is not one this project ships.
 
 Written by AI. Directed by [RUdolf1517](https://github.com/RUdolf1517) ·
 [rudolfzinovev@protonmail.com](mailto:rudolfzinovev@protonmail.com)
