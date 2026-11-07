@@ -142,6 +142,26 @@ fn format_requires_exactly_one_url() {
 }
 
 #[test]
+fn sub_langs_without_write_subs_is_a_usage_error() {
+    let output = tafas(&["--sub-langs", "en", "https://youtu.be/dQw4w9WgXcQ"]);
+    assert_eq!(code(&output), 2, "a flag that would do nothing is a mistake");
+    assert!(stdout(&output).is_empty());
+    assert!(stderr(&output).contains("--write-subs"));
+}
+
+#[test]
+fn a_malformed_sub_langs_list_is_rejected_before_any_request() {
+    let output = tafas(&[
+        "--write-subs",
+        "--sub-langs",
+        "en,,ru",
+        "https://youtu.be/dQw4w9WgXcQ",
+    ]);
+    assert_eq!(code(&output), 2);
+    assert!(stderr(&output).contains("language"));
+}
+
+#[test]
 fn a_trailing_dash_argument_is_treated_as_a_url() {
     // `--` must let a value that looks like a flag through untouched, and the
     // result is then a usage-level rejection rather than a parse error in the

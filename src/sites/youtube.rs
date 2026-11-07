@@ -544,6 +544,50 @@ mod tests {
     }
 
     #[test]
+    fn caption_tracks_become_subtitles_and_ask_for_webvtt() {
+        let document = serde_json::json!({
+            "playabilityStatus": {"status": "OK"},
+            "videoDetails": {"title": "a video"},
+            "captions": {
+                "playerCaptionsTracklistRenderer": {
+                    "captionTracks": [
+                        {
+                            "baseUrl": "https://www.youtube.com/api/timedtext?v=x&lang=en",
+                            "languageCode": "en",
+                            "name": {"simpleText": "English"}
+                        },
+                        {
+                            "baseUrl": "https://www.youtube.com/api/timedtext?v=x&lang=ru&fmt=srv1",
+                            "languageCode": "ru",
+                            "kind": "asr"
+                        }
+                    ]
+                }
+            },
+            "streamingData": {"formats": []}
+        });
+
+        let info = read_player(&document, "test");
+        assert_eq!(info.subtitles.len(), 2, "both tracks are recorded");
+
+        assert_eq!(info.subtitles[0].language, "en");
+        assert!(!info.subtitles[0].automatic, "no kind means a person wrote it");
+        assert_eq!(info.subtitles[0].name.as_deref(), Some("English"));
+        assert!(
+            info.subtitles[0].url.ends_with("&fmt=vtt"),
+            "the URL asks for WebVTT: {}",
+            info.subtitles[0].url
+        );
+
+        assert!(info.subtitles[1].automatic, "kind: asr is a transcript");
+        assert!(
+            info.subtitles[1].url.contains("fmt=srv1"),
+            "a format the site already chose is left alone: {}",
+            info.subtitles[1].url
+        );
+    }
+
+    #[test]
     fn the_widest_thumbnail_is_the_one_kept() {
         let document = serde_json::json!({
             "playabilityStatus": {"status": "OK"},
