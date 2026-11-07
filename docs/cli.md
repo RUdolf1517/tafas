@@ -265,7 +265,7 @@ Schema version 1:
 | --- | --- |
 | `schema` | `1`; a change of meaning bumps it |
 | `status` | `downloaded`, `planned`, `listed`, `failed` |
-| `site` | `youtube`, `tiktok`, `x`, or `""` before the page was read |
+| `site` | `youtube`, `tiktok`, `x`, `vimeo`, or `""` before the page was read |
 | `id` | the site's own id for the item |
 | `selection` | the human description of what was chosen |
 | `path` | the written file, or `null` on failure and for `-o -` |

@@ -21,7 +21,7 @@ reader before the file is renamed. Atomic `.part` commit, ranged resume, retries
 `--json`, a manual page, completions, `--capabilities`.
 
 Deliberately absent: cookies, signature solving, HLS, playlists, subtitles,
-thumbnails, live streams, more than three sites.
+thumbnails, live streams, more than four sites.
 
 ## 2. v0.2 — the shapes users actually hit
 
@@ -39,13 +39,13 @@ thumbnails, live streams, more than three sites.
 
 | Item | Why |
 | --- | --- |
-| **More sites** | Vimeo, Reddit (`v.redd.it`), SoundCloud (audio-only), Twitch VODs. Each one needs HLS from v0.2, its own refusal table, and a fixture. A site is added only when the shapes it *cannot* reach are written down. |
+| **More sites** — *Vimeo done: player config, progressive MP4 plus HLS, DASH and password-protected videos refused by name* | Reddit (`v.redd.it`), SoundCloud (audio-only), Twitch VODs are still out. Each one needs HLS from v0.2, its own refusal table, and a fixture. A site is added only when the shapes it *cannot* reach are written down — Reddit's is the reason it is not here yet: its `fallback_url` carries no audio, its playlist separates audio from video, and its DASH route is `SegmentBase`. |
 | **Fragmented MP4** — *done: `EXT-X-MAP` headers, `moof`/`trun`/`tfhd`/`tfdt` parsing into the writer's own tracks, HEVC and `SAMPLE-AES` refused by name* | DASH `SegmentBase` and live recordings arrive as `moof`/`mdat` fragments. The HLS flavour is read ([hls §2.1](hls.md#21-fragmented-mp4)); a progressive file that is *itself* fragmented is refused by name by the sample-table reader, which is the same answer the remuxer gave and now says which `moof` it found. |
 | **A progressive MP4 read back** — *done: `mp4read::plain`, `stsz`/`stts`/`ctts`/`stss`/`stco`/`co64`/`stsc` walked into tracks, every sample bounds-checked* | Reading what the writer wrote is the only way to add to a finished file, and it is what verifies a round trip. It does not replace `mux::verify`: one answers "is this file sane", the other "what is in it". |
 | **Subtitle tracks inside MP4** — *done: `--embed-subs`, one `wvtt` track (`subt`/`sthd`/`wvtt`/`vttC`, a `vttc`→`payl` per cue, timescale 1000, each sample stating its duration); `stpp`/TTML refused by name* | Sidecars shipped first because they cannot break a video; the track now goes in through the same builder the muxer uses, on a file that is read back first. `stpp` is the branch that was not taken: TTML has no cue text the container can hold without a second parser, so it is a refusal rather than a conversion. |
 | **`--concurrent-fragments N`** — *done: 1–16 workers over one segment list, written in playlist order, first failure cancels the queue* | Segmented sources make parallelism worth it; progressive files do not. Same flag name `yt-dlp` uses, because muscle memory is a feature. |
 | **`cargo fuzz` targets** — *done: `mp4read::plain`, `mp4read::dimensions`, `subtitles::cues` and `sites::json_after`, in a `fuzz/` package the binary never links, run weekly by `fuzz.yml` and never on a pull request* | The parsers that read bytes from someone else are the ones that deserve a corpus; `mux::scan`/`verify` still need a temporary-file wrapper in the target, and until then `cargo test` covers them. |
-| **`--extractor-args SITE:key=value`** — *done: a closed vocabulary (`youtube:client`, `tiktok:route`), checked before the first request and published by `--capabilities`* | An escape hatch so a site change does not need a release. Deliberately ugly, deliberately documented as one table in [extractors §7](extractors.md#7-the-escape-hatch---extractor-args): it is a pressure valve, not an interface. It only narrows — every value is a route the build already tries. |
+| **`--extractor-args SITE:key=value`** — *done: a closed vocabulary (`youtube:client`, `tiktok:route`), checked before the first request and published by `--capabilities`* | An escape hatch so a site change does not need a release. Deliberately ugly, deliberately documented as one table in [extractors §8](extractors.md#8-the-escape-hatch---extractor-args): it is a pressure valve, not an interface. It only narrows — every value is a route the build already tries. |
 
 ## 4. v0.4 — speed, platforms, trust
 

@@ -53,6 +53,14 @@ second. The version without a watermark is preferred when the page offers both.
 Posts with video, animated GIF or photos, through the syndication endpoint. A
 post that offers only an HLS playlist is fetched segment by segment, demuxed and
 written as an MP4 in process; a progressive MP4 is preferred when both exist.
+.TP
+.B Vimeo
+\fBvimeo.com/<id>\fR, channel URLs, unlisted \fB<id>/<hash>\fR URLs and
+\fBplayer.vimeo.com/video/<id>\fR, read from the player's own configuration
+endpoint. Progressive MP4s are preferred; a video that offers only an HLS
+playlist is fetched, demuxed and written in process. DASH is not read and the
+refusal says so, and an unlisted video without its hash is the same 404 a deleted
+one gets, which the refusal also says.
 .SH OPTIONS
 .SS Destination
 .TP
@@ -85,7 +93,7 @@ quietly, and a photo post is skipped by name: every image is already a file.
 Write the page's caption tracks beside each file, as WebVTT:
 \fI<name>.<language>.vtt\fR, or \fI<name>.<language>.auto.vtt\fR when the site
 transcribed the audio instead of a person writing the cues. One file per track;
-nothing is merged. YouTube is the only site of the three that lists tracks, so
+nothing is merged. YouTube is the only site of the four that lists tracks, so
 elsewhere this is a note rather than a file.
 .TP
 .B \-\-embed\-subs

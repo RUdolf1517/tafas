@@ -124,6 +124,15 @@ version; adding a site, a flag or a container is minor. The policy is in
 - **`X` posts that offer only a playlist** now download. A progressive MP4 is
   still preferred when the post offers both, and `--list-formats` shows the
   playlist as `hls`.
+- **Vimeo.** `vimeo.com/<id>`, channel URLs, unlisted `<id>/<hash>` URLs and
+  `player.vimeo.com/video/<id>`, read from the player's own configuration
+  endpoint — one request, no HTML. Progressive MP4s are offered as the video
+  files they are, the HLS rendition is kept beside them for videos that have only
+  that, and the poster and duration come from the same document. DASH is not
+  read and the refusal names `SegmentBase`; a video behind a password is a
+  refusal that says so; an unlisted video without its hash gets the same `404` a
+  deleted one gets. Shapes this cannot reach are in
+  [extractors §5](docs/extractors.md#5-vimeo).
 - **`Url::join`**, with dot-segment removal: playlist URIs are relative far more
   often than they are absolute, and `../` is common.
 - **`--embed-subs`.** The cues of one caption track go *inside* the MP4 as a

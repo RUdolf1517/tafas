@@ -21,6 +21,7 @@ rather than with an empty file.
 | `youtube.com`, `music.youtube.com`, `youtube-nocookie.com`, `youtu.be` | YouTube |
 | `tiktok.com`, `vm.tiktok.com`, `vt.tiktok.com` | TikTok |
 | `x.com`, `twitter.com`, `t.co` | X |
+| `vimeo.com`, `player.vimeo.com` | Vimeo |
 
 `m.` and `mobile.` prefixes are stripped before the comparison, and so is a
 trailing dot. `notyoutube.com` and `youtube.com.evil.example` are **not**
@@ -210,7 +211,48 @@ video; use `--list-formats` to see both.
 The X refusal table stays three rows long on purpose: a post either has media or
 it does not, and a caption flag cannot change that.
 
-## 5. What a refusal looks like, and what it does not
+## 5. Vimeo
+
+### 5.1 Route
+
+One request: `https://player.vimeo.com/video/<id>/config`, the JSON the embed
+player asks for itself, with a `vimeo.com` referer and origin because the player
+checks them. The document lists `request.files.progressive[]` — complete MP4s,
+picture and sound in one stream — and `request.files.hls.cdns[*].url` when the
+video has a playlist. No HTML is parsed: the page is a player, and the player
+already knows what it would play.
+
+An unlisted video needs the hash that its URL carries (`/76979871/1a2b3c4d5e`,
+or `?h=` on the player host), and the hash is passed back as `?h=`.
+
+### 5.2 What is selected
+
+| In the document | Becomes |
+| --- | --- |
+| `request.files.progressive[].url` | a `Mp4` format, `vimeo-<quality>`, with its height, fps and bitrate |
+| `request.files.hls.cdns[*].url` | one `Hls` format, `vimeo-hls`; the Google origin first, because it answers without a token |
+| `video.thumbs` | the poster, widest key wins (`--write-thumbnail`) |
+| `video.title`, `video.owner.name`, `video.duration` | the name, the uploader, the duration |
+
+Progressive files are kept *beside* the playlist rather than instead of it. The
+playlist states no size, so selection prefers a progressive MP4 by itself, and
+`--format vimeo-hls` can still ask for the playlist when that is what the user
+wants.
+
+### 5.3 Refused
+
+| Situation | Result |
+| --- | --- |
+| `404` on the config endpoint | refusal (1): gone, private, or unlisted without its hash |
+| no progressive file and no playlist | refusal (1): password-protected, private or blocked from embedding; `--cookies FILE` is sent when named, no challenge is solved |
+| `request.files.dash` and nothing else | refusal (1) naming DASH and `SegmentBase`: this build does not read it |
+| a `progressive` entry whose `mime` is not MP4 | dropped, not converted |
+
+**What it cannot reach:** DASH-only videos (that is what `SegmentBase` would need),
+videos behind a password, and anything that requires solving a challenge. There is
+no fallback that pretends otherwise.
+
+## 6. What a refusal looks like, and what it does not
 
 A refusal is a **failure**: exit 1, one line on stderr, and — under `--json` —
 an object with `"status": "failed"` and a `reason`. It is not a skip that exits
@@ -220,7 +262,7 @@ Nothing is ever written on a refusal. No empty file, no directory, no truncated
 `.mp4` with a valid header: the extractors run before the first byte of media is
 requested, so a refusal costs one or two page requests and no disk.
 
-## 6. When a site changes
+## 7. When a site changes
 
 Every extractor is written to *fail* rather than to produce something wrong:
 `read_player` returns "no formats" instead of panicking on a missing field, the
@@ -228,7 +270,7 @@ JSON lookup helpers are total, and media URLs are used only when they are
 strings. A changed page therefore produces a refusal with the status the site
 reported, which is the single most useful thing a bug report can contain.
 
-## 7. The escape hatch: `--extractor-args`
+## 8. The escape hatch: `--extractor-args`
 
 Section 6 ends with "a changed page produces a refusal", and a refusal is useful
 but not a download. The flag for the day between the change and the release is

@@ -22,7 +22,7 @@ the rename. A short or long body is a verification failure: the `.part` file
 stays for a resume, the destination is never created, and the exit code is 4.
 
 **Where it is weaker than it sounds.** `Content-Length` is what the server says,
-not a checksum, and none of the three sites publish one for media. A server that
+not a checksum, and none of the four sites publish one for media. A server that
 returns a *complete but wrong* body would pass. That is not a gap this project
 can close with the information available — TLS already excludes a third party
 changing bytes in flight, so the remaining risk is the server itself, which is

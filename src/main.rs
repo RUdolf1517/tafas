@@ -124,6 +124,12 @@ fn capabilities() -> String {
                 "routes": ["syndication tweet-result"],
                 "hls": true,
                 "cookies": "user-supplied (--cookies FILE)"
+            },
+            "vimeo": {
+                "routes": ["player config (progressive MP4, HLS)"],
+                "hls": true,
+                "dash": false,
+                "cookies": "user-supplied (--cookies FILE)"
             }
         },
         "extractor_args": {
@@ -146,7 +152,7 @@ fn capabilities() -> String {
         "muxing": {
             "container": "mp4",
             "reencode": false,
-            "fragmented_input": false,
+            "fragmented_input": "hls segments (EXT-X-MAP)",
             "verified": true
         },
         "transfers": {
@@ -172,7 +178,7 @@ fn info(args: &Args) -> String {
         pen.paint(style::BOLD, "tafas"),
         env!("CARGO_PKG_VERSION")
     ));
-    out.push_str("capture YouTube, TikTok and X as one playable MP4, without re-encoding\n\n");
+    out.push_str("capture YouTube, TikTok, X and Vimeo as one playable MP4, without re-encoding\n\n");
     out.push_str(&format!("sites        {}\n", SITES.join(", ")));
     out.push_str("muxing       mp4 (streams copied, index rebuilt, output verified)\n");
     out.push_str("tls          rustls with the ring provider\n");
