@@ -518,7 +518,9 @@ fn embed_subtitles(
     options: &Options,
     printer: &Printer,
 ) -> Result<u64> {
-    let size = std::fs::metadata(target).map(|meta| meta.len()).unwrap_or(0);
+    let size = std::fs::metadata(target)
+        .map(|meta| meta.len())
+        .unwrap_or(0);
     let one_mp4 = match plan {
         Plan::Single(format) => format.container == Container::Mp4,
         Plan::Pair { .. } => true,

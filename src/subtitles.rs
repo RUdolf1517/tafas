@@ -219,7 +219,10 @@ pub fn cues(bytes: &[u8]) -> Result<Vec<Cue>> {
 
     let mut cues: Vec<Cue> = Vec::new();
     for block in blocks {
-        let lines: Vec<&str> = block.lines().filter(|line| !line.trim().is_empty()).collect();
+        let lines: Vec<&str> = block
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .collect();
         if lines.is_empty() {
             continue;
         }
@@ -268,9 +271,9 @@ pub fn cues(bytes: &[u8]) -> Result<Vec<Cue>> {
 /// `00:00:01.500 --> 00:00:03.000` or `01:30.000 --> 01:32.250`, with any
 /// settings after the second time ignored.
 fn timing_pair(line: &str) -> Result<(u64, u64)> {
-    let (left, right) = line.split_once("-->").ok_or_else(|| {
-        Error::Parse(format!("a cue timing line has no -->: {line:?}"))
-    })?;
+    let (left, right) = line
+        .split_once("-->")
+        .ok_or_else(|| Error::Parse(format!("a cue timing line has no -->: {line:?}")))?;
     let start = timestamp(left.trim())?;
     // The end time is followed by optional cue settings.
     let end_text = right.trim().split_whitespace().next().unwrap_or("");
@@ -557,8 +560,14 @@ mod tests {
         assert_eq!(timestamp("00:00:01.500").unwrap(), 1_500);
         assert_eq!(timestamp("02:03.250").unwrap(), 123_250);
         assert_eq!(timestamp("01:02:03.004").unwrap(), 3_723_004);
-        assert!(timestamp("00:00:01.5").is_err(), "a tenth is not a millisecond");
-        assert!(timestamp("00:61.000").is_err(), "sixty-one seconds in a clock");
+        assert!(
+            timestamp("00:00:01.5").is_err(),
+            "a tenth is not a millisecond"
+        );
+        assert!(
+            timestamp("00:61.000").is_err(),
+            "sixty-one seconds in a clock"
+        );
         assert!(timestamp("soon").is_err());
     }
 
@@ -633,5 +642,4 @@ mod tests {
         assert!(error.to_string().contains("TTML"), "{error}");
         assert!(error.to_string().contains("stpp"), "{error}");
     }
-
 }
