@@ -80,8 +80,9 @@ pub fn extract(http: &Http, url: &Url, raw: &str, args: &ExtractorArgs) -> Resul
                                 notes.push(format!("web page: {status}"));
                             }
                         }
-                        Err(error) => notes
-                            .push(format!("web page: the inline data did not parse ({error})")),
+                        Err(error) => {
+                            notes.push(format!("web page: the inline data did not parse ({error})"))
+                        }
                     }
                 } else {
                     notes.push("web page: no inline state (verification wall?)".into());
@@ -90,15 +91,11 @@ pub fn extract(http: &Http, url: &Url, raw: &str, args: &ExtractorArgs) -> Resul
             Err(error) => notes.push(format!("web page: {error}")),
         }
     } else {
-        notes.push(
-            "web page: not asked, --extractor-args pinned tiktok:route=app".to_string(),
-        );
+        notes.push("web page: not asked, --extractor-args pinned tiktok:route=app".to_string());
     }
 
     if route == Some("web") {
-        notes.push(
-            "mobile feed: not asked, --extractor-args pinned tiktok:route=web".to_string(),
-        );
+        notes.push("mobile feed: not asked, --extractor-args pinned tiktok:route=web".to_string());
         return Err(Error::Refused(format!(
             "tiktok: {id} could not be read from the web page: {}",
             notes.join("; ")

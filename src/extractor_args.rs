@@ -191,7 +191,10 @@ mod tests {
         let error = ExtractorArgs::parse("youtube:client=flash").unwrap_err();
         let text = error.to_string();
         assert!(text.contains("flash"), "{text}");
-        assert!(text.contains("android_vr|ios|android|tv_embedded|web"), "{text}");
+        assert!(
+            text.contains("android_vr|ios|android|tv_embedded|web"),
+            "{text}"
+        );
     }
 
     #[test]
