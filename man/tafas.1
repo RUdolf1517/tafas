@@ -88,13 +88,25 @@ transcribed the audio instead of a person writing the cues. One file per track;
 nothing is merged. YouTube is the only site of the three that lists tracks, so
 elsewhere this is a note rather than a file.
 .TP
+.B \-\-embed\-subs
+Put one caption track inside the MP4 instead of beside it, as a \fBwvtt\fR
+track (WebVTT in ISO\-BMFF). The cues keep their times and their text; cue
+settings, \fBSTYLE\fR and \fBREGION\fR blocks are dropped, because the
+container's cue box has nowhere to put them and the player places the cue
+anyway. The track's language is not carried: \fBmdhd\fR says \fBund\fR, and
+the language lives in the sidecar's name. The file is read back, given the
+track and laid out again; samples are copied, so nothing is re\-encoded.
+One track per file, so the selection has to name one language, and a run that
+did not produce exactly one MP4 says so and adds nothing.
+.TP
 .B \-\-sub\-langs \fILANGS\fR
 Which caption languages to write: \fBall\fR (the default), an exact code such
 as \fBen\fR or \fBpt\-BR\fR, or a language ending in \fB*\fR such as
 \fBen*\fR for \fBen\fR and its variants \fBen\-US\fR and \fBen\-GB\fR \-
 but not \fBeng\fR, which is another language. A list selects the union and ignores case. A
 selection that matches no track is a refusal naming the languages the page does
-have; using this flag without \fB\-\-write\-subs\fR is a usage error.
+have; using this flag without \fB\-\-write\-subs\fR or \fB\-\-embed\-subs\fR
+is a usage error, and so is asking for both writers at once.
 .SS Selection
 .TP
 .B \-Q, \-\-quality \fIQUALITY\fR
@@ -246,7 +258,8 @@ describes has been renamed into place.
 The poster frame, written only with \fB\-\-write\-thumbnail\fR.
 .TP
 .I <target stem>.<language>.vtt, <target stem>.<language>.auto.vtt
-WebVTT captions, written only with \fB\-\-write\-subs\fR.
+WebVTT captions, written only with \fB\-\-write\-subs\fR. The same cues can go
+inside the file instead, with \fB\-\-embed\-subs\fR.
 .SH SEE ALSO
 .BR curl (1),
 .BR ffmpeg (1)

@@ -358,6 +358,7 @@ fn parse_stsd(data: &[u8], stsd: &Bx) -> Result<(TrackKind, Codec)> {
             let asc = asc_from_esds(&data[esds.body_start..esds.end])?;
             Ok((TrackKind::Audio, Codec::Aac(aac_config(&asc)?)))
         }
+        b"wvtt" => Ok((TrackKind::Subtitle, Codec::Wvtt)),
         b"hvc1" | b"hev1" => Err(Error::Refused(
             "the fragments carry HEVC video (hvc1/hev1), which this build does not write".into(),
         )),
@@ -518,6 +519,45 @@ pub fn plain(bytes: &[u8]) -> Result<Vec<Track>> {
     Ok(tracks)
 }
 
+/// The picture size a file declares, from the first video track's `tkhd`.
+///
+/// Needed when a file is written again with a track added: the samples carry no
+/// size, so the value has to come from the file that is being read.
+pub fn dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
+    let top = scan(bytes, 0, bytes.len()).ok()?;
+    let moov = top.iter().find(|bx| &bx.kind == b"moov")?;
+    let children = scan(bytes, moov.body_start, moov.end).ok()?;
+    for trak in children.iter().filter(|bx| &bx.kind == b"trak") {
+        // A track that cannot be walked is simply not the one with the size.
+        let Ok(children) = scan(bytes, trak.body_start, trak.end) else {
+            continue;
+        };
+        let Some(tkhd) = children.iter().find(|bx| &bx.kind == b"tkhd") else {
+            continue;
+        };
+        let body = &bytes[tkhd.body_start..tkhd.end];
+        if body.len() < 8 {
+            continue;
+        }
+        let width = u32::from_be_bytes([
+            body[body.len() - 8],
+            body[body.len() - 7],
+            body[body.len() - 6],
+            body[body.len() - 5],
+        ]);
+        let height = u32::from_be_bytes([
+            body[body.len() - 4],
+            body[body.len() - 3],
+            body[body.len() - 2],
+            body[body.len() - 1],
+        ]);
+        if width > 0 && height > 0 {
+            return Some((width >> 16, height >> 16));
+        }
+    }
+    None
+}
+
 /// Walk `stbl` into samples: sizes from `stsz`, decode times from `stts`,
 /// presentation offsets from `ctts`, keyframes from `stss`, and where the bytes
 /// live from `stco`/`co64` with `stsc` saying how many samples a chunk holds.
@@ -610,6 +650,7 @@ fn samples_of(data: &[u8], stbl: &Bx, kind: TrackKind) -> Result<Vec<Sample>> {
                 .saturating_add(offsets[index])
                 .max(0) as u64;
             samples.push(Sample {
+                duration: Some(durations[index]),
                 data: data[at..end].to_vec(),
                 pts: Some(pts),
                 dts: Some(dts),
@@ -875,6 +916,7 @@ pub fn fragments(init: &Init, media: &[u8]) -> Result<Vec<Track>> {
                         .saturating_add(i64::from(sample.composition_offset))
                         .max(0) as u64;
                     states[index].samples.push(Sample {
+                        duration: None,
                         data: media[at..end].to_vec(),
                         pts: Some(pts),
                         dts: Some(dts),
@@ -1354,12 +1396,14 @@ mod tests {
             timescale: 90_000,
             samples: vec![
                 Sample {
+                    duration: None,
                     data: b"first-frame".to_vec(),
                     pts: Some(0),
                     dts: Some(0),
                     keyframe: true,
                 },
                 Sample {
+                    duration: None,
                     data: b"second-frame".to_vec(),
                     pts: Some(3_000),
                     dts: Some(3_000),
@@ -1373,12 +1417,14 @@ mod tests {
             timescale: 44_100,
             samples: vec![
                 Sample {
+                    duration: None,
                     data: b"aaa".to_vec(),
                     pts: Some(0),
                     dts: Some(0),
                     keyframe: true,
                 },
                 Sample {
+                    duration: None,
                     data: b"bbb".to_vec(),
                     pts: Some(1_024),
                     dts: Some(1_024),

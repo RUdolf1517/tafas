@@ -53,6 +53,9 @@ impl Demuxed {
 pub enum TrackKind {
     Video,
     Audio,
+    /// Timed text. Nothing in a transport stream produces one; it is what
+    /// `--embed-subs` adds to a file the writer already made.
+    Subtitle,
 }
 
 #[derive(Debug, Clone)]
@@ -61,6 +64,8 @@ pub enum Codec {
     Avc { avcc: Vec<u8> },
     /// `AudioSpecificConfig`, the record an `esds`/`mp4a` sample entry carries.
     Aac(AacConfig),
+    /// WebVTT in ISO-BMFF: a `wvtt` sample entry, one `vttc` box per sample.
+    Wvtt,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -91,6 +96,10 @@ pub struct Sample {
     /// no reordering.
     pub dts: Option<u64>,
     pub keyframe: bool,
+    /// How long the sample lasts, in the track's timescale, when it is not
+    /// simply the distance to the next decode time. A subtitle cue is exactly
+    /// that case: cues have gaps between them, and a gap is not a duration.
+    pub duration: Option<u32>,
 }
 
 // ---------------------------------------------------------------------------
@@ -424,6 +433,7 @@ fn avc_track(mut stream: Pending) -> Result<Option<Track>> {
             continue;
         }
         samples.push(Sample {
+            duration: None,
             data: out,
             pts: raw.pts,
             dts: raw.dts,
@@ -486,6 +496,7 @@ fn aac_track(mut stream: Pending) -> Result<Option<Track>> {
                 stream.aac = Some(aac_config(profile, frequency, channels)?);
             }
             samples.push(Sample {
+                duration: None,
                 data: raw.payload[at + header_length..at + length].to_vec(),
                 // Only the first frame of a PES carries a timestamp; the rest
                 // follow at a fixed frame length, which the writer derives from

@@ -121,6 +121,7 @@ tafas https://x.com/user/status/123 --concurrent-fragments 4  # four segments at
 tafas https://youtu.be/dQw4w9WgXcQ --extractor-args youtube:client=ios  # one client only
 tafas https://youtu.be/aqz-KE-bpKQ --write-thumbnail  # the poster, beside the file
 tafas https://youtu.be/aqz-KE-bpKQ --write-subs --sub-langs en,ru  # WebVTT captions
+tafas https://youtu.be/aqz-KE-bpKQ --embed-subs --sub-langs en  # the same cues, inside the MP4
 ```
 
 | Exit | Meaning |

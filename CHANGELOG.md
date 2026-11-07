@@ -126,6 +126,25 @@ version; adding a site, a flag or a container is minor. The policy is in
   playlist as `hls`.
 - **`Url::join`**, with dot-segment removal: playlist URIs are relative far more
   often than they are absolute, and `../` is common.
+- **`--embed-subs`.** The cues of one caption track go *inside* the MP4 as a
+  `wvtt` track (WebVTT in ISO-BMFF): the file the run just wrote is read back
+  with the sample-table reader, the cues become one more `trak` — `hdlr` `subt`,
+  `sthd`, a `wvtt` sample entry with an empty `vttC` — and the whole thing is laid
+  out again, samples passed through byte for byte. Timescale 1000, one sample per
+  cue, a `vttc`→`payl` payload with the text, each sample stating its own
+  duration, and a gap between two cues turned into a positive `ctts` offset — a
+  decode time cannot be stated in `stts`, only a length, so the cue's own time
+  rides in the composition offset and it still appears when the body said. Cue settings, `STYLE` and `REGION`
+  blocks are dropped, and the track's `mdhd` language is `und`: both are in
+  `docs/cli.md` §3. One track per file, so the selection has to name one
+  language; a run that did not produce exactly one MP4 says so and changes
+  nothing. `stpp`/TTML is refused by name rather than converted.
+- **The sample-table MP4 reader** (`mp4read::plain`): a progressive file's
+  `stbl` walked into tracks and samples — `stsz`, `stts`, `ctts` (v0 and v1),
+  `stss`, `stco`/`co64` and `stsc` — with every sample bounds-checked against the
+  file and a fragmented file refused by naming the `moof`. It is what
+  `--embed-subs` reads the file back with, and it is verified against a file the
+  writer made.
 
 ### Changed
 
@@ -139,9 +158,10 @@ version; adding a site, a flag or a container is minor. The policy is in
 `--quality` now applies to a variant list as well: a height ceiling picks the
 best variant at or below it, and `best`/`worst` fall back to bandwidth when the
 playlist states no resolution. Both HLS containers are read, and the independent
-demuxer in `tests/common/mp4.rs` checks what is written. Next are the packaging
-channels — AUR, Alpine, Scoop and a flake — and the rest of v0.3. Nothing in
-this section changes any existing flag.
+demuxer in `tests/common/mp4.rs` checks what is written. Captions can now live in
+the file as well as beside it, and a progressive MP4 can be read as well as
+written. Next are the fuzz targets and the remaining v0.3 sites. Nothing in this
+section removes a flag.
 
 ## [0.1.0] - 2026-11-04
 

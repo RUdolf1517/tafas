@@ -44,10 +44,19 @@ fn main() -> ExitCode {
         usage(&args, "no URL given");
         return ExitCode::from(2);
     }
-    if args.sub_langs.is_some() && !args.write_subs {
+    if args.sub_langs.is_some() && !args.write_subs && !args.embed_subs {
         usage(
             &args,
-            "--sub-langs chooses which caption tracks to write, so it needs --write-subs",
+            "--sub-langs chooses which caption tracks to take, so it needs --write-subs or \
+             --embed-subs",
+        );
+        return ExitCode::from(2);
+    }
+    if args.write_subs && args.embed_subs {
+        usage(
+            &args,
+            "--write-subs writes a .vtt beside the file and --embed-subs puts the cues inside \
+             it; pick one",
         );
         return ExitCode::from(2);
     }
@@ -122,6 +131,11 @@ fn capabilities() -> String {
             "tiktok:route": tafas::extractor_args::TIKTOK_ROUTES
         },
         "containers": ["mp4", "m4a"],
+        "subtitles": {
+            "sidecar": "webvtt, one .vtt per selected track",
+            "embedded": "wvtt (WebVTT in ISO-BMFF), one track per file",
+            "languages": "all, an exact code, or a * prefix"
+        },
         "hls": {
             "playlists": ["master", "media"],
             "segments": ["mpeg-ts", "fmp4"],

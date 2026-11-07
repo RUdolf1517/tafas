@@ -136,11 +136,16 @@ pub fn write(tracks: &[Track], dimensions: (u32, u32), out: &Path) -> Result<Wri
         .filter(|track| track.kind == TrackKind::Audio)
         .map(|track| track.samples.len() as u64)
         .sum::<u64>();
-    if verified.sample_total() != expected_video + expected_audio {
+    // Every sample in every track, captions included: the reader counts what is
+    // in the file, and a subtitle track's samples are in the file too.
+    let expected_total = tracks
+        .iter()
+        .map(|track| track.samples.len() as u64)
+        .sum::<u64>();
+    if verified.sample_total() != expected_total {
         return Err(Error::Verify(format!(
-            "{}: wrote {} samples, the reader found {}",
+            "{}: wrote {expected_total} samples, the reader found {}",
             out.display(),
-            expected_video + expected_audio,
             verified.sample_total()
         )));
     }
@@ -223,6 +228,13 @@ fn samples_layout(track: &Track) -> Layout {
         .collect();
     let mut deltas: Vec<u32> = Vec::with_capacity(times.len());
     for (index, time) in times.iter().enumerate() {
+        // A sample that states its own duration keeps it. Subtitle cues are the
+        // reason the field exists: two cues with a gap between them are not two
+        // samples of one long duration, and the gap is not picture.
+        if let Some(stated) = track.samples[index].duration {
+            deltas.push(stated);
+            continue;
+        }
         let delta: u64 = match times.get(index + 1) {
             Some(next) if next > time => next - time,
             // The last sample, or a timestamp that did not advance: reuse the
@@ -334,6 +346,7 @@ fn build_trak(
     payload_at: Option<u64>,
 ) -> Result<Vec<u8>> {
     let is_video = track.kind == TrackKind::Video;
+    let is_audio = track.kind == TrackKind::Audio;
 
     // tkhd
     let mut tkhd = Vec::new();
@@ -345,7 +358,7 @@ fn build_trak(
     tkhd.extend_from_slice(&[0u8; 8]); // reserved
     tkhd.extend_from_slice(&0u16.to_be_bytes()); // layer
     tkhd.extend_from_slice(&0u16.to_be_bytes()); // alternate group
-    let volume: u16 = if is_video { 0 } else { 0x0100 };
+    let volume: u16 = if is_audio { 0x0100 } else { 0 };
     tkhd.extend_from_slice(&volume.to_be_bytes());
     tkhd.extend_from_slice(&0u16.to_be_bytes()); // reserved
     tkhd.extend_from_slice(&identity_matrix());
@@ -369,23 +382,31 @@ fn build_trak(
 
     let mut hdlr = Vec::new();
     hdlr.extend_from_slice(&0u32.to_be_bytes()); // pre_defined
-    hdlr.extend_from_slice(if is_video { b"vide" } else { b"soun" });
-    hdlr.extend_from_slice(&[0u8; 12]); // reserved
-    hdlr.extend_from_slice(if is_video {
-        b"VideoHandler\0"
-    } else {
-        b"SoundHandler\0"
+    hdlr.extend_from_slice(match track.kind {
+        TrackKind::Video => b"vide",
+        TrackKind::Audio => b"soun",
+        TrackKind::Subtitle => b"subt",
     });
+    hdlr.extend_from_slice(&[0u8; 12]); // reserved
+    let handler: &[u8] = match track.kind {
+        TrackKind::Video => b"VideoHandler\0",
+        TrackKind::Audio => b"SoundHandler\0",
+        TrackKind::Subtitle => b"SubtitleHandler\0",
+    };
+    hdlr.extend_from_slice(handler);
     mdia.extend_from_slice(&full(b"hdlr", 0, 0, &hdlr));
 
     // minf
     let mut minf = Vec::new();
-    if is_video {
-        let mut vmhd = vec![0u8; 8]; // graphicsmode + opcolor
-        vmhd[0..2].copy_from_slice(&0u16.to_be_bytes());
-        minf.extend_from_slice(&full(b"vmhd", 0, 1, &vmhd));
-    } else {
-        minf.extend_from_slice(&full(b"smhd", 0, 0, &[0u8; 4]));
+    match track.kind {
+        TrackKind::Video => {
+            let mut vmhd = vec![0u8; 8]; // graphicsmode + opcolor
+            vmhd[0..2].copy_from_slice(&0u16.to_be_bytes());
+            minf.extend_from_slice(&full(b"vmhd", 0, 1, &vmhd));
+        }
+        TrackKind::Audio => minf.extend_from_slice(&full(b"smhd", 0, 0, &[0u8; 4])),
+        // The subtitle media header is empty, and names no data.
+        TrackKind::Subtitle => minf.extend_from_slice(&full(b"sthd", 0, 0, &[])),
     }
     minf.extend_from_slice(&build_dinf());
     minf.extend_from_slice(&build_stbl(track, payload_at)?);
@@ -502,6 +523,7 @@ fn build_stsd(track: &Track) -> Result<Vec<u8>> {
     let entry = match &track.codec {
         Codec::Avc { avcc } => build_avc1(avcc),
         Codec::Aac(config) => build_mp4a(config),
+        Codec::Wvtt => build_wvtt(),
     };
     let mut stsd = Vec::new();
     stsd.extend_from_slice(&1u32.to_be_bytes()); // entry count
@@ -513,6 +535,16 @@ fn sample_entry_prefix(data_reference_index: u16) -> Vec<u8> {
     let mut out = vec![0u8; 6]; // reserved
     out.extend_from_slice(&data_reference_index.to_be_bytes());
     out
+}
+
+/// A `wvtt` sample entry: the eight bytes every sample entry starts with, then
+/// the WebVTT configuration box. The configuration is empty on purpose — the
+/// header text a source file had (if any) is not carried over, and an empty
+/// `vttC` is what the specification allows for "no header".
+fn build_wvtt() -> Vec<u8> {
+    let mut body = sample_entry_prefix(1);
+    body.extend_from_slice(&bx(b"vttC", b""));
+    bx(b"wvtt", &body)
 }
 
 fn build_avc1(avcc: &[u8]) -> Vec<u8> {
@@ -630,12 +662,14 @@ mod tests {
             timescale: 90_000,
             samples: vec![
                 Sample {
+                    duration: None,
                     data: vec![0xaa; 100],
                     pts: Some(0),
                     dts: Some(0),
                     keyframe: true,
                 },
                 Sample {
+                    duration: None,
                     data: vec![0xbb; 60],
                     pts: Some(3000),
                     dts: Some(3000),
@@ -659,12 +693,14 @@ mod tests {
             timescale: 44_100,
             samples: vec![
                 Sample {
+                    duration: None,
                     data: vec![0x11; 40],
                     pts: Some(0),
                     dts: Some(0),
                     keyframe: true,
                 },
                 Sample {
+                    duration: None,
                     data: vec![0x22; 40],
                     pts: None,
                     dts: None,

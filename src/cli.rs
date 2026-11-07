@@ -152,6 +152,10 @@ pub struct Args {
     )]
     pub concurrent_fragments: usize,
 
+    /// Mux the selected caption track into the MP4 instead of writing a .vtt
+    #[arg(long)]
+    pub embed_subs: bool,
+
     /// Send cookies from a Netscape cookie file (read once, never written back)
     #[arg(long, value_name = "FILE")]
     pub cookies: Option<PathBuf>,
@@ -280,6 +284,7 @@ impl Args {
             write_info_json: self.write_info_json,
             write_thumbnail: self.write_thumbnail,
             write_subs: self.write_subs,
+            embed_subs: self.embed_subs,
             sub_langs: self.sub_langs.clone(),
             format: self.format.clone(),
             no_mux: self.no_mux,

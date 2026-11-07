@@ -83,6 +83,7 @@ index without seeking to the end (see [guarantees §3](guarantees.md#3-g2--struc
 | `--write-info-json` | write `<name>.info.json` beside each file |
 | `--write-thumbnail` | write the page's poster frame beside each file |
 | `--write-subs` | write the page's caption tracks beside each file, as WebVTT |
+| `--embed-subs` | put one caption track inside the MP4, as a `wvtt` track |
 | `--sub-langs LANGS` | which caption languages: `all` (default), `en`, `pt-BR`, `en*` |
 
 `--write-thumbnail` fetches the poster the page names and puts it beside the
@@ -105,8 +106,11 @@ case-insensitively. Three outcomes are told apart:
 | `--sub-langs` matches no track | refusal (1), naming the languages the page does offer or `none` |
 | a track's body is empty or is not WebVTT | refusal (1) quoting the route — an empty `timedtext` body is a network matter, not a missing language |
 
-`--sub-langs` without `--write-subs` is a usage error (2), decided before any
-request: a flag that would do nothing is a mistake, not a preference.
+`--sub-langs` without `--write-subs` or `--embed-subs` is a usage error (2),
+decided before any request: a flag that would do nothing is a mistake, not a
+preference. So is giving both writers at once, because one asks for a file beside
+the video and the other for a track inside it, and a run that quietly did both
+would leave the user guessing which one the flag meant.
 
 The sidecar is written **after** the media file has been renamed into place, so a
 failed run never leaves a document describing a file that does not exist. It
@@ -115,6 +119,33 @@ it should not carry one. Two cases are named rather than silent — `-o -` is a
 pipe, so there is nothing to sit beside, and a photo post has one file per image,
 so there is no single file the document describes. Both print a note and carry
 on.
+
+`--embed-subs` puts the cues **inside** the MP4 instead: one `wvtt` track
+(WebVTT in ISO-BMFF), written by the same track builder the muxer uses. The file
+the run just produced is read back, the cues become one more `trak`, and the
+whole thing is laid out again — samples are passed through byte for byte, so
+nothing is re-encoded and the picture does not change. What goes in:
+
+| In the body | In the track |
+| --- | --- |
+| `00:00:01.500 --> 00:00:03.000` | timescale 1000: the cue time becomes `pts`, the sample lasts 1500 ms |
+| a gap before the cue | `stts` cannot state a decode time, only a length, so `dts` is the summed length of the cues before it and the gap becomes a positive `ctts` offset — the cue still appears when the body said |
+| the cue text, line breaks kept | a `vttc` box holding a `payl` box with the text |
+| cue settings (`align:`, `line:`, `size:`) | dropped: the player places the cue, and `vttc` has no field for them |
+| `STYLE` and `REGION` blocks | dropped, for the same reason |
+| the track's language | **not** carried: `mdhd` says `und`, and the language lives in the sidecar's name |
+
+One track per file, so `--sub-langs` has to name one language; a selection that
+matches several is a refusal (1) that lists them, because two tracks would need
+two more `trak`s and a menu the player has to guess at. The gaps between cues are
+kept as gaps: a cue states its own duration, so a three-second silence after a
+cue is not a five-second cue.
+
+Four cases are named rather than silent: a run that did not produce exactly one
+MP4 (two files, `--no-mux`, an audio-only file, a photo post) prints a note and
+adds nothing; a page with no caption tracks prints a note; a body with no cues is
+a refusal; and `stpp`/TTML, which some pages offer instead of WebVTT, is refused
+by name rather than converted.
 
 ## 4. Transfer
 

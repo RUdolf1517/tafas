@@ -24,6 +24,8 @@ use crate::http::Http;
 use crate::info;
 use crate::items;
 use crate::model::{Container, Format, Image, Media, Subtitle};
+use crate::mp4read;
+use crate::mp4write;
 use crate::mux;
 use crate::names;
 use crate::progress::{human_bytes, Progress};
@@ -49,6 +51,8 @@ pub struct Options {
     pub write_thumbnail: bool,
     /// `--write-subs`: the caption tracks, beside the file.
     pub write_subs: bool,
+    /// `--embed-subs`: put the cues inside the MP4 instead of beside it.
+    pub embed_subs: bool,
     /// `--sub-langs`: which of them. `None` means "every track the page lists".
     pub sub_langs: Option<subtitles::Selection>,
     pub format: Option<String>,
@@ -86,6 +90,7 @@ impl Default for Options {
             write_info_json: false,
             write_thumbnail: false,
             write_subs: false,
+            embed_subs: false,
             sub_langs: None,
             format: None,
             no_mux: false,
@@ -409,6 +414,10 @@ fn handle(
         write_subtitles(http, &media, &target, options, printer)?;
     }
 
+    if options.embed_subs {
+        item.bytes = embed_subtitles(http, &media, &plan, &target, options, printer)?;
+    }
+
     if options.write_info_json {
         if matches!(plan, Plan::Images(_)) {
             printer.warn(
@@ -471,7 +480,8 @@ fn write_subtitles(
                     .join(", ")
             };
             return Err(Error::Refused(format!(
-                "{} {}: no caption track matches --sub-langs {selection}; the page offers {available}",
+                "{} {}: no caption track matches --sub-langs {selection}; the page offers \
+                 {available}",
                 media.site, media.id
             )));
         }
@@ -486,6 +496,125 @@ fn write_subtitles(
         }
     }
     Ok(())
+}
+
+/// `--embed-subs`: the selected caption track, written into the MP4 this run
+/// just produced.
+///
+/// The file is read back with `mp4read`, the cues become one more track, and the
+/// whole thing is laid out again by the writer that produced it. Samples are the
+/// same bytes, so nothing is re-encoded and the picture is untouched; what
+/// changes is one `trak`, which is why the rewrite is a `moov` rebuild and not a
+/// remux of two sources.
+///
+/// A run that did not produce exactly one MP4 says so and changes nothing: two
+/// files, a photo post or an audio-only file is not a place a subtitle track can
+/// go without inventing a second output the user did not ask for.
+fn embed_subtitles(
+    http: &Http,
+    media: &Media,
+    plan: &Plan,
+    target: &Path,
+    options: &Options,
+    printer: &Printer,
+) -> Result<u64> {
+    let size = std::fs::metadata(target).map(|meta| meta.len()).unwrap_or(0);
+    let one_mp4 = match plan {
+        Plan::Single(format) => format.container == Container::Mp4,
+        Plan::Pair { .. } => true,
+        Plan::Separate { .. } | Plan::Audio(_) | Plan::Images(_) => false,
+    };
+    if !one_mp4 {
+        printer.warn(
+            "note: --embed-subs needs one MP4 from this run; this selection is not one, so no \
+             track was added",
+        );
+        return Ok(size);
+    }
+
+    let selection = options
+        .sub_langs
+        .clone()
+        .unwrap_or_else(subtitles::Selection::all);
+    let chosen: Vec<&Subtitle> = media
+        .subtitles
+        .iter()
+        .filter(|subtitle| selection.matches(&subtitle.language))
+        .collect();
+    if chosen.is_empty() {
+        if options.sub_langs.is_some() {
+            let available = if media.subtitles.is_empty() {
+                "none".to_string()
+            } else {
+                media
+                    .subtitles
+                    .iter()
+                    .map(|subtitle| subtitle.language.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            };
+            return Err(Error::Refused(format!(
+                "{} {}: no caption track matches --sub-langs {selection}; the page offers \
+                 {available}",
+                media.site, media.id
+            )));
+        }
+        printer.note("note: this page offers no caption tracks; no track was added");
+        return Ok(size);
+    }
+    if chosen.len() > 1 {
+        let languages = chosen
+            .iter()
+            .map(|subtitle| subtitle.language.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err(Error::Usage(format!(
+            "--embed-subs writes one track and --sub-langs {selection} matches {}: {languages}; \
+             name one language, or use --write-subs for all of them",
+            chosen.len()
+        )));
+    }
+    let subtitle = chosen[0];
+    let body = subtitles::body(http, subtitle)?;
+    let cues = subtitles::cues(&body)?;
+    if cues.is_empty() {
+        return Err(Error::Refused(format!(
+            "{}: the caption body parsed to no cues, so there is nothing to put in a track",
+            subtitle.url
+        )));
+    }
+
+    let bytes = std::fs::read(target).map_err(|error| {
+        Error::Io(io::Error::new(
+            error.kind(),
+            format!(
+                "could not read {} back to add a subtitle track: {error}",
+                target.display()
+            ),
+        ))
+    })?;
+    let dimensions = mp4read::dimensions(&bytes).unwrap_or((0, 0));
+    let mut tracks = mp4read::plain(&bytes)?;
+    tracks.push(subtitles::track(&cues));
+
+    let temporary = part_path(target);
+    let report = mp4write::write(&tracks, dimensions, &temporary)?;
+    std::fs::rename(&temporary, target).map_err(|error| {
+        let _ = std::fs::remove_file(&temporary);
+        Error::Io(io::Error::new(
+            error.kind(),
+            format!("could not put {} in place: {error}", target.display()),
+        ))
+    })?;
+    if !options.json && !options.quiet {
+        printer.note(&format!(
+            "embedded {} ({} cues) into {}",
+            subtitle.language,
+            cues.len(),
+            target.display()
+        ));
+    }
+    Ok(report.bytes)
 }
 
 /// `--write-thumbnail`: the poster frame, beside the media file.

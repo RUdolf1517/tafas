@@ -27,6 +27,7 @@ this repository opens and closes itself.
 | cookies | `tests/cookies.rs` | a jar on disk and a fixture route that answers `403` without the session cookie; host, `Secure` and header-merging rules |
 | HLS | `tests/hls.rs` | a playlist, segments, byte ranges and AES-128 segments on a socket, assembled into an MP4 that `mux::verify` accepts; the same for a fragmented-MP4 playlist, whose header is fetched once; a swapped header, a header that is not ISO-BMFF, short keys and ignored ranges refused before a file exists |
 | independent reader | `tests/common/mp4.rs`, `tests/mp4.rs` | a second box walker, sharing no code with `mux` or `mp4write`, that reads the written file and checks every sample offset against `mdat`; tested against a file it builds itself byte by byte |
+| captions | `tests/subs.rs`, `src/subtitles.rs` | a WebVTT body becomes cues and one `wvtt` track; a written MP4 is read back, given that track and written again, and the independent reader finds three tracks, `wvtt`, one sample per cue, every caption sample inside `mdat`; a body with no cues, a backwards cue and a TTML track refused by name |
 | packaging | `tests/packaging.rs` | every option in `--help` appears in `man/tafas.1`; no `Command::new` in `src/`; the capability document is valid JSON |
 
 Fixtures are **built by code**, never committed. A reviewer can read what a test
@@ -83,7 +84,10 @@ rather than an assertion about how long the client took.
   by the refusal paths; a page that has changed produces a refusal, and a bug
   report with that refusal in it is the mechanism that fixes it.
 - **Actual playback.** No test decodes a frame. `verify` checks the container,
-  not the codec (see [guarantees §2](guarantees.md#2-g2--structural-verification)).
+  not the codec (see [guarantees §2](guarantees.md#2-g2--structural-verification)),
+  and the same holds for a caption track: the samples are where `stbl` says they
+  are and hold a `vttc` with the cue text, but nothing renders them. Cue settings,
+  `STYLE` and `REGION` are dropped on purpose, so there is no promise to test.
 - **Windows ACLs and case-insensitive collisions.** The name sanitiser is tested;
   the filesystem below it is not.
 - **HTTP/2-specific behaviour.** The client speaks both; the fixture server
@@ -105,7 +109,8 @@ pure functions over a slice, both are `#![forbid(unsafe_code)]`, and both are
 written to return an error rather than index out of bounds — which is what a fuzz
 target would be asserting.
 
-A fuzz target is planned with the independent-demuxer work in
+`mp4read::plain` belongs on that list as well: it now walks sample tables in a
+file it did not write. A fuzz target is planned in
 [roadmap §3](roadmap.md#3-v03--reach-and-the-parts-that-are-not-a-url). Until then, the parser tests
 include truncated and padded inputs explicitly.
 
