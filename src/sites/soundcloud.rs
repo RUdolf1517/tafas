@@ -20,6 +20,7 @@
 use serde_json::Value;
 
 use crate::error::{Error, Result};
+use crate::extractor_args::ExtractorArgs;
 use crate::http::Http;
 use crate::model::{Container, Format, Image, Media, Site, StreamKind};
 use crate::sites::{at, list, text, uint};
@@ -27,7 +28,14 @@ use crate::url::Url;
 
 const PAGE_HEADERS: [(&str, &str); 1] = [("accept", "text/html,application/xhtml+xml")];
 
-pub fn extract(http: &Http, url: &Url, raw: &str) -> Result<Media> {
+pub fn extract(
+    http: &Http,
+    url: &Url,
+    raw: &str,
+    // This reader has no `--extractor-args` key; the parameter is uniform so
+    // that the table of readers has one shape.
+    _args: &ExtractorArgs,
+) -> Result<Media> {
     // `on.soundcloud.com` is a redirector: the track's address is behind it.
     let url = if url.host() == Some("on.soundcloud.com") {
         Url::parse(&http.resolve(raw)?)?

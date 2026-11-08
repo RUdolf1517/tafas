@@ -124,6 +124,9 @@ pub struct TestServer {
     /// Requests per path, so a test can assert that a resource was fetched
     /// once rather than counting connections.
     hits: Arc<Mutex<HashMap<String, usize>>>,
+    /// Every requested path, in the order the server answered it: "how many"
+    /// and "which, in what order" are different questions.
+    order: Arc<Mutex<Vec<String>>>,
     /// Requests being served right now, and the highest number seen at once.
     live: Arc<AtomicUsize>,
     peak: Arc<AtomicUsize>,
@@ -140,11 +143,13 @@ impl TestServer {
         let stop = Arc::new(AtomicBool::new(false));
         let requests = Arc::new(AtomicUsize::new(0));
         let hits = Arc::new(Mutex::new(HashMap::new()));
+        let order = Arc::new(Mutex::new(Vec::new()));
         let live = Arc::new(AtomicUsize::new(0));
         let peak = Arc::new(AtomicUsize::new(0));
         let stop_flag = Arc::clone(&stop);
         let counter = Arc::clone(&requests);
         let path_hits = Arc::clone(&hits);
+        let request_order = Arc::clone(&order);
         let live_now = Arc::clone(&live);
         let peak_now = Arc::clone(&peak);
         let routes = Arc::new(routes);
@@ -158,6 +163,7 @@ impl TestServer {
                         // several things at once is served them at once.
                         let routes = Arc::clone(&routes);
                         let path_hits = Arc::clone(&path_hits);
+                        let request_order = Arc::clone(&request_order);
                         let live = Arc::clone(&live_now);
                         let peak = Arc::clone(&peak_now);
                         thread::spawn(move || {
@@ -165,6 +171,7 @@ impl TestServer {
                                 stream,
                                 routes.as_slice(),
                                 &path_hits,
+                                &request_order,
                                 &live,
                                 &peak,
                             );
@@ -184,6 +191,7 @@ impl TestServer {
             handle: Some(handle),
             requests,
             hits,
+            order,
             live,
             peak,
         }
@@ -202,6 +210,16 @@ impl TestServer {
             .lock()
             .map(|hits| hits.get(path).copied().unwrap_or(0))
             .unwrap_or(0)
+    }
+
+    /// Every path this server was asked for, in request order. An assertion
+    /// about how many requests were made is not an assertion about which, and
+    /// "the entry that failed is the one asked for again" needs the order.
+    pub fn requested(&self) -> Vec<String> {
+        self.order
+            .lock()
+            .map(|order| order.clone())
+            .unwrap_or_default()
     }
 
     pub fn url(&self, path: &str) -> String {
@@ -224,6 +242,7 @@ fn handle_connection(
     mut stream: TcpStream,
     routes: &[Route],
     hits: &Mutex<HashMap<String, usize>>,
+    order: &Mutex<Vec<String>>,
     live: &AtomicUsize,
     peak: &AtomicUsize,
 ) -> std::io::Result<()> {
@@ -271,6 +290,9 @@ fn handle_connection(
     let path = target.split('?').next().unwrap_or("/");
     if let Ok(mut hits) = hits.lock() {
         *hits.entry(path.to_string()).or_insert(0) += 1;
+    }
+    if let Ok(mut order) = order.lock() {
+        order.push(path.to_string());
     }
     let route = match routes.iter().find(|route| route.path == path) {
         Some(route) => route,

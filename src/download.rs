@@ -23,6 +23,7 @@ use crate::hlsfetch;
 use crate::http::Http;
 use crate::info;
 use crate::items;
+use crate::listing;
 use crate::model::{Container, Format, Image, Media, Subtitle};
 use crate::mp4read;
 use crate::mp4write;
@@ -210,7 +211,7 @@ pub fn run(urls: &[String], options: &Options) -> u8 {
 
     let mut items: Vec<Item> = if options.jobs <= 1 || urls.len() <= 1 {
         urls.iter()
-            .map(|url| process(&http, url, options, &printer))
+            .flat_map(|url| process(&http, url, options, &printer))
             .collect()
     } else {
         process_parallel(&http, urls, options, &printer)
@@ -235,7 +236,7 @@ fn process_parallel(
     options: &Options,
     printer: &Printer,
 ) -> Vec<Item> {
-    let results: Mutex<Vec<(usize, Item)>> = Mutex::new(Vec::with_capacity(urls.len()));
+    let results: Mutex<Vec<((usize, usize), Item)>> = Mutex::new(Vec::with_capacity(urls.len()));
     let next = Mutex::new(0usize);
     let workers = options.jobs.min(urls.len()).max(1);
 
@@ -251,46 +252,164 @@ fn process_parallel(
                     *guard += 1;
                     index
                 };
-                let item = process(http, &urls[index], options, printer);
-                announce(&item, options);
-                let mut guard = results.lock().unwrap_or_else(|e| e.into_inner());
-                guard.push((index, item));
+                // A list expands into several items; they keep the position of
+                // the URL they came from, which is the order the user typed.
+                for (offset, item) in process(http, &urls[index], options, printer)
+                    .into_iter()
+                    .enumerate()
+                {
+                    let mut guard = results.lock().unwrap_or_else(|e| e.into_inner());
+                    guard.push(((index, offset), item));
+                }
             });
         }
     });
 
     let mut collected = results.into_inner().unwrap_or_else(|e| e.into_inner());
-    collected.sort_by_key(|(index, _)| *index);
+    collected.sort_by_key(|(key, _)| *key);
     collected.into_iter().map(|(_, item)| item).collect()
 }
 
-fn process(http: &Http, url: &str, options: &Options, printer: &Printer) -> Item {
+/// One URL, which may turn out to be a list of them.
+///
+/// A playlist or a channel is expanded here rather than inside `handle`: its
+/// entries are separate items with their own line on stdout, their own failure
+/// and their own report line, because that is what "one dead video must not
+/// stop the other nine" means in the output and not only in the exit code.
+fn process(http: &Http, url: &str, options: &Options, printer: &Printer) -> Vec<Item> {
     let started = Instant::now();
     let mut item = Item::new(url);
 
-    match handle(http, url, options, printer, &mut item) {
-        Ok(status) => {
-            item.status = status;
-            if options.jobs <= 1 {
-                announce(&item, options);
+    match sites::extract(http, url, &options.extractor_args) {
+        Ok(sites::Target::List(listing)) => return process_list(http, listing, options, printer),
+        Ok(sites::Target::Video(media)) => {
+            match handle(http, *media, options, printer, &mut item) {
+                Ok(status) => item.status = status,
+                Err(error) => fail(&mut item, &error, options, printer),
             }
         }
-        Err(error) => {
-            item.status = Status::Failed;
-            item.reason = Some(error.kind().to_string());
-            item.message = error.to_string();
-            printer.error(&format!("tafas: {}", error));
-            if options.json {
-                println!("{}", item.to_json());
-            }
-            if options.jobs <= 1 {
-                let _ = printer;
-            }
-        }
+        Err(error) => fail(&mut item, &error, options, printer),
     }
 
     item.elapsed_ms = started.elapsed().as_millis() as u64;
-    item
+    if options.jobs <= 1 {
+        announce(&item, options);
+    }
+    vec![item]
+}
+
+/// A playlist or a channel: every chosen entry, captured on its own.
+///
+/// The entries run one at a time even when `-j` is more than one. A list is
+/// already several downloads, and opening `-j` segment streams inside each of
+/// them is how a shared line stops being usable; a user who wants both runs the
+/// entries as separate URLs.
+fn process_list(
+    http: &Http,
+    listing: crate::model::Listing,
+    options: &Options,
+    printer: &Printer,
+) -> Vec<Item> {
+    let fail_page = |url: &str, error: &Error| {
+        let mut item = Item::new(url);
+        item.site = listing.site.as_str().to_string();
+        fail(&mut item, error, options, printer);
+        item.elapsed_ms = 0;
+        announce(&item, options);
+        item
+    };
+
+    let chosen = match listing::choose(&listing, options.playlist_items.as_ref()) {
+        Ok(chosen) => chosen,
+        Err(error) => return vec![fail_page(&listing.page_url, &error)],
+    };
+    let directory = match listing::directory(options.output.as_deref(), &listing) {
+        Ok(directory) => directory,
+        Err(error) => return vec![fail_page(&listing.page_url, &error)],
+    };
+
+    if options.list_formats {
+        let mut item = Item::new(&listing.page_url);
+        item.site = listing.site.as_str().to_string();
+        item.id = listing.id.clone();
+        item.title = listing.title.clone();
+        item.status = Status::Listed;
+        println!("{}", listing::describe(&listing, &chosen));
+        if options.json {
+            println!("{}", item.to_json());
+        }
+        return vec![item];
+    }
+
+    if !options.quiet && !options.json {
+        printer.note(&format!(
+            "{} {}: {} of {} entries",
+            listing.site,
+            listing.id,
+            chosen.len(),
+            listing.entries.len()
+        ));
+    }
+
+    let mut items = Vec::with_capacity(chosen.len());
+    for (position, entry) in chosen {
+        let started = Instant::now();
+        let mut item = Item::new(&entry.url);
+        item.site = listing.site.as_str().to_string();
+        item.id = entry.id.clone();
+        item.title = entry.title.clone();
+        item.duration_ms = entry.duration.map(|seconds| seconds * 1000);
+
+        // Each entry is its own download, into the list's directory, under the
+        // name its position earns it. `--name` and `--format` are the user's
+        // answers about *one* file, so they do not survive into a list.
+        let mut entry_options = options.clone();
+        entry_options.output = Some(directory.clone());
+        entry_options.name = Some(listing::stem(position, &entry));
+        entry_options.multiple = true;
+        entry_options.playlist_items = None;
+        entry_options.format = None;
+
+        match load(http, &entry.url, &entry_options, printer, &mut item) {
+            Ok(status) => item.status = status,
+            Err(error) => fail(&mut item, &error, options, printer),
+        }
+        item.elapsed_ms = started.elapsed().as_millis() as u64;
+        announce(&item, options);
+        items.push(item);
+    }
+    items
+}
+
+/// Records a failure on an item and says it once, on stderr.
+fn fail(item: &mut Item, error: &Error, options: &Options, printer: &Printer) {
+    item.status = Status::Failed;
+    item.reason = Some(error.kind().to_string());
+    item.message = error.to_string();
+    printer.error(&format!("tafas: {}", error));
+    if options.json {
+        println!("{}", item.to_json());
+    }
+}
+
+/// One entry's video, read and written. A list inside a list is a refusal: a
+/// channel of playlists is not something `--playlist-items` can address.
+fn load(
+    http: &Http,
+    url: &str,
+    options: &Options,
+    printer: &Printer,
+    item: &mut Item,
+) -> Result<Status> {
+    match sites::extract(http, url, &options.extractor_args)? {
+        sites::Target::Video(media) => handle(http, *media, options, printer, item),
+        sites::Target::List(listing) => Err(Error::Refused(format!(
+            "{url} is a {} of {} videos nested inside another list, and this build follows one \
+             level",
+            listing.site,
+            listing.entries.len()
+        ))),
+    }
 }
 
 /// Writes what this item produced: the path on stdout (or the JSON object),
@@ -331,12 +450,11 @@ pub fn write_stdout(text: &str) -> bool {
 
 fn handle(
     http: &Http,
-    url: &str,
+    media: Media,
     options: &Options,
     printer: &Printer,
     item: &mut Item,
 ) -> Result<Status> {
-    let media = sites::extract(http, url, &options.extractor_args)?;
     item.site = media.site.as_str().to_string();
     item.id = media.id.clone();
     item.title = media.title.clone();

@@ -14,7 +14,7 @@ use crate::model::Media;
 
 /// Long enough for any real title, short enough for every filesystem in
 /// practice once the extension and the ` [id]` suffix are added.
-const MAX_STEM_BYTES: usize = 150;
+pub const MAX_STEM_BYTES: usize = 150;
 
 /// Reserved device names on Windows, case-insensitively, with or without an
 /// extension.

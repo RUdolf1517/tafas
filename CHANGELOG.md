@@ -11,15 +11,42 @@ version; adding a site, a flag or a container is minor. The policy is in
 
 ## [Unreleased]
 
-Every item of
-[v0.4](docs/roadmap.md#4-v04--speed-platforms-trust--done-not-yet-released) is
-below, and nothing here has been released yet: the next tag carries v0.2, v0.3
-and v0.4 together. The one exception is the signing key, which is a secret
-rather than a change — the job that signs is in and stays dormant until the key
-exists.
+Every item of v0.2, v0.3, v0.4 and v0.5 is below, and nothing here has been
+released yet: the next tag carries all four together
+([roadmap §1](docs/roadmap.md#1-v010-shipped) explains why). The one exception
+is the signing key, which is a secret rather than a change — the job that signs
+is in and stays dormant until the key exists.
 
 ### Added
 
+- **List pages: playlists, channels, albums and collections.** A YouTube
+  playlist or channel (`@handle`, `/channel/`, `/c/`, `/user/`), a Vimeo album
+  or showcase and a Twitch collection are read as a *list* rather than as a
+  stream, and each entry is then captured on its own, into a directory, as
+  `03 - Title [id].mp4` — numbered by its position on the page, so `ls` sorts
+  the way the browser does. `--playlist-items` selects with the grammar it
+  already had, one dead entry does not stop the others, and the run exits `1`
+  if any entry failed. One level is followed: a list of lists is a refusal.
+  Documented per site: [YouTube](docs/sites/youtube.md),
+  [Vimeo](docs/sites/vimeo.md#3-albums-and-showcases),
+  [Twitch](docs/sites/twitch.md#2-collections).
+- **A build with one site, and a table instead of a `match`.**
+  Every site is a row in one table (`src/sites/registry.rs`), and every row is
+  a Cargo feature: `--no-default-features --features youtube` builds a binary
+  that contains no code for the other six and refuses their URLs by saying
+  which sites it does have. All seven are on by default, and a `features` job
+  measures both binaries so the saving is a number rather than a claim.
+  Documented in [docs/extractors.md §2](docs/extractors.md#2-the-reader-table-and-a-build-with-one-site).
+- **One documentation page per site.** `docs/extractors.md` keeps what applies
+  to every site — detection, refusals, the escape hatch — and each site's
+  routes and refusal table is a page of its own under `docs/sites/`.
+- **An Alpine `.apk`, and AUR, Scoop and flake files.** The `.apk` is built
+  from the same static tarball as the `.deb` and `.rpm` with `apk mkpkg`, and
+  is unsigned, so installing it asks for `--allow-untrusted`. The `PKGBUILD`,
+  the Scoop manifest and a `flake.nix` are rendered at release time from
+  `SHA256SUMS` by `packaging/channels.py`, so every hash in them is the hash of
+  an archive that exists; `--self-test` renders all three from a stand-in
+  release on every pull request.
 - **Reproducible releases, a signature and an SBOM.** The release build no longer
   carries its own clock, directory or cargo home: `SOURCE_DATE_EPOCH` is the
   commit's time, `--remap-path-prefix` folds the runner's paths into `/build` and
@@ -185,7 +212,7 @@ exists.
   read and the refusal names `SegmentBase`; a video behind a password is a
   refusal that says so; an unlisted video without its hash gets the same `404` a
   deleted one gets. Shapes this cannot reach are in
-  [extractors §5](docs/extractors.md#5-vimeo).
+  [sites/vimeo](docs/sites/vimeo.md).
 - **Reddit.** `/r/<sub>/comments/<id>/`, `redd.it` and bare `v.redd.it/<hash>`
   URLs. A post is read from `/comments/<id>.json`; a bare media URL needs no
   JSON, because its playlist lives at a fixed path. One route is taken —
@@ -195,13 +222,13 @@ exists.
   and `dash_url` is `SegmentBase`, which this build does not read. A removed
   post, a gallery or a text post and an over-18 post with nothing playable are
   each named. The limitations are in
-  [extractors §6](docs/extractors.md#6-reddit).
+  [sites/reddit](docs/sites/reddit.md).
 - **SoundCloud.** Track URLs and `on.soundcloud.com` short links, read from the
   page's own hydration document, then the transcoding it names, then the bytes.
   The result is an **MP3** — the first non-ISO-BMFF media this program writes, and
   the reason `Container::Mp3` exists: there is no container to rebuild and nothing
   beyond the byte count to verify, which `docs/cli.md` §3 and
-  [extractors §7](docs/extractors.md#7-soundcloud) both say out loud. A set, a
+  [sites/soundcloud](docs/sites/soundcloud.md) both say out loud. A set, a
   Go+ track, an opus-only rendition and a consent wall are refusals by name; the
   public `client_id` is scraped from the page rather than hard-coded.
 - **Twitch VODs.** `twitch.tv/videos/<id>`, through one batched GraphQL request:
@@ -212,7 +239,7 @@ exists.
   `nauth`/`nauthsig` on the usher playlist, which `hlsfetch` assembles like any
   other list. A channel (a live stream has no end), a clip, a subscriber-only
   recording and an API error are refusals that say which they are;
-  [extractors §8](docs/extractors.md#8-twitch).
+  [sites/twitch](docs/sites/twitch.md).
 - **`Url::join`**, with dot-segment removal: playlist URIs are relative far more
   often than they are absolute, and `../` is common.
 - **`--embed-subs`.** The cues of one caption track go *inside* the MP4 as a

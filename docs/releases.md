@@ -40,6 +40,8 @@ describe the archive it produces.
 | `tafas-x86_64-pc-windows-msvc.zip` | `x86_64-pc-windows-msvc` | Windows x64 |
 | `tafas_amd64.deb`, `tafas_arm64.deb` | Debian, Ubuntu | the static musl binary; no dependencies declared |
 | `tafas.x86_64.rpm`, `tafas.aarch64.rpm` | Fedora, RHEL | the same static binary |
+| `tafas-X.Y.Z-x86_64.apk`, `tafas-X.Y.Z-aarch64.apk` | Alpine | the same static binary, unsigned: `apk` asks for `--allow-untrusted` |
+| `tafas-channels-X.Y.Z.tar.gz` | — | `PKGBUILD`/`.SRCINFO` for the AUR, a Scoop manifest and a `flake.nix`, all rendered from the release's `SHA256SUMS` |
 | `install.ps1` | — | the per-user Windows installer, published as an asset so its own bytes are in `SHA256SUMS` |
 | `tafas-winget-local-manifests-vX.Y.Z.zip` | — | winget manifests for the exact Windows ZIP; local installs only |
 | `tafas-release-X.Y.Z.spdx.json` | — | what is in the archives, built from the lock file the build used |
@@ -73,10 +75,24 @@ stable URL, which is what `install.sh` downloads from.
 | Homebrew | macOS arm64, Linux x86_64 | `brew tap RUdolf1517/tafas https://github.com/RUdolf1517/tafas` then `brew install RUdolf1517/tafas/tafas` |
 | apt | Debian, Ubuntu (amd64, arm64) | download `tafas_amd64.deb`, then `sudo apt install ./tafas_amd64.deb` |
 | dnf | Fedora, RHEL (x86_64, aarch64) | download `tafas.x86_64.rpm`, then `sudo dnf install ./tafas.x86_64.rpm` |
+| apk | Alpine (x86_64, aarch64) | download `tafas-X.Y.Z-x86_64.apk`, then `doas apk add --allow-untrusted ./tafas-X.Y.Z-x86_64.apk` |
+| AUR | Arch (x86_64, aarch64) | `PKGBUILD` from `tafas-channels-X.Y.Z.tar.gz`, then `makepkg -si` |
+| Scoop | Windows 10/11 x64 | `tafas.json` from `tafas-channels-X.Y.Z.tar.gz` into a bucket, then `scoop install tafas` |
+| Nix | any NixOS or Nix on Linux/macOS | `flake.nix` from `tafas-channels-X.Y.Z.tar.gz`, then `nix profile install .` |
 | cargo | anything with Rust 1.82+ | `cargo install --git https://github.com/RUdolf1517/tafas --tag v0.1.0` |
 | PowerShell | Windows 10/11 x64 | download `install.ps1` from the release, then `powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1` |
 | winget (local manifest) | Windows 10/11 x64 | unpack `tafas-winget-local-manifests-vX.Y.Z.zip`, then `winget install --manifest <version>` |
 | archive | everything else | unpack, put `tafas` on `PATH` |
+
+`apk` is the only channel that asks the user for `--allow-untrusted`. The package
+is built by `packaging/apk.sh` with `apk mkpkg`, from the same static tarball the
+other packages are built from, and it is **not signed**: signing needs an Alpine
+private key, which is a secret this repository does not hold — the same
+restriction, and the same honesty, as `packaging/minisign.pub` in §7. The AUR,
+Scoop and flake files are rendered from the release's `SHA256SUMS` by
+`packaging/channels.py`, so each hash in them is the hash of an archive that
+exists; none of the three is checked in, because a file that repeats the hash of
+an archive is stale the moment the next archive is built.
 
 `install.sh` prefers the prebuilt binary and falls back to a source build only
 when no asset exists for the platform. A download, checksum, unpacking or
@@ -140,9 +156,11 @@ version.
 3. `git tag vX.Y.Z && git push origin vX.Y.Z`.
 4. The release workflow builds the five targets, packages them with the manual
    page and the completions, builds the `.deb`/`.rpm` from the Linux tarball
-   with `nfpm`, copies `install.ps1` into the assets, renders the winget manifests
-   from the Windows ZIP, writes the SBOM, writes `SHA256SUMS`, signs every file
-   when the key is present, and attaches everything to the release.
+   with `nfpm` and the `.apk` from the same tarball with `apk mkpkg`, copies
+   `install.ps1` into the assets, renders the winget manifests from the Windows
+   ZIP, writes the SBOM, writes `SHA256SUMS`, renders the AUR, Scoop and flake
+   files from those checksums, signs every file when the key is present, and
+   attaches everything to the release.
 5. The Homebrew formula gets the new version and the hashes from
    `SHA256SUMS`; this is a follow-up commit, and it is the only hand edit in the
    process.
@@ -153,8 +171,12 @@ shipped binary is produced, which is what makes "the archive contains what the
 tag contains" a property rather than a hope.
 
 The publish job needs three tools beyond Rust and the shell: `nfpm` (Go) for the
-`.deb`/`.rpm`, `python3` for the winget manifests and the SBOM, and `minisign`
-only when the signing key is set. None is needed by anyone who installs a
+`.deb`/`.rpm`, `python3` for the winget manifests, the AUR/Scoop/flake files and
+the SBOM, and `minisign` only when the signing key is set. The `.apk` is built in
+an `alpine:3.20` container, because `apk mkpkg` is apk-tools 3 and the runner is
+Ubuntu. Two things stay human, and both for the same reason — a key this
+repository does not hold: the AUR package is pushed with an AUR key, and the
+`.apk` is unsigned. None is needed by anyone who installs a
 release; on Windows the installer needs only PowerShell, which Windows already
 has.
 

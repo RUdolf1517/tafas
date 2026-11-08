@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
-//! `tafas` — capture a video from YouTube, TikTok or X as one playable file.
+//! `tafas` — capture a video from YouTube, TikTok, X, Vimeo, Reddit, SoundCloud
+//! or Twitch into one playable file.
 //!
 //! The crate is a library with a thin binary on top, because the parts that
 //! deserve tests — URL parsing, stream selection, naming, the MP4 remuxer — are
@@ -17,6 +18,7 @@ pub mod hlsfetch;
 pub mod http;
 pub mod info;
 pub mod items;
+pub mod listing;
 pub mod model;
 pub mod mp4read;
 pub mod mp4write;

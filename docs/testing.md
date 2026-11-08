@@ -88,7 +88,7 @@ rather than an assertion about how long the client took.
   by the refusal paths; a page that has changed produces a refusal, and a bug
   report with that refusal in it is the mechanism that fixes it.
 - **Actual playback.** No test decodes a frame. `verify` checks the container,
-  not the codec (see [guarantees §2](guarantees.md#2-g2--structural-verification)),
+  not the codec (see [guarantees §2](guarantees.md#2-g2-structural-verification)),
   and the same holds for a caption track: the samples are where `stbl` says they
   are and hold a `vttc` with the cue text, but nothing renders them. Cue settings,
   `STYLE` and `REGION` are dropped on purpose, so there is no promise to test.
@@ -149,6 +149,8 @@ regression fails in `cargo test` rather than only under a fuzzer.
 | `format.yml` | `format` | `cargo fmt` plus `cargo generate-lockfile`, committed back to the branch |
 | `release.yml` | `build (five targets)` | `cargo build --release --locked` under `SOURCE_DATE_EPOCH` and `--remap-path-prefix`, archives, the SBOM, `SHA256SUMS`, the signature when the key exists, packages |
 | `windows-installer.yml` | `installer` (windows-latest) | `packaging/windows/tests/Install.Integration.ps1`: install, upgrade, refusal, rollback and uninstall against locally built release fixtures |
+| `ci.yml` | the `Channel generators` step in `test` (ubuntu, macOS and Windows, because `python3` is on each) | `python3 packaging/channels.py --self-test` renders the AUR `PKGBUILD`/`.SRCINFO`, the Scoop manifest and `flake.nix` from a stand-in release and asserts the version, every hash and that a second render is byte-identical; `packaging/winget/generate.py` and its `check.py` do the same for the Windows manifests |
+| `ci.yml` | `features` (ubuntu-latest) | `cargo build --release` twice: with all seven sites and with `--no-default-features --features youtube`, then `packaging/tests/features.py`, which reads the one-site binary's `--capabilities`, refuses a Vimeo URL to check the sentence, and fails if both binaries are the same size |
 | `ci.yml` | `msrv (1.82)` | `cargo build --locked --all-targets` at the declared floor, publishing what broke |
 | `ci.yml` | `budgets` (ubuntu-latest) | `cargo build --release --locked`, then `packaging/tests/budgets.py`: the size of the binary and the median of seven `--version` starts, compared against `packaging/budgets.json` |
 | `windows-installer.yml` | `winget-manifests` (ubuntu-latest) | `packaging/winget/tests/check.py`, plus a render of the manifests from a ZIP built the way the release builds it |

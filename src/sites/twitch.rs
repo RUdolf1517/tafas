@@ -16,6 +16,7 @@
 use serde_json::{json, Value};
 
 use crate::error::{Error, Result};
+use crate::extractor_args::ExtractorArgs;
 use crate::http::Http;
 use crate::model::{Container, Format, Image, Media, Site, StreamKind};
 use crate::sites::{at, text, uint};
@@ -35,7 +36,14 @@ pub const PUBLIC_WEB_CLIENT_ID: &str = "kimne78kx3ncx6brgo4mv6wki5h1ko";
 /// error object, which is a refusal that quotes it rather than a silent nothing.
 const PLAYBACK_TOKEN_HASH: &str = "0828119ded1c13477966434e15800ff57ddacf13ba1911c443297a175cb92a5";
 
-pub fn extract(http: &Http, url: &Url, raw: &str) -> Result<Media> {
+pub fn extract(
+    http: &Http,
+    url: &Url,
+    raw: &str,
+    // This reader has no `--extractor-args` key; the parameter is uniform so
+    // that the table of readers has one shape.
+    _args: &ExtractorArgs,
+) -> Result<Media> {
     let id = vod_id(url).ok_or_else(|| {
         if is_channel(url) {
             Error::Unsupported(format!(

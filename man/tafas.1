@@ -4,7 +4,7 @@
 .\" drift into describing a different program.
 .TH TAFAS 1 "2026-11-04" "tafas 0.1.0" "User Commands"
 .SH NAME
-tafas \- capture a video from YouTube, TikTok or X as one playable MP4
+tafas \- capture a video from YouTube, TikTok, X, Vimeo, Reddit, SoundCloud or Twitch as one playable MP4
 .SH SYNOPSIS
 .B tafas
 [\fIOPTIONS\fR] \fIURL\fR...
@@ -211,11 +211,17 @@ not know is refused with the accepted spellings in the message.
 .TP
 .B \-\-playlist\-items \fIITEMS\fR
 Take only these entries of a list: \fB3\fR, \fB1\-5\fR, \fB2\-\fR or any
-comma\-separated mix, counted from one. Today the lists are the segment lists of
-an HLS playlist; the item is a segment, and the file is assembled from the ones
-named. A selection that matches nothing is a refusal, not an empty file. A
-selection that does not begin on a keyframe produces a warning, because the
-first frames are then undecodable.
+comma\-separated mix, counted from one. There are two kinds of list. In the
+segment list of an HLS playlist the item is a segment, and the file is assembled
+from the ones named. In a page that names other videos the item is a video, and
+every chosen entry is captured on its own into a directory as
+\fB03 \- Title [id].mp4\fR; a dead entry is reported and the rest are still
+captured. Three sites have such a page: a YouTube playlist or channel
+(\fB/playlist?list=\fR, \fB/@handle\fR, \fB/channel/UC...\fR), a Vimeo album or
+showcase (\fB/album/<id>\fR, \fB/showcase/<id>\fR) and a Twitch collection
+(\fB/collections/<id>\fR). One level is followed: a list of lists is refused. A selection that matches nothing is a refusal, not an empty file, and
+one that does not begin on a keyframe produces a warning, because the first
+frames are then undecodable.
 .SS Output
 .TP
 .B \-n, \-\-dry\-run

@@ -200,6 +200,38 @@ jobs:
             bash packaging/linux-packages.sh "${TAG#v}" artifacts
           fi
 
+      # The three file-based channels — AUR, Scoop, a flake — are rendered from
+      # the SHA256SUMS that was just written, so a hash in a package file is a
+      # hash of a file that exists. They are published with the release rather
+      # than left in the repository: `flake.nix` is meant to be copied, and the
+      # AUR package is a human's push (see docs/releases.md §6).
+      - name: AUR, Scoop and flake
+        shell: bash
+        env:
+          TAG: ${{ inputs.tag || github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          python3 packaging/channels.py --tag "$TAG" --artifacts artifacts
+          tar czf "artifacts/tafas-channels-${version}.tar.gz" \
+            -C packaging aur scoop flake
+          ls -l "artifacts/tafas-channels-${version}.tar.gz"
+          tar tzf "artifacts/tafas-channels-${version}.tar.gz"
+
+      # The .apk needs apk-tools 3, which is in Alpine 3.20 and later: hence a
+      # container rather than the Ubuntu runner. An unrelated architecture is
+      # no obstacle, because the binary inside the package is built for Alpine's
+      # targets and not for the container that wraps it.
+      - name: Alpine package
+        shell: bash
+        env:
+          TAG: ${{ inputs.tag || github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          docker run --rm -v "$PWD/artifacts:/artifacts" -v "$PWD/packaging:/packaging:ro" \
+            alpine:3.20 sh -c "apk add --no-cache apk-tools && sh /packaging/apk.sh '${TAG}' /artifacts"
+          ls -l artifacts/*.apk
+
       - name: Windows installer and local winget manifests
         shell: bash
         env:

@@ -16,7 +16,8 @@ use crate::select::Quality;
 use crate::style::Choice;
 
 const LONG_ABOUT: &str = "\
-Capture a video from YouTube, TikTok or X as one playable file.
+Capture a video from YouTube, TikTok, X, Vimeo, Reddit, SoundCloud or Twitch
+into one playable file.
 
 tafas reads the page, picks the best stream the site will hand out, downloads it
 and — when the site serves picture and sound separately, as YouTube does above
@@ -42,7 +43,8 @@ A closed stdout pipe ends the run quietly and successfully.";
 #[command(
     name = "tafas",
     version,
-    about = "Capture a video from YouTube, TikTok or X as one playable MP4",
+    about = "Capture a video from YouTube, TikTok, X, Vimeo, Reddit, SoundCloud or \
+             Twitch as one playable MP4",
     long_about = LONG_ABOUT,
     after_help = AFTER_HELP,
     disable_help_subcommand = true,
@@ -143,7 +145,7 @@ pub struct Args {
     #[arg(long, value_name = "RATE", value_parser = parse_limit_rate)]
     pub limit_rate: Option<u64>,
 
-    /// Take only these segments of an HLS list: 3, 1-5, 2- (1-based)
+    /// Take only these entries of a list — HLS segments, a playlist, a channel: 3, 1-5, 2- (1-based)
     #[arg(long, value_name = "ITEMS", value_parser = parse_items)]
     pub playlist_items: Option<crate::items::Items>,
 

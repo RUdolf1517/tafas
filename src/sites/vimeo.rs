@@ -18,6 +18,7 @@
 use serde_json::Value;
 
 use crate::error::{Error, Result};
+use crate::extractor_args::ExtractorArgs;
 use crate::http::Http;
 use crate::model::{Container, Format, Image, Media, Site, StreamKind};
 use crate::sites::{at, list, text, uint};
@@ -28,7 +29,14 @@ const HEADERS: [(&str, &str); 2] = [
     ("origin", "https://vimeo.com"),
 ];
 
-pub fn extract(http: &Http, url: &Url, raw: &str) -> Result<Media> {
+pub fn extract(
+    http: &Http,
+    url: &Url,
+    raw: &str,
+    // This reader has no `--extractor-args` key; the parameter is uniform so
+    // that the table of readers has one shape.
+    _args: &ExtractorArgs,
+) -> Result<Media> {
     let (id, hash) = video_id(url).ok_or_else(|| {
         Error::Usage(format!(
             "{raw} is not a video URL: expected https://vimeo.com/<id>, \

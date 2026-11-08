@@ -80,7 +80,7 @@ note: the audio stream is opus, which cannot be remuxed with mp4 video without r
 A pair is written as: two `.part` files, a remux into `<target>.part`, a verify
 pass that re-reads the result from disk, then one rename. The layout is
 `ftyp | moov | mdat(video) | mdat(audio)`; `moov` first so a player can read the
-index without seeking to the end (see [guarantees §3](guarantees.md#3-g2--structural-verification)).
+index without seeking to the end (see [guarantees §2](guarantees.md#2-g2-structural-verification)).
 
 | `--write-info-json` | write `<name>.info.json` beside each file |
 | `--write-thumbnail` | write the page's poster frame beside each file |
@@ -188,13 +188,33 @@ not describe. `--no-resume` deletes it before the first request.
 
 `--playlist-items ITEMS` is parsed before the first request, so a typo is a
 usage error (2) rather than a half-written file. Entries are 1-based and
-inclusive at both ends; `2-` means "from the second to the end". Today the only
-list is the segment list of an HLS playlist, where the item is a segment: the
-file is assembled from the segments named and from no others, and the playlist
-is still read in full, so the count in the refusal is the count the server
-served. A selection that matches no segment is a refusal (1); one that does not
-start on a keyframe is written, with a warning that the first frames will not
-decode.
+inclusive at both ends; `2-` means "from the second to the end".
+
+There are two kinds of list, and the flag means the same thing for both:
+
+- **the segment list of an HLS playlist**, where the item is a segment: the file
+  is assembled from the segments named and from no others, and the playlist is
+  still read in full, so the count in the refusal is the count the server
+  served. A selection that matches no segment is a refusal (1); one that does
+  not start on a keyframe is written, with a warning that the first frames will
+  not decode;
+- **a page that names other videos** — a YouTube playlist or channel
+  ([sites/youtube §7](sites/youtube.md#7-playlists-and-channels)), a Vimeo album
+  or showcase ([sites/vimeo §3](sites/vimeo.md#3-albums-and-showcases)), a Twitch
+  collection ([sites/twitch §2](sites/twitch.md#2-collections)) — where the item
+  is a video: every chosen entry is captured on its own, into a directory, as
+  `03 - Title [id].mp4`, so the number on disk is the number the user counted in
+  the browser. A dead entry is reported and the rest are still captured; the run
+  exits `1` if any of them failed, which is what a URL list already does. One
+  level is followed: a channel of playlists is refused rather than walked.
+
+A list of videos is written into a **directory**, because there is no rule that
+turns one filename into N predictable filenames. `-o` naming a file for a list is
+a usage error (2), before any request. `--format` and `--name` describe one file
+and are dropped inside a list; `--write-subs`, `--write-thumbnail`,
+`--write-info-json` and `--embed-subs` apply to each entry as they would to a
+single video. The entries run one at a time even with `-j`, because a list is
+already several downloads.
 
 Long paths on Windows are handled rather than refused: every path tafas writes —
 the staging file, the rename into place, a deep output directory, the HLS cache

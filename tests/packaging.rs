@@ -351,3 +351,77 @@ fn no_release_is_cut_before_the_roadmap_is_done() {
         "the release procedure must say what it is waiting for"
     );
 }
+
+/// One page per site, and every site on one of them. The refusal tables are the
+/// part of the documentation that grows with each site, and a site added without
+/// its page is a refusal a user has to read the source for.
+#[test]
+fn every_site_has_a_documentation_page() {
+    let extractors = read("docs/extractors.md");
+    let sites_dir = manifest_dir().join("docs/sites");
+    for site in tafas::sites::names() {
+        let page = sites_dir.join(format!("{site}.md"));
+        assert!(
+            page.is_file(),
+            "docs/sites/{site}.md is missing for a site this build reads"
+        );
+        assert!(
+            extractors.contains(&format!("sites/{site}.md")),
+            "docs/extractors.md does not link docs/sites/{site}.md"
+        );
+        let text = std::fs::read_to_string(&page).expect("the page reads");
+        assert!(
+            text.split_whitespace().count() > 100,
+            "docs/sites/{site}.md is a stub, not a page"
+        );
+        // Every markdown link in the page has to resolve: the pages were split
+        // out of one file, and a link written when they lived in `docs/` is one
+        // directory too shallow once the page is in `docs/sites/`.
+        for (at, _) in text.match_indices("](") {
+            let rest = &text[at + 2..];
+            let Some(close) = rest.find(')') else {
+                continue;
+            };
+            let link = &rest[..close];
+            if link.starts_with("http") || link.starts_with('#') {
+                continue;
+            }
+            let file = link.split('#').next().unwrap_or(link);
+            if !file.ends_with(".md") {
+                continue;
+            }
+            let directory = page.parent().expect("a page lives in a directory");
+            let path = directory.join(file);
+            assert!(
+                path.is_file(),
+                "docs/sites/{site}.md links {link}, which does not exist next to it"
+            );
+        }
+    }
+}
+
+/// The feature table and the reader table are the same list. A site behind a
+/// feature that is not in the default set would disappear from an ordinary
+/// build, which is not what "all seven by default" means.
+#[test]
+fn every_reader_is_a_feature_and_every_feature_is_a_reader() {
+    let manifest = read("Cargo.toml");
+    let default_line = manifest
+        .lines()
+        .find(|line| line.starts_with("default = ["))
+        .expect("Cargo.toml has a default feature set");
+    let feature_table = manifest
+        .split("[features]")
+        .nth(1)
+        .expect("Cargo.toml has a [features] table");
+    for site in tafas::sites::names() {
+        assert!(
+            default_line.contains(&format!("\"{site}\"")),
+            "{site} is a reader but is not in the default feature set"
+        );
+        assert!(
+            feature_table.contains(&format!("\n{site} = []")),
+            "{site} is a reader but Cargo.toml has no `{site}` feature"
+        );
+    }
+}

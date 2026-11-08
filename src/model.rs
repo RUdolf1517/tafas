@@ -29,24 +29,59 @@ impl Site {
         }
     }
 
+    /// The site a URL names, or `None`. The host list lives in the reader
+    /// table, so this cannot disagree with what the build can actually read.
     pub fn from_url(url: &crate::url::Url) -> Option<Site> {
-        let host = url.host()?;
-        let host = host.strip_prefix("m.").unwrap_or(host);
-        let host = host.strip_prefix("mobile.").unwrap_or(host);
-        match host {
-            "youtube.com" | "youtu.be" | "music.youtube.com" | "youtube-nocookie.com" => {
-                Some(Site::YouTube)
-            }
-            "tiktok.com" | "vt.tiktok.com" | "vm.tiktok.com" | "m.tiktok.com" => Some(Site::TikTok),
-            "x.com" | "twitter.com" | "t.co" | "mobile.twitter.com" => Some(Site::X),
-            "vimeo.com" | "player.vimeo.com" => Some(Site::Vimeo),
-            "reddit.com" | "old.reddit.com" | "redd.it" | "v.redd.it" => Some(Site::Reddit),
-            "soundcloud.com" | "on.soundcloud.com" => Some(Site::SoundCloud),
-            "twitch.tv" => Some(Site::Twitch),
-            _ => None,
+        let reader = crate::sites::for_host(url.host()?)?;
+        site_of(reader.name)
+    }
+
+    /// Every site this build was compiled with.
+    pub fn all() -> Vec<Site> {
+        ALL_SITES
+            .iter()
+            .copied()
+            .filter(|site| site.is_compiled_in())
+            .collect()
+    }
+
+    /// Whether this build has a reader for `self`.
+    pub fn is_compiled_in(self) -> bool {
+        crate::sites::for_host(self.primary_host()).is_some()
+    }
+
+    /// The host that names this site in the table. One per site is enough to
+    /// ask the table; the others are the table's business.
+    fn primary_host(self) -> &'static str {
+        match self {
+            Site::YouTube => "youtube.com",
+            Site::TikTok => "tiktok.com",
+            Site::X => "x.com",
+            Site::Vimeo => "vimeo.com",
+            Site::Reddit => "reddit.com",
+            Site::SoundCloud => "soundcloud.com",
+            Site::Twitch => "twitch.tv",
         }
     }
 }
+
+/// A reader's name as a [`Site`]. A name the enum does not know is `None`, which
+/// is the one place a row could be added to the table without being added to the
+/// enum.
+pub fn site_of(name: &str) -> Option<Site> {
+    ALL_SITES.into_iter().find(|site| site.as_str() == name)
+}
+
+/// Every site the source knows about, before the build's features are applied.
+pub const ALL_SITES: [Site; 7] = [
+    Site::YouTube,
+    Site::TikTok,
+    Site::X,
+    Site::Vimeo,
+    Site::Reddit,
+    Site::SoundCloud,
+    Site::Twitch,
+];
 
 impl fmt::Display for Site {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -262,6 +297,52 @@ pub struct Media {
     /// which is a fact worth reporting rather than an error.
     pub subtitles: Vec<Subtitle>,
     pub page_url: String,
+}
+
+/// One page that names other videos: a playlist, a channel, an album, a
+/// profile.
+///
+/// It is not a [`Media`]: there is no stream to fetch and no single title to
+/// write, only a list of entries. The reader returns it, and the download layer
+/// decides what to do with each entry — which is why `--playlist-items` means
+/// the same thing here as it does for an HLS segment list.
+#[derive(Debug, Clone)]
+pub struct Listing {
+    pub site: Site,
+    /// The playlist id, the channel handle, whatever names this page.
+    pub id: String,
+    pub title: String,
+    pub uploader: Option<String>,
+    /// The entries, in the order the page lists them, before any selection.
+    pub entries: Vec<Entry>,
+    /// The URL the list was read from.
+    pub page_url: String,
+}
+
+/// One entry of a [`Listing`].
+#[derive(Debug, Clone)]
+pub struct Entry {
+    /// The video id the site uses, which becomes `plausible_id`'d into a URL.
+    pub id: String,
+    /// The entry's own URL, ready to hand back to the extractor. It is a full
+    /// `watch?v=` URL rather than an id so that an unlisted Vimeo entry keeps
+    /// the hash that makes it readable.
+    pub url: String,
+    pub title: String,
+    pub duration: Option<u64>,
+}
+
+impl Listing {
+    pub fn new(site: Site, id: String, page_url: String) -> Listing {
+        Listing {
+            site,
+            id,
+            title: String::new(),
+            uploader: None,
+            entries: Vec::new(),
+            page_url,
+        }
+    }
 }
 
 impl Media {
