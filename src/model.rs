@@ -264,6 +264,52 @@ pub struct Media {
     pub page_url: String,
 }
 
+/// One page that names other videos: a playlist, a channel, an album, a
+/// profile.
+///
+/// It is not a [`Media`]: there is no stream to fetch and no single title to
+/// write, only a list of entries. The reader returns it, and the download layer
+/// decides what to do with each entry — which is why `--playlist-items` means
+/// the same thing here as it does for an HLS segment list.
+#[derive(Debug, Clone)]
+pub struct Listing {
+    pub site: Site,
+    /// The playlist id, the channel handle, whatever names this page.
+    pub id: String,
+    pub title: String,
+    pub uploader: Option<String>,
+    /// The entries, in the order the page lists them, before any selection.
+    pub entries: Vec<Entry>,
+    /// The URL the list was read from.
+    pub page_url: String,
+}
+
+/// One entry of a [`Listing`].
+#[derive(Debug, Clone)]
+pub struct Entry {
+    /// The video id the site uses, which becomes `plausible_id`'d into a URL.
+    pub id: String,
+    /// The entry's own URL, ready to hand back to the extractor. It is a full
+    /// `watch?v=` URL rather than an id so that an unlisted Vimeo entry keeps
+    /// the hash that makes it readable.
+    pub url: String,
+    pub title: String,
+    pub duration: Option<u64>,
+}
+
+impl Listing {
+    pub fn new(site: Site, id: String, page_url: String) -> Listing {
+        Listing {
+            site,
+            id,
+            title: String::new(),
+            uploader: None,
+            entries: Vec::new(),
+            page_url,
+        }
+    }
+}
+
 impl Media {
     pub fn new(site: Site, id: String, page_url: String) -> Media {
         Media {

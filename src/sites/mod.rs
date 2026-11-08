@@ -14,6 +14,7 @@ pub mod twitch;
 pub mod vimeo;
 pub mod x;
 pub mod youtube;
+pub mod youtube_list;
 
 use serde_json::Value;
 
@@ -35,6 +36,25 @@ pub fn extract(http: &Http, raw_url: &str, args: &ExtractorArgs) -> Result<Media
             "no extractor for {raw_url}: this build reads youtube, tiktok, x, vimeo, reddit, soundcloud and twitch"
         ))
     })?;
+    // A list page is not a video: the watch-page reader would report "not a
+    // YouTube video URL", which is true and unhelpful. The list reader answers
+    // first, for the URLs that are unambiguously a list.
+    if site == Site::YouTube {
+        if let Some(kind) = youtube_list::kind(&url) {
+            let listing = youtube_list::extract(http, &url, &kind, raw_url)?;
+            return Err(Error::Usage(format!(
+                "{raw_url} is a {}: {}{} — one entry at a time is what this build does, so \
+                 name a video URL, or use --playlist-items on a video page",
+                listing_what(&kind),
+                listing.title,
+                if listing.title.is_empty() {
+                    String::new()
+                } else {
+                    format!(" ({} videos)", listing.entries.len())
+                }
+            )));
+        }
+    }
     match site {
         Site::YouTube => youtube::extract(http, &url, raw_url, args),
         Site::TikTok => tiktok::extract(http, &url, raw_url, args),
@@ -43,6 +63,14 @@ pub fn extract(http: &Http, raw_url: &str, args: &ExtractorArgs) -> Result<Media
         Site::Reddit => reddit::extract(http, &url, raw_url),
         Site::SoundCloud => soundcloud::extract(http, &url, raw_url),
         Site::Twitch => twitch::extract(http, &url, raw_url),
+    }
+}
+
+/// What to call a list page in a message: the word the user's own URL uses.
+fn listing_what(kind: &youtube_list::Kind) -> &'static str {
+    match kind {
+        youtube_list::Kind::Playlist(_) => "playlist",
+        youtube_list::Kind::Channel { .. } => "channel",
     }
 }
 

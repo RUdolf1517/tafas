@@ -37,7 +37,7 @@ use crate::url::Url;
 /// GitHub's secret scanning flags the string, because it is shaped like a
 /// Google API key. There is no secret to rotate: dismissing that alert as a
 /// false positive is correct, and `SECURITY.md` says so out loud.
-const PUBLIC_WEB_API_KEY: &str = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8";
+pub(crate) const PUBLIC_WEB_API_KEY: &str = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8";
 
 const UA_ANDROID_VR: &str =
     "com.google.android.apps.youtube.vr.oculus/1.60.19 (Linux; U; Android 12; GB) gzip";
@@ -517,6 +517,12 @@ fn plausible_id(id: &str) -> bool {
         && id
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+/// The page's own InnerTube key, for [`super::youtube_list`], which speaks the
+/// same endpoint with a different body.
+pub(crate) fn inline_api_key(page: &str) -> Option<String> {
+    inline_string(page, "INNERTUBE_API_KEY")
 }
 
 /// Reads a `"key":"value"` pair out of the page's inline state, for the two
