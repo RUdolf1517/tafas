@@ -152,6 +152,6 @@ mod tests {
             target.as_os_str().len() > 260,
             "the test is about long paths"
         );
-        let _ = std::fs::remove_dir_all(verbatim(std::env::temp_dir().join("a".repeat(120))));
+        let _ = std::fs::remove_dir_all(verbatim(&std::env::temp_dir().join("a".repeat(120))));
     }
 }
