@@ -290,7 +290,10 @@ fn the_release_builds_an_sbom_and_signs_what_it_publishes() {
     // The signature covers the checksum file and is verified before an upload:
     // signing what was not verified publishes a promise nobody checked.
     let sign = read("packaging/sign.sh");
-    assert!(sign.contains("SHA256SUMS.minisig"), "sign.sh must sign SHA256SUMS");
+    assert!(
+        sign.contains("SHA256SUMS.minisig"),
+        "sign.sh must sign SHA256SUMS"
+    );
     assert!(
         sign.contains("minisign -Vm"),
         "sign.sh must verify what it wrote"
