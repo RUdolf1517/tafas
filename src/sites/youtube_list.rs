@@ -22,7 +22,7 @@ use serde_json::{json, Value};
 use crate::error::{Error, Result};
 use crate::http::{Http, UA_DESKTOP};
 use crate::model::{Entry, Listing, Site};
-use crate::sites::{at, json_after, text, uint};
+use crate::sites::{at, json_after, text};
 use crate::url::Url;
 
 /// The same consent cookies the watch page uses; a European request without
@@ -33,10 +33,7 @@ const HEADERS: [(&str, &str); 3] = [
     ("accept", "text/html,application/xhtml+xml"),
 ];
 
-/// Page size for one browse call. YouTube caps this at 100; asking for less is
-/// how a refusal can say "the first 50 of them".
-const PAGE_SIZE: usize = 100;
-/// One continuation per kind of page. A list longer than this is a refusal
+/// How many `browse` calls one list may take. A list longer than this is a refusal
 /// naming both numbers, not a download that silently stops.
 const MAX_PAGES: usize = 2;
 
@@ -212,7 +209,7 @@ fn channel(http: &Http, url: &Url, handle: &str, id: &str, raw: &str) -> Result<
         token = collect(&document, &mut entries);
         pages += 1;
     }
-    finish(listing, entries, "channel", &id.to_string())
+    finish(listing, entries, "channel", id)
 }
 
 /// `/@handle` has no browse id in the URL, so the page is read for the one it

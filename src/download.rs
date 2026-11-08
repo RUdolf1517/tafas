@@ -310,7 +310,7 @@ fn process_list(
     options: &Options,
     printer: &Printer,
 ) -> Vec<Item> {
-    let mut fail_page = |url: &str, error: &Error| {
+    let fail_page = |url: &str, error: &Error| {
         let mut item = Item::new(url);
         item.site = listing.site.as_str().to_string();
         fail(&mut item, error, options, printer);
