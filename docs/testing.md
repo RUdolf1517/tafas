@@ -149,6 +149,7 @@ regression fails in `cargo test` rather than only under a fuzzer.
 | `format.yml` | `format` | `cargo fmt` plus `cargo generate-lockfile`, committed back to the branch |
 | `release.yml` | `build (five targets)` | `cargo build --release --locked` under `SOURCE_DATE_EPOCH` and `--remap-path-prefix`, archives, the SBOM, `SHA256SUMS`, the signature when the key exists, packages |
 | `windows-installer.yml` | `installer` (windows-latest) | `packaging/windows/tests/Install.Integration.ps1`: install, upgrade, refusal, rollback and uninstall against locally built release fixtures |
+| `ci.yml` | `features` (ubuntu-latest) | `cargo build --release` twice: with all seven sites and with `--no-default-features --features youtube`, then `packaging/tests/features.py`, which reads the one-site binary's `--capabilities`, refuses a Vimeo URL to check the sentence, and fails if both binaries are the same size |
 | `ci.yml` | `msrv (1.82)` | `cargo build --locked --all-targets` at the declared floor, publishing what broke |
 | `ci.yml` | `budgets` (ubuntu-latest) | `cargo build --release --locked`, then `packaging/tests/budgets.py`: the size of the binary and the median of seven `--version` starts, compared against `packaging/budgets.json` |
 | `windows-installer.yml` | `winget-manifests` (ubuntu-latest) | `packaging/winget/tests/check.py`, plus a render of the manifests from a ZIP built the way the release builds it |

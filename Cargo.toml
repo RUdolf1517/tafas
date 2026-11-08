@@ -20,6 +20,20 @@ path = "src/lib.rs"
 name = "tafas"
 path = "src/main.rs"
 
+[features]
+# One feature per site. The default is all seven, so an ordinary build reads
+# everything; `--no-default-features --features youtube` produces a binary that
+# contains no code for the other six, which is smaller and can be audited by
+# someone who only wants one site.
+default = ["youtube", "tiktok", "x", "vimeo", "reddit", "soundcloud", "twitch"]
+youtube = []
+tiktok = []
+x = []
+vimeo = []
+reddit = []
+soundcloud = []
+twitch = []
+
 [dependencies]
 # Argument parsing. `default-features = false` drops the derive-less colour and
 # suggestion machinery that a tool printing plain GNU-style errors does not use;

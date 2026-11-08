@@ -14,7 +14,7 @@ use serde_json::json;
 use tafas::cli::Args;
 use tafas::download::{self, write_stdout};
 use tafas::report::RESULT_SCHEMA_VERSION;
-use tafas::sites::SITES;
+use tafas::sites;
 use tafas::style::{self, Pen};
 
 fn main() -> ExitCode {
@@ -106,7 +106,7 @@ fn capabilities() -> String {
         "capabilities_schema_version": 1,
         "version": env!("CARGO_PKG_VERSION"),
         "result_schema_version": RESULT_SCHEMA_VERSION,
-        "sites": SITES,
+        "sites": sites::names(),
         "extractors": {
             "youtube": {
                 "routes": ["watch page (ytInitialPlayerResponse)", "innertube"],
@@ -206,7 +206,7 @@ fn info(args: &Args) -> String {
     out.push_str(
         "capture YouTube, TikTok, X, Vimeo, Reddit and Twitch as one playable MP4, and SoundCloud as an MP3, without re-encoding\n\n",
     );
-    out.push_str(&format!("sites        {}\n", SITES.join(", ")));
+    out.push_str(&format!("sites        {}\n", sites::describe_build()));
     out.push_str("muxing       mp4 (streams copied, index rebuilt, output verified)\n");
     out.push_str("tls          rustls with the ring provider\n");
     out.push_str("external     none — no yt-dlp, no ffmpeg, no shelling out\n");
@@ -226,7 +226,7 @@ mod tests {
         assert_eq!(value["result_schema_version"], RESULT_SCHEMA_VERSION);
         assert_eq!(
             value["sites"].as_array().unwrap().len(),
-            SITES.len(),
+            sites::names().len(),
             "the document lists every site the build reads"
         );
         assert_eq!(value["muxing"]["reencode"], false);

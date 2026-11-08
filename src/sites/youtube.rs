@@ -152,20 +152,20 @@ fn refusal(id: &str, notes: &[String], pinned: Option<&str>) -> Error {
         return Error::Refused(format!(
             "youtube: {id}: the site answered with a sign-in check (\"{}\"). Cookies from \
              --cookies are sent when you name a file, but no challenge is solved; see \
-             docs/extractors.md §3.",
+             docs/extractors.md §3.4.",
             first_bot_sentence(notes)
         ));
     }
     if joined.contains("signature") || joined.contains("cipher") {
         return Error::Refused(format!(
             "youtube: {id}: every format is signature-protected; this build does not execute the \
-             player JavaScript that would decipher it (docs/extractors.md §4)"
+             player JavaScript that would decipher it (docs/extractors.md §3.3)"
         ));
     }
     if joined.contains("age") || joined.contains("inappropriate") {
         return Error::Refused(format!(
             "youtube: {id}: age-restricted content needs a signed-in account; pass --cookies FILE \
-             with an export from a signed-in browser (docs/extractors.md §3)"
+             with an export from a signed-in browser (docs/extractors.md §3.4)"
         ));
     }
     let tried = if notes.is_empty() {

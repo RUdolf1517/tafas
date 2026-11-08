@@ -192,3 +192,63 @@ jobs:
         if: steps.floor.outcome == 'failure'
         shell: bash
         run: exit 1
+
+  # One feature per site is a promise about the binary, not a runtime check:
+  # a build without Vimeo must contain no Vimeo code. This job builds both
+  # halves of that promise — the full binary and a youtube-only one — and
+  # `packaging/tests/features.py` says what is wrong if they disagree.
+  features:
+    name: features
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build every site
+        shell: bash
+        run: cargo build --release --locked
+
+      - name: Build one site
+        id: one
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          # A different target directory, so the full build below cannot be
+          # served a binary that was compiled without the other six sites.
+          CARGO_TARGET_DIR=target/one \
+            cargo build --release --locked --no-default-features --features youtube \
+            2>&1 | tee features.log
+
+      - name: Check what the one-site build is
+        if: steps.one.outcome == 'success'
+        shell: bash
+        run: python3 packaging/tests/features.py target/one/release/tafas target/release/tafas
+
+      - name: Publish the failure
+        if: steps.one.outcome == 'failure'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
+          set -uo pipefail
+          number="$(gh pr list --head "$HEAD_BRANCH" --state open --json number -q '.[0].number' 2>/dev/null || true)"
+          if [ -z "$number" ]; then
+            echo "no open pull request for $HEAD_BRANCH; see the step log"
+            exit 0
+          fi
+          {
+            echo '### `features` — a site could not be compiled out'
+            echo '```'
+            grep -vE "^ *(Downloading|Downloaded|Compiling|Checking|Updating|Adding|Locking)" features.log \
+              | tail -n 60
+            echo '```'
+          } > features.md
+          gh pr comment "$number" --body-file features.md || true
+
+      - name: Fail the job
+        if: steps.one.outcome == 'failure'
+        shell: bash
+        run: exit 1
+

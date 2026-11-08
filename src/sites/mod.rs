@@ -1,4 +1,4 @@
-//! One reader per site.
+//! One reader per site, and the table that holds them.
 //!
 //! Every extractor has the same contract: take a page URL, return [`Media`]
 //! with the streams it can actually fetch, or fail with a reason a user can act
@@ -7,86 +7,40 @@
 //! format whose URL is cipher-protected is dropped, and a page that answers with
 //! a consent wall is a refusal rather than an empty success.
 
+// Each site is behind its feature: a build without `twitch` contains no Twitch
+// code at all, not a route that refuses. The list reader belongs to YouTube
+// because the only lists this build reads are YouTube's.
+#[cfg(feature = "reddit")]
 pub mod reddit;
+#[cfg(feature = "soundcloud")]
 pub mod soundcloud;
+#[cfg(feature = "tiktok")]
 pub mod tiktok;
+#[cfg(feature = "twitch")]
 pub mod twitch;
+#[cfg(feature = "vimeo")]
 pub mod vimeo;
+#[cfg(feature = "x")]
 pub mod x;
+#[cfg(feature = "youtube")]
 pub mod youtube;
+#[cfg(feature = "youtube")]
 pub mod youtube_list;
 
 use serde_json::Value;
 
-use crate::error::{Error, Result};
-use crate::extractor_args::ExtractorArgs;
-use crate::http::Http;
-use crate::model::Site;
 pub use crate::model::{Listing, Media};
-use crate::url::Url;
 
-/// What a URL names: one video, or a page that lists videos.
-///
-/// The distinction exists because `--playlist-items` means the same thing in
-/// both cases (which entries of a list to take) and because a list is the one
-/// URL a user can hand a downloader expecting it to work. It is an enum rather
-/// than an error because "this page lists twelve videos" is an answer.
-pub enum Target {
-    Video(Box<Media>),
-    List(Listing),
+pub mod registry;
+
+pub use registry::{describe_build, extract, for_host, names, Reader, Target, READERS};
+
+/// The site names this build reads. Derived from the reader table rather than
+/// written down twice, which is what keeps `--capabilities` honest in a build
+/// that compiles a site out.
+pub fn sites() -> Vec<&'static str> {
+    names()
 }
-
-/// Reads `raw_url` with the extractor for its host.
-///
-/// `args` is `--extractor-args`, already checked against the closed vocabulary
-/// in [`crate::extractor_args`], so an extractor may read it without having to
-/// defend against a value it has never seen.
-pub fn extract(http: &Http, raw_url: &str, args: &ExtractorArgs) -> Result<Target> {
-    let url = Url::parse(raw_url)?;
-    let site = Site::from_url(&url).ok_or_else(|| {
-        Error::Unsupported(format!(
-            "no extractor for {raw_url}: this build reads youtube, tiktok, x, vimeo, reddit, soundcloud and twitch"
-        ))
-    })?;
-    // A list page is not a video: the watch-page reader would answer "not a
-    // YouTube video URL", which is true and useless. The list readers answer
-    // first, and only for URLs that are unambiguously a list.
-    if let Some(listing) = listing(http, &url, raw_url)? {
-        return Ok(Target::List(listing));
-    }
-    let media = match site {
-        Site::YouTube => youtube::extract(http, &url, raw_url, args),
-        Site::TikTok => tiktok::extract(http, &url, raw_url, args),
-        Site::X => x::extract(http, &url, raw_url),
-        Site::Vimeo => vimeo::extract(http, &url, raw_url),
-        Site::Reddit => reddit::extract(http, &url, raw_url),
-        Site::SoundCloud => soundcloud::extract(http, &url, raw_url),
-        Site::Twitch => twitch::extract(http, &url, raw_url),
-    }?;
-    Ok(Target::Video(Box::new(media)))
-}
-
-/// The list readers, in the order they are asked. `None` means "not a list
-/// page", and the caller falls through to the video extractor.
-fn listing(http: &Http, url: &Url, raw_url: &str) -> Result<Option<Listing>> {
-    if let Some(kind) = youtube_list::kind(url) {
-        let listing = youtube_list::extract(http, url, &kind, raw_url)?;
-        return Ok(Some(listing));
-    }
-    Ok(None)
-}
-
-/// The site names this build reads, for `--capabilities` and for the error
-/// message above.
-pub const SITES: [&str; 7] = [
-    "youtube",
-    "tiktok",
-    "x",
-    "vimeo",
-    "reddit",
-    "soundcloud",
-    "twitch",
-];
 
 // --- small JSON helpers ----------------------------------------------------
 //

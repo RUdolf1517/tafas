@@ -13,6 +13,7 @@
 use serde_json::Value;
 
 use crate::error::{Error, Result};
+use crate::extractor_args::ExtractorArgs;
 use crate::http::{Http, UA_DESKTOP};
 use crate::model::{Container, Format, Image, Media, Site, StreamKind};
 use crate::sites::{at, list, text, uint};
@@ -23,7 +24,14 @@ const HEADERS: [(&str, &str); 2] = [
     ("referer", "https://x.com/"),
 ];
 
-pub fn extract(http: &Http, url: &Url, raw: &str) -> Result<Media> {
+pub fn extract(
+    http: &Http,
+    url: &Url,
+    raw: &str,
+    // This reader has no `--extractor-args` key; the parameter is uniform so
+    // that the table of readers has one shape.
+    _args: &ExtractorArgs,
+) -> Result<Media> {
     let id = status_id(url).ok_or_else(|| {
         Error::Usage(format!(
             "{raw} is not a post URL: expected https://x.com/<user>/status/<id>"

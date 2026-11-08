@@ -29,24 +29,59 @@ impl Site {
         }
     }
 
+    /// The site a URL names, or `None`. The host list lives in the reader
+    /// table, so this cannot disagree with what the build can actually read.
     pub fn from_url(url: &crate::url::Url) -> Option<Site> {
-        let host = url.host()?;
-        let host = host.strip_prefix("m.").unwrap_or(host);
-        let host = host.strip_prefix("mobile.").unwrap_or(host);
-        match host {
-            "youtube.com" | "youtu.be" | "music.youtube.com" | "youtube-nocookie.com" => {
-                Some(Site::YouTube)
-            }
-            "tiktok.com" | "vt.tiktok.com" | "vm.tiktok.com" | "m.tiktok.com" => Some(Site::TikTok),
-            "x.com" | "twitter.com" | "t.co" | "mobile.twitter.com" => Some(Site::X),
-            "vimeo.com" | "player.vimeo.com" => Some(Site::Vimeo),
-            "reddit.com" | "old.reddit.com" | "redd.it" | "v.redd.it" => Some(Site::Reddit),
-            "soundcloud.com" | "on.soundcloud.com" => Some(Site::SoundCloud),
-            "twitch.tv" => Some(Site::Twitch),
-            _ => None,
+        let reader = crate::sites::for_host(url.host()?)?;
+        site_of(reader.name)
+    }
+
+    /// Every site this build was compiled with.
+    pub fn all() -> Vec<Site> {
+        ALL_SITES
+            .iter()
+            .copied()
+            .filter(|site| site.is_compiled_in())
+            .collect()
+    }
+
+    /// Whether this build has a reader for `self`.
+    pub fn is_compiled_in(self) -> bool {
+        crate::sites::for_host(self.primary_host()).is_some()
+    }
+
+    /// The host that names this site in the table. One per site is enough to
+    /// ask the table; the others are the table's business.
+    fn primary_host(self) -> &'static str {
+        match self {
+            Site::YouTube => "youtube.com",
+            Site::TikTok => "tiktok.com",
+            Site::X => "x.com",
+            Site::Vimeo => "vimeo.com",
+            Site::Reddit => "reddit.com",
+            Site::SoundCloud => "soundcloud.com",
+            Site::Twitch => "twitch.tv",
         }
     }
 }
+
+/// A reader's name as a [`Site`]. A name the enum does not know is `None`, which
+/// is the one place a row could be added to the table without being added to the
+/// enum.
+pub fn site_of(name: &str) -> Option<Site> {
+    ALL_SITES.into_iter().find(|site| site.as_str() == name)
+}
+
+/// Every site the source knows about, before the build's features are applied.
+pub const ALL_SITES: [Site; 7] = [
+    Site::YouTube,
+    Site::TikTok,
+    Site::X,
+    Site::Vimeo,
+    Site::Reddit,
+    Site::SoundCloud,
+    Site::Twitch,
+];
 
 impl fmt::Display for Site {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
