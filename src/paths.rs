@@ -75,15 +75,12 @@ fn usable(path: &Path) -> bool {
     }
     // A verbatim path is taken literally: `.` and `..` mean nothing to it, so a
     // path that has them is not the path the caller meant.
-    if path
-        .components()
-        .any(|component| {
-            matches!(
-                component,
-                std::path::Component::CurDir | std::path::Component::ParentDir
-            )
-        })
-    {
+    if path.components().any(|component| {
+        matches!(
+            component,
+            std::path::Component::CurDir | std::path::Component::ParentDir
+        )
+    }) {
         return false;
     }
     // Forward slashes are directory separators to Win32 but ordinary characters
@@ -106,7 +103,10 @@ mod tests {
     #[test]
     fn an_absolute_path_gets_the_prefix() {
         let prefixed = verbatim(Path::new(r"C:\Users\a\very\deep\clip.mp4"));
-        assert_eq!(prefixed, PathBuf::from(r"\\?\C:\Users\a\very\deep\clip.mp4"));
+        assert_eq!(
+            prefixed,
+            PathBuf::from(r"\\?\C:\Users\a\very\deep\clip.mp4")
+        );
     }
 
     #[cfg(windows)]
@@ -139,14 +139,19 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn a_path_past_the_old_limit_is_written_and_renamed() {
-        let deep = std::env::temp_dir().join("a".repeat(120)).join("b".repeat(120));
+        let deep = std::env::temp_dir()
+            .join("a".repeat(120))
+            .join("b".repeat(120));
         std::fs::create_dir_all(verbatim(&deep)).expect("a deep directory");
         let part = deep.join("clip.mp4.part");
         let target = deep.join("clip.mp4");
         std::fs::write(verbatim(&part), b"bytes").expect("a long write");
         std::fs::rename(verbatim(&part), verbatim(&target)).expect("a long rename");
         assert_eq!(std::fs::read(verbatim(&target)).unwrap(), b"bytes");
-        assert!(target.as_os_str().len() > 260, "the test is about long paths");
+        assert!(
+            target.as_os_str().len() > 260,
+            "the test is about long paths"
+        );
         let _ = std::fs::remove_dir_all(verbatim(std::env::temp_dir().join("a".repeat(120))));
     }
 }

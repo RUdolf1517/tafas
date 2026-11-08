@@ -299,5 +299,4 @@ mod fit_tests {
         assert_eq!(bar_width_for(BAR_WIDTH), MIN_BAR_WIDTH);
         assert_eq!(bar_width_for(1000), MIN_BAR_WIDTH);
     }
-
 }
