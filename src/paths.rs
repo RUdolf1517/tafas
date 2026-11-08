@@ -49,8 +49,8 @@ mod imp {
             return path.to_path_buf();
         }
         let prefixed = if units[0] == BACKSLASH && units[1] == BACKSLASH {
-            // `\\server\share` loses its two leading backslashes, not the one
-            // after `share`.
+            // `\\?\` then `UNC` then a separator: `\\server\share` loses
+            // its two leading backslashes, not the one after `share`.
             let mut out: Vec<u16> = "\\\\?\\UNC\\".encode_utf16().collect();
             out.extend_from_slice(&units[2..]);
             out
