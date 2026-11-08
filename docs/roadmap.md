@@ -34,7 +34,7 @@ reader before the file is renamed. Atomic `.part` commit, ranged resume, retries
 Deliberately absent: cookies, signature solving, HLS, playlists, subtitles,
 thumbnails, live streams, more than four sites.
 
-## 2. v0.2 — the shapes users actually hit
+## 2. v0.2 — the shapes users actually hit — done, not yet released
 
 | Item | Why it is next |
 | --- | --- |
@@ -46,7 +46,7 @@ thumbnails, live streams, more than four sites.
 | **An independent demuxer in the tests** — *in: `tests/common/mp4.rs` reads a written file with its own box walker, sharing no code with `mux` or `mp4write`* | Verify a remux with a parser that shares no code with the writer (see [guarantees §6](guarantees.md#6-independence-stated-plainly)). Cheap, and it is the safety net the HLS work needs. |
 | **Packaging channels** — *done: `install.sh`, Homebrew, `.deb`/`.rpm`, the per-user Windows installer with winget manifests rendered from the shipped ZIP, an Alpine `.apk` built from the same static tarball, and AUR, Scoop and flake files rendered from the release's `SHA256SUMS` by `packaging/channels.py`* | The binary is static; distribution was the only thing standing between it and `apk add`. Two things are deliberately not automated, and both need a key this repository does not hold: the AUR package is pushed by whoever holds the AUR key, and the `.apk` is unsigned, so installing it says `--allow-untrusted`. |
 
-## 3. v0.3 — reach, and the parts that are not a URL
+## 3. v0.3 — reach, and the parts that are not a URL — done, not yet released
 
 | Item | Why |
 | --- | --- |

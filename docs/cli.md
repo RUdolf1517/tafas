@@ -80,7 +80,7 @@ note: the audio stream is opus, which cannot be remuxed with mp4 video without r
 A pair is written as: two `.part` files, a remux into `<target>.part`, a verify
 pass that re-reads the result from disk, then one rename. The layout is
 `ftyp | moov | mdat(video) | mdat(audio)`; `moov` first so a player can read the
-index without seeking to the end (see [guarantees §3](guarantees.md#3-g2--structural-verification)).
+index without seeking to the end (see [guarantees §2](guarantees.md#2-g2-structural-verification)).
 
 | `--write-info-json` | write `<name>.info.json` beside each file |
 | `--write-thumbnail` | write the page's poster frame beside each file |

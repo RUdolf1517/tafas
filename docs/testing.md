@@ -88,7 +88,7 @@ rather than an assertion about how long the client took.
   by the refusal paths; a page that has changed produces a refusal, and a bug
   report with that refusal in it is the mechanism that fixes it.
 - **Actual playback.** No test decodes a frame. `verify` checks the container,
-  not the codec (see [guarantees §2](guarantees.md#2-g2--structural-verification)),
+  not the codec (see [guarantees §2](guarantees.md#2-g2-structural-verification)),
   and the same holds for a caption track: the samples are where `stbl` says they
   are and hold a `vttc` with the cue text, but nothing renders them. Cue settings,
   `STYLE` and `REGION` are dropped on purpose, so there is no promise to test.
