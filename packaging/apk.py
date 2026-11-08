@@ -1,0 +1,228 @@
+#!/usr/bin/env python3
+"""Builds the Alpine `.apk` from the static Linux tarballs.
+
+    packaging/apk.py <version> <artifacts-dir>
+
+Why a packer in this repository instead of `apk mkpkg` in a container, which is
+what this script replaced:
+
+* `apk mkpkg` exists only in apk-tools 3, and apk-tools 3 first shipped in
+  Alpine 3.23. The workflow ran `alpine:3.20`, which has apk-tools 2.14 — so the
+  command was missing, the old script printed "skipping", and the release then
+  failed on `ls artifacts/*.apk`. It never produced a package.
+* `apk mkpkg` writes the **v3** format, which only apk-tools 3 reads. Most
+  Alpine installs today are 3.22 and older, and they are exactly the ones that
+  install a package by path. A v3 package would be a release asset that the
+  audience it is for cannot install.
+
+So this writes the **v2** format, which every apk-tools since 2.0 reads and
+apk-tools 3 still reads. `apk-v2(5)` describes it as three concatenated gzip
+streams that together form one tar: signatures, control (`.PKGINFO`), data. The
+signature stream is empty here — that is the one thing a package cannot fake
+without the Alpine key, and it is why installing says `--allow-untrusted`.
+
+`packaging/tests/apk.py` unpacks what this writes, checks the byte order of the
+two streams, the `.PKGINFO` fields, and that no file is left out.
+"""
+from __future__ import annotations
+
+import gzip
+import hashlib
+import io
+import os
+import sys
+import tarfile
+
+# What the tarball holds and where Alpine expects it. The tarball is the same
+# one the `.deb` and `.rpm` are built from, so the three agree by construction.
+LAYOUT = [
+    ("tafas", "usr/bin/tafas", 0o755),
+    ("man/tafas.1", "usr/share/man/man1/tafas.1", 0o644),
+    ("completions/tafas.bash", "usr/share/bash-completion/completions/tafas", 0o644),
+    ("completions/_tafas", "usr/share/zsh/site-functions/_tafas", 0o644),
+    ("completions/tafas.fish", "usr/share/fish/vendor_completions.d/tafas.fish", 0o644),
+]
+
+# Alpine spells the two architectures differently from Debian and from the
+# Rust triples: x86_64, and aarch64 (not arm64).
+TARGETS = [
+    ("x86_64", "x86_64-unknown-linux-musl"),
+    ("aarch64", "aarch64-unknown-linux-musl"),
+]
+
+DESCRIPTION = (
+    "Capture a video from YouTube, TikTok, X, Vimeo, Reddit, SoundCloud or "
+    "Twitch into one file"
+)
+
+
+def gzip_stream(raw: bytes) -> bytes:
+    """A gzip member with no name and no mtime.
+
+    `-n` in the shell equivalent: the header must not carry the build machine's
+    clock, or two builds of one tag differ. This is the same rule the Rust build
+    follows with `SOURCE_DATE_EPOCH`.
+    """
+    buf = io.BytesIO()
+    with gzip.GzipFile(fileobj=buf, mode="wb", compresslevel=9, mtime=0) as gz:
+        gz.write(raw)
+    return buf.getvalue()
+
+
+def add_file(tar: tarfile.TarFile, name: str, data: bytes, mode: int, mtime: int) -> None:
+    info = tarfile.TarInfo(name)
+    info.size = len(data)
+    info.mode = mode
+    info.mtime = mtime
+    # root:root, as abuild runs as root in the container it builds in.
+    info.uid = 0
+    info.gid = 0
+    info.uname = "root"
+    info.gname = "root"
+    info.type = tarfile.REGTYPE
+    tar.addfile(info, io.BytesIO(data))
+
+
+def pax_record(key: str, value: str) -> bytes:
+    """One pax extended header record, with its own length in decimal.
+
+    The length includes the length digits, which is the part everyone gets wrong
+    first: compute it in a loop until the digits stop changing the answer.
+    """
+    body = f" {key}={value}\n".encode()
+    length = len(body) + 2  # a digit and the space, at minimum
+    while True:
+        record = f"{length}".encode() + body
+        if len(record) == length:
+            return record
+        length = len(record)
+
+
+def add_file_with_checksum(
+    tar: tarfile.TarFile, name: str, data: bytes, mode: int, mtime: int, digest: str
+) -> None:
+    """A regular file preceded by the `APK-TOOLS.checksum.SHA1` pax header.
+
+    `apk-v2(5)`: the data section's files "use pax extended headers to include
+    per-file checksums in a header named APK-TOOLS.checksum.<hash>". abuild gets
+    them from `abuild-tar --hash` and melange does the same; the entry is named
+    `<dir>/PaxHeaders.0/<file>`, carries no user name and no mode, and holds one
+    record. A real package's stream was read to confirm all four details, because
+    a pax block that names `path` would rename the file it precedes.
+    """
+    payload = pax_record("APK-TOOLS.checksum.SHA1", digest)
+    parent, _, base = name.rpartition("/")
+    info = tarfile.TarInfo(f"{parent + '/' if parent else ''}PaxHeaders.0/{base}")
+    info.size = len(payload)
+    info.type = tarfile.XHDTYPE
+    info.mode = 0
+    info.mtime = mtime
+    info.uid = 0
+    info.gid = 0
+    tar.addfile(info, io.BytesIO(payload))
+    add_file(tar, name, data, mode, mtime)
+
+
+def control_pkginfo(version: str, apk_arch: str, installed_bytes: int, mtime: int) -> bytes:
+    return (
+        f"# Generated by packaging/apk.py from the release's static tarball.\n"
+        f"pkgname = tafas\n"
+        f"pkgver = {version}-r0\n"
+        f"pkgdesc = {DESCRIPTION}\n"
+        f"url = https://github.com/RUdolf1517/tafas\n"
+        f"builddate = {mtime}\n"
+        f"packager = RUdolf1517 <rudolfzinovev@protonmail.com>\n"
+        f"size = {installed_bytes}\n"
+        f"arch = {apk_arch}\n"
+        f"license = MIT\n"
+        f"origin = tafas\n"
+        f"# Static musl: not even libc is a dependency, which is the point.\n"
+        f"depend =\n"
+    ).encode()
+
+
+def build(artifacts, version: str, apk_arch: str, triple: str) -> str:
+    tarball = artifacts / f"tafas-{triple}.tar.gz"
+    if not tarball.is_file():
+        raise SystemExit(f"apk: missing {tarball}")
+
+    # The commit's own time, so the package is reproducible like the binary.
+    mtime = int(os.environ.get("SOURCE_DATE_EPOCH") or 0)
+
+    members: list[tuple[str, bytes, int]] = []
+    with tarfile.open(tarball, "r:gz") as tf:
+        for src, dst, mode in LAYOUT:
+            try:
+                member = tf.getmember(src)
+            except KeyError:
+                raise SystemExit(f"apk: {tarball.name} has no {src}") from None
+            data = tf.extractfile(member).read()
+            members.append((dst, data, mode))
+
+    # Directories, in path order, as abuild's `apk_tar` produces them: the data
+    # section names every directory the files live in.
+    dirs: list[str] = []
+    for dst, _, _ in members:
+        parts = dst.split("/")[:-1]
+        for i in range(1, len(parts) + 1):
+            d = "/".join(parts[:i])
+            if d not in dirs:
+                dirs.append(d)
+
+    # --- data.tar.gz -------------------------------------------------------
+    data_raw = io.BytesIO()
+    with tarfile.open(fileobj=data_raw, mode="w", format=tarfile.USTAR_FORMAT) as tar:
+        for d in sorted(dirs):
+            info = tarfile.TarInfo(d)
+            info.type = tarfile.DIRTYPE
+            info.mode = 0o755
+            info.mtime = mtime
+            info.uid = info.gid = 0
+            info.uname = info.gname = "root"
+            tar.addfile(info)
+        for dst, data, mode in members:
+            digest = hashlib.sha1(data).hexdigest()
+            add_file_with_checksum(tar, dst, data, mode, mtime, digest)
+    data_gz = gzip_stream(data_raw.getvalue())
+    # The hash of the compressed stream, not of the tar inside it: that is what
+    # abuild appends and what a real melange-built package carries.
+    datahash = hashlib.sha256(data_gz).hexdigest()
+
+    # --- control.tar.gz ----------------------------------------------------
+    # Installed size in bytes, as abuild and melange write it — apk shows it
+    # when it asks how much a transaction will change.
+    installed_bytes = sum(len(d) for _, d, _ in members)
+    control_raw = io.BytesIO()
+    with tarfile.open(fileobj=control_raw, mode="w", format=tarfile.USTAR_FORMAT) as tar:
+        add_file(
+            tar,
+            ".PKGINFO",
+            control_pkginfo(version, apk_arch, installed_bytes, mtime) + f"datahash = {datahash}\n".encode(),
+            0o644,
+            mtime,
+        )
+    control_gz = gzip_stream(control_raw.getvalue())
+
+    # Three concatenated gzip streams, one tar: signatures (empty), control,
+    # data — the order `apk-v2(5)` requires.
+    out = artifacts / f"tafas-{version}-{apk_arch}.apk"
+    out.write_bytes(control_gz + data_gz)
+    return out.name
+
+
+def main(argv: list[str]) -> int:
+    if len(argv) != 3:
+        print("usage: apk.py <version> <artifacts-dir>", file=sys.stderr)
+        return 2
+    from pathlib import Path
+
+    version = argv[1].lstrip("v")
+    artifacts = Path(argv[2])
+    for apk_arch, triple in TARGETS:
+        name = build(artifacts, version, apk_arch, triple)
+        print(f"apk: wrote {artifacts / name}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

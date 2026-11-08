@@ -53,6 +53,11 @@ jobs:
             --windows-archive /tmp/winget-check/tafas-x86_64-pc-windows-msvc.zip \
             --output-dir /tmp/winget-check/manifests
           python3 packaging/winget/tests/check.py /tmp/winget-check/manifests
+          # The `.apk` packer. It replaced `apk mkpkg` in a container, which
+          # never made a package: `mkpkg` is apk-tools 3 and `alpine:3.20` has
+          # 2.14, and the v3 format it writes is unreadable to most installs
+          # that install a package by path.
+          python3 packaging/tests/apk.py
 
       - name: Clippy
         id: clippy

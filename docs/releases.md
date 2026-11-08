@@ -93,10 +93,13 @@ stable URL, which is what `install.sh` downloads from.
 | archive | everything else | unpack, put `tafas` on `PATH` |
 
 `apk` is the only channel that asks the user for `--allow-untrusted`. The package
-is built by `packaging/apk.sh` with `apk mkpkg`, from the same static tarball the
-other packages are built from, and it is **not signed**: signing needs an Alpine
-private key, which is a secret this repository does not hold — the same
-restriction, and the same honesty, as `packaging/minisign.pub` in §7. The AUR,
+is built by `packaging/apk.py` from the same static tarball the other packages
+are built from, and it is **not signed**: signing needs an Alpine private key,
+which is a secret this repository does not hold — the same restriction, and the
+same honesty, as `packaging/minisign.pub` in §7. It is the v2 package format,
+which every apk-tools since 2.0 reads; `apk mkpkg` would have written v3, which
+only Alpine 3.23 and newer can install, and the audience for a package installed
+by path is mostly the older branches. The AUR,
 Scoop and flake files are rendered from the release's `SHA256SUMS` by
 `packaging/channels.py`, so each hash in them is the hash of an archive that
 exists; none of the three is checked in, because a file that repeats the hash of
@@ -163,7 +166,7 @@ These steps were run once, for 0.2.0, which carried the whole roadmap
 3. `git tag vX.Y.Z && git push origin vX.Y.Z`.
 4. The release workflow builds the five targets, packages them with the manual
    page and the completions, builds the `.deb`/`.rpm` from the Linux tarball
-   with `nfpm` and the `.apk` from the same tarball with `apk mkpkg`, copies
+   with `nfpm` and the `.apk` from the same tarball with `packaging/apk.py`, copies
    `install.ps1` into the assets, renders the winget manifests from the Windows
    ZIP, writes the SBOM, writes `SHA256SUMS`, renders the AUR, Scoop and flake
    files from those checksums, signs every file when the key is present, and
@@ -178,10 +181,12 @@ shipped binary is produced, which is what makes "the archive contains what the
 tag contains" a property rather than a hope.
 
 The publish job needs three tools beyond Rust and the shell: `nfpm` (Go) for the
-`.deb`/`.rpm`, `python3` for the winget manifests, the AUR/Scoop/flake files and
-the SBOM, and `minisign` only when the signing key is set. The `.apk` is built in
-an `alpine:3.20` container, because `apk mkpkg` is apk-tools 3 and the runner is
-Ubuntu. Two things stay human, and both for the same reason — a key this
+`.deb`/`.rpm`, `python3` for the `.apk`, the winget manifests, the
+AUR/Scoop/flake files and the SBOM, and `minisign` only when the signing key is
+set. Nothing in the publish job needs Docker: the `.apk` is a format, not a
+toolchain, and writing it in Python removed the container, the Alpine image tag
+and a class of "the image moved and the command is gone" failure. Two things
+stay human, and both for the same reason — a key this
 repository does not hold: the AUR package is pushed with an AUR key, and the
 `.apk` is unsigned. None is needed by anyone who installs a
 release; on Windows the installer needs only PowerShell, which Windows already

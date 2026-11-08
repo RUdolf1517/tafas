@@ -46,8 +46,9 @@ publishing something nobody can check.
   to every site — detection, refusals, the escape hatch — and each site's
   routes and refusal table is a page of its own under `docs/sites/`.
 - **An Alpine `.apk`, and AUR, Scoop and flake files.** The `.apk` is built
-  from the same static tarball as the `.deb` and `.rpm` with `apk mkpkg`, and
-  is unsigned, so installing it asks for `--allow-untrusted`. The `PKGBUILD`,
+  from the same static tarball as the `.deb` and `.rpm` by `packaging/apk.py`,
+  in the v2 format that every apk-tools since 2.0 reads, and is unsigned, so
+  installing it asks for `--allow-untrusted`. The `PKGBUILD`,
   the Scoop manifest and a `flake.nix` are rendered at release time from
   `SHA256SUMS` by `packaging/channels.py`, so every hash in them is the hash of
   an archive that exists; `--self-test` renders all three from a stand-in

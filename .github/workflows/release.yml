@@ -237,14 +237,18 @@ jobs:
       # container rather than the Ubuntu runner. An unrelated architecture is
       # no obstacle, because the binary inside the package is built for Alpine's
       # targets and not for the container that wraps it.
+      # No container: the package is the v2 format, which is two gzip members
+      # around a control and a data tar, and `packaging/apk.py` writes it. The
+      # previous version ran `apk mkpkg` inside `alpine:3.20`, where that command
+      # does not exist (it arrived with apk-tools 3, in Alpine 3.23), so it
+      # printed "skipping" and the next line failed on `ls artifacts/*.apk`.
       - name: Alpine package
         shell: bash
         env:
           TAG: ${{ inputs.tag || github.event.release.tag_name }}
         run: |
           set -euo pipefail
-          docker run --rm -v "$PWD/artifacts:/artifacts" -v "$PWD/packaging:/packaging:ro" \
-            alpine:3.20 sh -c "apk add --no-cache apk-tools && sh /packaging/apk.sh '${TAG}' /artifacts"
+          python3 packaging/apk.py "$TAG" artifacts
           ls -l artifacts/*.apk
 
       - name: Windows installer and local winget manifests
