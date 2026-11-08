@@ -390,7 +390,8 @@ fn every_site_has_a_documentation_page() {
             if !file.ends_with(".md") {
                 continue;
             }
-            let path = page.parent().join(file);
+            let directory = page.parent().expect("a page lives in a directory");
+            let path = directory.join(file);
             assert!(
                 path.is_file(),
                 "docs/sites/{site}.md links {link}, which does not exist next to it"
