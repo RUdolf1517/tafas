@@ -83,6 +83,14 @@ Output directories are created with `create_dir_all` when the user named a
 directory that does not exist. Nothing else is created, and nothing is deleted
 except the temporaries this run made.
 
+The length of a path is not one of the rules above: it is a platform detail.
+On Windows every path this program creates, renames or deletes is handed over in
+its `\\?\` form (`paths::verbatim`), which lifts the 260-character limit; a UNC
+path becomes `\\?\UNC\`, and a path where prefixing could change the meaning —
+relative, already prefixed, or carrying `.`/`..` or forward slashes — is passed
+through unchanged. Elsewhere the function is the identity, so there is one code
+path and no platform branch at the call sites.
+
 ## 5. Network
 
 | Decision | Value |

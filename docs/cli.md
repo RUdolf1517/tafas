@@ -196,6 +196,13 @@ served. A selection that matches no segment is a refusal (1); one that does not
 start on a keyframe is written, with a warning that the first frames will not
 decode.
 
+Long paths on Windows are handled rather than refused: every path tafas writes —
+the staging file, the rename into place, a deep output directory, the HLS cache
+sidecars — is opened in its `\\?\` form when the platform needs it, which lifts
+the 260-character limit. A relative path, a path already in that form, one
+carrying `.`/`..` or forward slashes is passed through untouched, and a UNC path
+becomes `\\?\UNC\`. Nothing about this is visible on Linux or macOS.
+
 `--limit-rate RATE` caps the media bytes this run pulls: a progressive body and
 every segment of a list are charged against one budget, so `--concurrent-fragments
 4` divides the rate rather than multiplying it. `RATE` is bytes per second with an
@@ -318,6 +325,12 @@ expects. `tafas --man | head -1` and `tafas URL | xargs mpv` both behave.
 Progress is drawn only when stderr is a terminal, `--quiet`/`--json`/
 `--no-progress` are absent, and `-j` is 1. With several jobs the per-item line
 takes its place, so two workers cannot draw on top of each other.
+
+The line is fitted to the terminal: it is shortened to `COLUMNS` columns by
+taking width from the bar first, because the numbers are what a narrow window
+cannot do without, and a `COLUMNS` below 24 is treated as unset rather than
+believed. Windows consoles are the case this exists for — a long path in a
+default 80-column window used to wrap and leave two half-lines behind.
 
 ## 8. Colour
 

@@ -304,6 +304,15 @@ The poster frame, written only with \fB\-\-write\-thumbnail\fR.
 .I <target stem>.<language>.vtt, <target stem>.<language>.auto.vtt
 WebVTT captions, written only with \fB\-\-write\-subs\fR. The same cues can go
 inside the file instead, with \fB\-\-embed\-subs\fR.
+.TP
+.I <target>.part.segments, <target>.part.journal
+The segments of an HLS list fetched so far, kept beside the part so an
+interrupted run asks only for what is missing. Deleted when the file is
+renamed into place, and by \fB\-\-no\-resume\fR.
+.PP
+On Windows a path past 260 characters is written in its verbatim form (a
+prefix in front of it), which lifts the limit and lets a deep output
+directory work; nothing about this is visible elsewhere.
 .SH SEE ALSO
 .BR curl (1),
 .BR ffmpeg (1)
