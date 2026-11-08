@@ -648,6 +648,9 @@ fn open_files(
     let payload = fs::OpenOptions::new()
         .create(true)
         .write(true)
+        // Not truncating here: the length is set below, to the last whole
+        // segment rather than to zero.
+        .truncate(false)
         .open(payload_path)?;
     payload.set_len(kept)?;
     drop(payload);
