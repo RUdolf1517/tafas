@@ -42,7 +42,7 @@ section: utils
 priority: optional
 maintainer: RUdolf1517 <rudolfzinovev@protonmail.com>
 description: |
-  Capture a video from YouTube, TikTok or X as one playable MP4.
+  Capture a video from YouTube, TikTok, X, Vimeo, Reddit, SoundCloud or Twitch as one playable MP4.
   Picture and sound are copied and the container index is rebuilt: nothing is
   re-encoded and no external program is run.
 homepage: https://github.com/RUdolf1517/tafas

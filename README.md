@@ -154,18 +154,23 @@ stream, which is what a phone on a train wants.
 
 | Site | URL shapes | Route | What it writes |
 | --- | --- | --- | --- |
-| **YouTube** | `watch?v=`, `youtu.be/`, `/shorts/`, `/embed/`, `/live/`, `music.youtube.com` | the watch page's inlined player response, then InnerTube with a fixed client chain (`android_vr` → `ios` → `android` → embedded TV → `web`) | MP4; separate DASH streams are remuxed into one file |
+| **YouTube** | `watch?v=`, `youtu.be/`, `/shorts/`, `/embed/`, `/live/`, `music.youtube.com`; lists: `/playlist?list=`, `/@handle`, `/channel/`, `/c/`, `/user/` | the watch page's inlined player response, then InnerTube with a fixed client chain (`android_vr` → `ios` → `android` → embedded TV → `web`) | MP4; separate DASH streams are remuxed into one file |
 | **TikTok** | `/@user/video/`, `/@user/photo/`, `vm.tiktok.com`, `vt.tiktok.com` | the page's rehydration document, then the mobile feed | MP4, watermark-free version preferred; photo posts give images |
 | **X** | `/<user>/status/`, `i/web/status/`, `t.co` | the syndication endpoint the embedded widget uses | MP4 (video, or an animated GIF's MP4), the post's photos as JPEG, or — when a post offers nothing else — its HLS playlist assembled into an MP4 |
-| **Vimeo** | `vimeo.com/<id>`, channel URLs, unlisted `<id>/<hash>`, `player.vimeo.com/video/<id>` | the player's own configuration endpoint; one request, no HTML | MP4 from the progressive files; a video that offers only an HLS playlist is assembled into an MP4; the poster and duration come from the same document |
+| **Vimeo** | `vimeo.com/<id>`, channel URLs, unlisted `<id>/<hash>`, `player.vimeo.com/video/<id>`; lists: `/album/<id>`, `/showcase/<id or slug>` | the player's own configuration endpoint; one request, no HTML | MP4 from the progressive files; a video that offers only an HLS playlist is assembled into an MP4; the poster and duration come from the same document |
 | **Reddit** | `/r/<sub>/comments/<id>/`, `redd.it`, `v.redd.it/<hash>` | the post's own JSON (`/comments/<id>.json`), or the fixed playlist path for a bare media URL | MP4 assembled from the HLS playlist; the progressive `DASH_<height>.mp4` files carry no audio and are refused by name |
 | **SoundCloud** | `<artist>/<track>`, `on.soundcloud.com` | the page's hydration document, then the transcoding document it names | **MP3**, copied byte for byte — sound only, no container rebuilt; sets, Go+ tracks and opus-only renditions are refused by name |
-| **Twitch** | `/videos/<id>` | one batched GraphQL request: the playback token, plus the title, length and poster | MP4 assembled from the usher playlist; a live channel, a clip and a subscriber-only recording are refused by name |
+| **Twitch** | `/videos/<id>`; lists: `/collections/<id>` | one batched GraphQL request: the playback token, plus the title, length and poster | MP4 assembled from the usher playlist; a live channel, a clip and a subscriber-only recording are refused by name |
 
 A site is listed only because its reader exists and its refusals are written
 down. What each one can and cannot reach — age gates, PO tokens, signature
-ciphers, HEVC fragments — is one table away in
-[docs/extractors.md](docs/extractors.md).
+ciphers, HEVC fragments — is in [docs/extractors.md](docs/extractors.md), and
+each site's own page is under [docs/sites/](docs/sites/youtube.md).
+
+A URL that names *other* videos — a playlist, a channel, an album, a collection
+— captures each entry on its own, into a directory, as `03 - Title [id].mp4`,
+with `--playlist-items` choosing which; one dead entry does not stop the rest.
+Three sites have such a page, and they are the three marked above.
 
 ## Why tafas
 

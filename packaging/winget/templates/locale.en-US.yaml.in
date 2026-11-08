@@ -4,7 +4,7 @@ PackageLocale: en-US
 Publisher: RUdolf1517
 PackageName: tafas
 License: MIT
-ShortDescription: Fetch a video from YouTube, TikTok or X as one playable MP4.
+ShortDescription: Fetch a video from YouTube, TikTok, X, Vimeo, Reddit, SoundCloud or Twitch as one playable MP4.
 Description: Tafas picks a format, fetches it, verifies it and renames it into place atomically. Picture and sound are copied, never re-encoded, and no external program is run. A capability it lacks is reported by name instead of being skipped silently.
 ManifestType: defaultLocale
 ManifestVersion: 1.6.0

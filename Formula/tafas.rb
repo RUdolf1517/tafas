@@ -7,7 +7,7 @@
 # The `sha256` values are filled in from the release's SHA256SUMS after the tag
 # exists; the release notes carry them. See docs/releases.md §4.
 class Tafas < Formula
-  desc "Capture a video from YouTube, TikTok or X as one playable MP4"
+  desc "Capture a video from YouTube, TikTok, X, Vimeo, Reddit, SoundCloud or Twitch as one playable MP4"
   homepage "https://github.com/RUdolf1517/tafas"
   version "0.1.0"
   license "MIT"
