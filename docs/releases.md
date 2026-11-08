@@ -21,6 +21,14 @@ What counts as breaking here is not the command line but the *contract*:
 `tafas --version` prints the crate version. The binary has no self-update
 mechanism, checks for nothing and downloads nothing except the URL you gave it.
 
+**Nothing is tagged until the whole [roadmap](roadmap.md) is done.** The first
+release carries v0.2 through v0.5 in one archive; until then `main` is the
+freshest thing there is, and `cargo install --git
+https://github.com/RUdolf1517/tafas` is how a reader gets it. This is deliberate:
+a tag is a promise about an archive that cannot be edited afterwards, and a
+roadmap item that is still being built is not a promise yet. When the tag is
+cut, this section and the table in [§4](#4-how-a-release-is-cut) describe it.
+
 ## 2. What a release contains
 
 | Artifact | Target | Notes |
@@ -122,6 +130,10 @@ reviewed publication with its own cadence, and claiming one here would be a
 promise this repository does not keep.
 
 ## 4. How a release is cut
+
+**This waits for the roadmap to be finished** ([§1](#1-versioning)): the steps
+below run once, for a release that carries v0.2 through v0.5, not once per
+version.
 
 1. `CHANGELOG.md` gets its section, `Cargo.toml` its version.
 2. The version is committed to `main` with the tag that will carry it.

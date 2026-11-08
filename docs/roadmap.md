@@ -13,6 +13,17 @@ Two rules keep this list honest:
 - an item that stays unsupported gets a refusal text in
   [extractors](extractors.md), because "not yet" is a feature only if it says so.
 
+**One rule decides when anything is tagged.** No version is released until the
+whole roadmap is done — v0.2 through v0.5 — so the first tag carries all of it.
+This is the project owner's decision, and it is a decision about *releases*, not
+about the work: commits land on `main` continuously and CI builds them, but a
+version number is a promise about a published archive, and the archive appears
+once. The consequence worth knowing as a user: `main` is ahead of every release
+by design, `cargo install --git` is the way to get what is described here, and
+the state of each item below says what is *in the tree*, not what is
+downloadable. [releases §1](releases.md#1-versioning) repeats the rule where a
+reader looks for a version.
+
 ## 1. v0.1.0 — shipped
 
 YouTube (watch page + InnerTube client chain), TikTok (page rehydration + mobile

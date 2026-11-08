@@ -323,3 +323,29 @@ fn the_release_builds_an_sbom_and_signs_what_it_publishes() {
         "the Windows ZIP must hold exactly two entries: {zip_line}"
     );
 }
+
+/// A release is cut only when the roadmap is finished, and the three places a
+/// reader looks — the readme, the roadmap, the releases page — have to say so.
+/// The rule lives in prose, which is exactly the kind of thing that survives one
+/// edit and not two.
+#[test]
+fn no_release_is_cut_before_the_roadmap_is_done() {
+    for file in ["README.md", "docs/roadmap.md", "docs/releases.md"] {
+        let text = read(file);
+        assert!(
+            text.contains("until the whole") && text.contains("roadmap") && text.contains("is done"),
+            "{file} no longer says that nothing is tagged before the roadmap is done"
+        );
+    }
+    // And the procedure itself points at the rule, so nobody follows it in the
+    // belief that a version comes out of it today.
+    let releases = read("docs/releases.md");
+    let cut = releases
+        .split("## 4. How a release is cut")
+        .nth(1)
+        .expect("docs/releases.md describes how a release is cut");
+    assert!(
+        cut.contains("waits for the roadmap"),
+        "the release procedure must say what it is waiting for"
+    );
+}
