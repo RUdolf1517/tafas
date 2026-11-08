@@ -12,7 +12,8 @@
 //!
 //! Two things are deliberately not done here. A **lockup** (the newer
 //! `lockupViewModel` shape) is not read yet: the pages this reads serve
-//! `playlistVideoRenderer` and `richItemRenderer`, and a shape this build cannot
+//! `playlistVideoRenderer` and the `videoRenderer` a `richItemRenderer` wraps,
+//! and a shape this build cannot
 //! read is a refusal that names it rather than an empty list. And **paging is
 //! bounded at one continuation per page**, so a channel with ten thousand videos
 //! is refused with the number it did read rather than followed forever.
@@ -303,19 +304,15 @@ fn collect(document: &Value, entries: &mut Vec<Entry>) -> Option<String> {
     find_continuation(document)
 }
 
+/// Every entry shape the two page kinds use, found by key and then recursed
+/// into. Only the *renderer* keys are named: a `richItemRenderer` wraps its
+/// video in a `videoRenderer`, so matching both would count it twice.
 fn walk(value: &Value, entries: &mut Vec<Entry>) {
     match value {
         Value::Object(map) => {
             if let Some(renderer) = map.get("playlistVideoRenderer") {
                 if let Some(entry) = entry_from(renderer) {
                     entries.push(entry);
-                }
-            }
-            if let Some(item) = map.get("richItemRenderer") {
-                if let Some(renderer) = item.get("content").and_then(|c| c.get("videoRenderer")) {
-                    if let Some(entry) = entry_from(renderer) {
-                        entries.push(entry);
-                    }
                 }
             }
             if let Some(renderer) = map.get("videoRenderer") {
