@@ -138,6 +138,16 @@ jobs:
           set -euo pipefail
           name="tafas-${{ matrix.target }}"
           bin="target/${{ matrix.target }}/release/tafas"
+          # An aarch64 Linux binary on an x86_64 runner cannot be executed, so
+          # the completions come from a host build of the same source rather
+          # than from `dist/tafas`. Generating them from the *target* binary was
+          # only ever a convenience; what matters is that they describe this
+          # parser, and a host build of the same commit does.
+          host=""
+          if [ "${{ matrix.cross }}" = "true" ]; then
+            cargo build --release --locked
+            host="target/release/tafas"
+          fi
           mkdir -p dist
 
           if [ -f "${bin}.exe" ]; then
@@ -155,11 +165,12 @@ jobs:
             cp LICENSE dist/
             mkdir -p dist/man dist/completions
             cp man/tafas.1 dist/man/
-            # Completions are generated from the shipped binary, so the archive
-            # cannot contain a script that disagrees with its own parser.
-            dist/tafas --completions bash > dist/completions/tafas.bash
-            dist/tafas --completions zsh > dist/completions/_tafas
-            dist/tafas --completions fish > dist/completions/tafas.fish
+            # Completions are generated from a binary built from this checkout,
+            # never from a checked-in script, so the archive cannot contain a
+            # completion set that disagrees with its own parser.
+            "${host:-dist/tafas}" --completions bash > dist/completions/tafas.bash
+            "${host:-dist/tafas}" --completions zsh > dist/completions/_tafas
+            "${host:-dist/tafas}" --completions fish > dist/completions/tafas.fish
             (cd dist && tar czf "../${name}.tar.gz" tafas LICENSE man completions)
             echo "ASSET=${name}.tar.gz" >> "$GITHUB_ENV"
           fi
