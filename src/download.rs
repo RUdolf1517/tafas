@@ -306,7 +306,7 @@ fn process(http: &Http, url: &str, options: &Options, printer: &Printer) -> Vec<
 /// entries as separate URLs.
 fn process_list(
     http: &Http,
-    listing: sites::Listing,
+    listing: crate::model::Listing,
     options: &Options,
     printer: &Printer,
 ) -> Vec<Item> {

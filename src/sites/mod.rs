@@ -21,7 +21,8 @@ use serde_json::Value;
 use crate::error::{Error, Result};
 use crate::extractor_args::ExtractorArgs;
 use crate::http::Http;
-use crate::model::{Listing, Media, Site};
+pub use crate::model::{Listing, Media};
+use crate::model::Site;
 use crate::url::Url;
 
 /// What a URL names: one video, or a page that lists videos.

@@ -97,9 +97,9 @@ pub fn extract(http: &Http, url: &Url, kind: &Kind, raw: &str) -> Result<Listing
 }
 
 fn playlist(http: &Http, list: &str, raw: &str) -> Result<Listing> {
-    let (key, client) = context(http, raw);
+    let key = api_key(http);
     let body = json!({
-        "context": client,
+        "context": client_context(),
         "browseId": format!("VL{list}"),
     });
     let document = browse(http, &key, &body, raw)?;
@@ -144,14 +144,14 @@ fn playlist(http: &Http, list: &str, raw: &str) -> Result<Listing> {
 }
 
 fn channel(http: &Http, url: &Url, handle: &str, id: &str, raw: &str) -> Result<Listing> {
-    let (key, client) = context(http, raw);
+    let key = api_key(http);
     let channel_id = if !id.is_empty() {
         id.to_string()
     } else {
-        resolve_handle(http, url, handle, &key, raw)?
+        resolve_handle(http, url, handle, raw)?
     };
     let body = json!({
-        "context": client,
+        "context": client_context(),
         "browseId": channel_id,
     });
     let document = browse(http, &key, &body, raw)?;
@@ -176,7 +176,7 @@ fn channel(http: &Http, url: &Url, handle: &str, id: &str, raw: &str) -> Result<
         })
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
-        .unwrap_or(channel_id);
+        .unwrap_or_else(|| channel_id.clone());
 
     let mut listing = Listing::new(
         Site::YouTube,
@@ -201,9 +201,8 @@ fn channel(http: &Http, url: &Url, handle: &str, id: &str, raw: &str) -> Result<
     while let Some(next) = token.take() {
         if pages >= MAX_PAGES {
             return Err(Error::Refused(format!(
-                "youtube: channel {}: more than {} videos; this build reads the first {}, then \
-                 stops rather than walking the whole channel",
-                listing.id,
+                "youtube: channel {handle}: more than {} videos; this build reads the first {}, \
+                 then stops rather than walking the whole channel",
                 entries.len(),
                 entries.len()
             )));
@@ -213,12 +212,12 @@ fn channel(http: &Http, url: &Url, handle: &str, id: &str, raw: &str) -> Result<
         token = collect(&document, &mut entries);
         pages += 1;
     }
-    finish(listing, entries, "channel", &listing.id.clone())
+    finish(listing, entries, "channel", &id.to_string())
 }
 
 /// `/@handle` has no browse id in the URL, so the page is read for the one it
 /// carries — `channelId` is in the first inline state object.
-fn resolve_handle(http: &Http, url: &Url, handle: &str, _key: &str, raw: &str) -> Result<String> {
+fn resolve_handle(http: &Http, url: &Url, handle: &str, raw: &str) -> Result<String> {
     let page = http
         .get_text(&url.to_string(), &HEADERS)
         .map_err(|error| Error::Refused(format!("youtube: {raw}: {error}")))?;
@@ -257,14 +256,14 @@ fn resolve_handle(http: &Http, url: &Url, handle: &str, _key: &str, raw: &str) -
 
 /// The API key and the client context, from the page when it can be read and
 /// from the documented web client when it cannot.
-fn context(http: &Http, raw: &str) -> (String, Value) {
+fn api_key(http: &Http) -> String {
+    // Any YouTube page carries the key in its inline configuration; the watch
+    // page is not needed and is not asked for.
     let page = http
         .get_text("https://www.youtube.com/playlist?list=WL&hl=en", &HEADERS)
         .unwrap_or_default();
-    let key = super::youtube::inline_api_key(&page)
-        .unwrap_or_else(|| super::youtube::PUBLIC_WEB_API_KEY.to_string());
-    let _ = raw;
-    (key, client_context())
+    super::youtube::inline_api_key(&page)
+        .unwrap_or_else(|| super::youtube::PUBLIC_WEB_API_KEY.to_string())
 }
 
 fn client_context() -> Value {
@@ -302,13 +301,9 @@ fn browse(http: &Http, key: &str, body: &Value, raw: &str) -> Result<Value> {
 /// ends with.
 fn collect(document: &Value, entries: &mut Vec<Entry>) -> Option<String> {
     walk(document, entries);
-    at(document, &["continuationContents"])
-        .and_then(|_| None)
-        .or_else(|| {
-            // `nextContinuationData` on the older shape, `continuationCommand` on
-            // the newer one; both are one string.
-            find_continuation(document)
-        })
+    // `nextContinuationData` on the older shape, `continuationCommand` on the
+    // newer one; both are one string, and a page with no token is the end.
+    find_continuation(document)
 }
 
 fn walk(value: &Value, entries: &mut Vec<Entry>) {
