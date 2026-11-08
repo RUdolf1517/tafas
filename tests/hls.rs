@@ -739,8 +739,9 @@ fn a_failed_list_is_resumed_from_the_segments_it_kept() {
         "the segment that failed is fetched again"
     );
     assert_eq!(server.hits("/seg4.ts"), 1);
-    // Four segments this time: two from the cache and two from the server.
-    assert_eq!(report.video_samples, count as u64);
+    // Eight samples: two segments the cache kept and two the server sent, each
+    // contributing a video sample and an audio one.
+    assert_eq!(report.video_samples, 2 * count as u64);
     hlsfetch::forget(&part);
     let _ = std::fs::remove_file(&out);
 }
