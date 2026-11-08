@@ -425,3 +425,53 @@ fn every_reader_is_a_feature_and_every_feature_is_a_reader() {
         );
     }
 }
+
+/// Every script the release job runs has to exist, and the page that describes
+/// the process has to name the script that is actually there.
+///
+/// This test exists because two of the release's steps were green while doing
+/// nothing: `linux-packages.sh` skips itself when `nfpm` is missing, and the
+/// `.apk` step ran a command that does not exist in the image it used. Both
+/// produced a release with missing artifacts and a passing job, and both were
+/// only found by cutting a tag. A path in the workflow is a reference like any
+/// other, so it is checked like one.
+#[test]
+fn every_script_the_release_runs_exists() {
+    let release = read(".github/workflows/release.yml");
+    let docs = read("docs/releases.md");
+
+    // `packaging/<name>.<sh|py>` in the workflow is a file that must be in the
+    // repository; the workflow cannot discover a missing one until it runs.
+    let mut seen = BTreeSet::new();
+    for word in release.split(|c: char| c.is_whitespace() || c == '"' || c == '\'' || c == '\\') {
+        let word = word.trim_end_matches([',', ';', ')']);
+        if word.starts_with("packaging/") && (word.ends_with(".sh") || word.ends_with(".py")) {
+            assert!(
+                manifest_dir().join(word).is_file(),
+                "release.yml runs {word}, which does not exist"
+            );
+            seen.insert(word.to_string());
+        }
+    }
+    assert!(
+        seen.contains("packaging/apk.py"),
+        "the release must build the Alpine package; it is an asset like the .deb: {seen:?}"
+    );
+
+    // The prose names the packers too, and it was wrong for a release: it said
+    // `apk.sh` and `apk mkpkg` after both had gone.
+    // `apk mkpkg` is allowed in one place: the sentence that explains why the
+    // format was written here instead. "apk.sh" as a file name is not.
+    assert!(
+        !docs.contains("apk.sh"),
+        "docs/releases.md still names packaging/apk.sh, which no longer exists"
+    );
+    assert!(
+        !docs.contains("alpine:3.20"),
+        "docs/releases.md still says the .apk is built in a container"
+    );
+    assert!(
+        docs.contains("packaging/apk.py"),
+        "docs/releases.md must say which script builds the .apk"
+    );
+}

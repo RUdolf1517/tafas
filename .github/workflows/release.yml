@@ -197,29 +197,34 @@ jobs:
           path: artifacts
           merge-multiple: true
 
+      # `nfpm` is not on the runner, so it is installed here. It used to install
+      # its own `.deb` and `linux-packages.sh` skipped the build when the binary
+      # was missing — which meant a failed install produced a *green* step and a
+      # release with no `.deb` or `.rpm` at all. The script still tolerates a
+      # missing `nfpm` for a human running it by hand; here that case is a
+      # failure, because the release is missing two artifacts if it happens.
       - name: Linux packages
         shell: bash
         env:
           TAG: ${{ inputs.tag || github.event.release.tag_name }}
         run: |
           set -euo pipefail
-          if command -v nfpm >/dev/null 2>&1; then
-            bash packaging/linux-packages.sh "${TAG#v}" artifacts
-          else
+          if ! command -v nfpm >/dev/null 2>&1; then
             curl -fsSL https://github.com/goreleaser/nfpm/releases/latest/download/nfpm_amd64.deb \
-              -o /tmp/nfpm.deb && sudo dpkg -i /tmp/nfpm.deb
-            bash packaging/linux-packages.sh "${TAG#v}" artifacts
+              -o /tmp/nfpm.deb
+            sudo dpkg -i /tmp/nfpm.deb
           fi
+          command -v nfpm >/dev/null 2>&1 || { echo "nfpm is not installed" >&2; exit 1; }
+          bash packaging/linux-packages.sh "${TAG#v}" artifacts
+          ls -l artifacts/*.deb artifacts/*.rpm
 
-      # The three file-based channels — AUR, Scoop, a flake — are rendered from
-      # the SHA256SUMS that was just written, so a hash in a package file is a
-      # hash of a file that exists. They are published with the release rather
-      # than left in the repository: `flake.nix` is meant to be copied, and the
-      # AUR package is a human's push (see docs/releases.md §6).
-      # Runs before `Checksums`, because the channels tarball it writes is one of
-      # the artifacts that file has to cover; `channels.py` hashes the assets in
-      # place when `SHA256SUMS` does not exist yet rather than needing an order
-      # in which one artifact is missing from the checksums.
+      # The three file-based channels — AUR, Scoop, a flake — are published with
+      # the release rather than left in the repository: `flake.nix` is meant to
+      # be copied, and the AUR package is a human's push (see docs/releases.md
+      # §6). Runs *before* `Checksums`, because the channels tarball it writes is
+      # one of the artifacts that file has to cover; `channels.py` hashes the
+      # assets in place when `SHA256SUMS` does not exist yet, rather than needing
+      # an order in which one artifact is missing from the checksums.
       - name: AUR, Scoop and flake
         shell: bash
         env:
