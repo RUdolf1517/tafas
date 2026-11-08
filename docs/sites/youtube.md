@@ -63,7 +63,7 @@ formats are **dropped**. If every format of a video is protected that way:
 
 ```
 tafas: youtube: dQw4w9WgXcQ: every format is signature-protected; this build does not
-execute the player JavaScript that would decipher it (docs/extractors.md §3.3)
+execute the player JavaScript that would decipher it (docs/sites/youtube.md §3)
 ```
 
 Exit 1. The client chain is what usually avoids this in practice; when it does
