@@ -67,7 +67,11 @@ pub fn listing(http: &Http, url: &Url, raw: &str) -> Option<Result<Listing>> {
 }
 
 /// Reads a collection into a [`Listing`].
-pub fn extract(http: &Http, url: &Url, kind: &Kind, raw: &str) -> Result<Listing> {
+///
+/// The raw URL is not quoted in a refusal here: the collection id is what names
+/// the page, and a refusal that repeats the URL the user just typed says less
+/// than the one that names the collection and what happened to it.
+pub fn extract(http: &Http, url: &Url, kind: &Kind, _raw: &str) -> Result<Listing> {
     let Kind::Collection(id) = kind;
     let body = json!([{
         "operationName": "CollectionSideBar",

@@ -202,7 +202,9 @@ fn album_document(http: &Http, album_id: &str, jwt: &str, raw: &str) -> Result<V
     }
 }
 
-fn videos_page(http: &Http, album_id: &str, jwt: &str, page: u32, raw: &str) -> Result<Value> {
+/// The album id and the page number name this request; the URL the user typed
+/// would only be repeated.
+fn videos_page(http: &Http, album_id: &str, jwt: &str, page: u32, _raw: &str) -> Result<Value> {
     let endpoint = format!(
         "https://api.vimeo.com/albums/{album_id}/videos?fields=link,uri,name,duration&per_page={PER_PAGE}&page={page}"
     );

@@ -31,6 +31,14 @@ pub enum Target {
     List(Listing),
 }
 
+/// What a reader's list pages look like: the URL, and either the list it names
+/// or `None` when the URL is not a list page at all.
+///
+/// Named rather than spelled out in the struct because the nested option of a
+/// function pointer is where a reader stops being able to tell what the field
+/// means — and because that is what `clippy::type_complexity` is for.
+pub type ListPages = fn(&Http, &Url, &str) -> Option<Result<Listing>>;
+
 /// One site, as a value.
 pub struct Reader {
     /// The name used everywhere a human sees it: `--capabilities`, the "this
@@ -45,7 +53,7 @@ pub struct Reader {
     /// stream. The function decides from the URL alone whether this is one
     /// (`None` means "not a list page, ask the video reader"), so a plain video
     /// URL never costs a request to find that out.
-    pub listing: Option<fn(&Http, &Url, &str) -> Option<Result<Listing>>>,
+    pub listing: Option<ListPages>,
     /// The video reader.
     pub video: fn(&Http, &Url, &str, &ExtractorArgs) -> Result<Media>,
 }
