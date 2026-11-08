@@ -210,11 +210,22 @@ jobs:
         run: |
           set -euo pipefail
           if ! command -v nfpm >/dev/null 2>&1; then
-            curl -fsSL https://github.com/goreleaser/nfpm/releases/latest/download/nfpm_amd64.deb \
+            # The `.deb` name carries the version — `nfpm_2.48.0_amd64.deb`, not
+            # `nfpm_amd64.deb` — so `releases/latest/download/<name>` cannot be
+            # written without asking which version is latest first. The old line
+            # used the versionless name, got a 404, and because the script it
+            # then ran skips itself when nfpm is missing, the release shipped
+            # without a `.deb` or a `.rpm` and the job stayed green.
+            version="$(curl -fsSL https://api.github.com/repos/goreleaser/nfpm/releases/latest \
+              | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"].lstrip("v"))')"
+            test -n "$version"
+            curl -fsSL \
+              "https://github.com/goreleaser/nfpm/releases/download/v${version}/nfpm_${version}_amd64.deb" \
               -o /tmp/nfpm.deb
             sudo dpkg -i /tmp/nfpm.deb
           fi
           command -v nfpm >/dev/null 2>&1 || { echo "nfpm is not installed" >&2; exit 1; }
+          nfpm --version
           bash packaging/linux-packages.sh "${TAG#v}" artifacts
           ls -l artifacts/*.deb artifacts/*.rpm
 

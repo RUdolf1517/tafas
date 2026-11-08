@@ -458,6 +458,20 @@ fn every_script_the_release_runs_exists() {
         "the release must build the Alpine package; it is an asset like the .deb: {seen:?}"
     );
 
+    // A download URL that is written out in full is a reference too, and the
+    // one for `nfpm` was to a name that has never existed: its assets carry the
+    // version (`nfpm_2.48.0_amd64.deb`), so `releases/latest/download/nfpm_amd64.deb`
+    // answered 404. Nothing noticed, because the script it fed skips itself when
+    // the tool is missing — a green step and no `.deb` or `.rpm` in the release.
+    assert!(
+        !release.contains("latest/download/nfpm_"),
+        "release.yml downloads nfpm by a name without its version, which 404s"
+    );
+    assert!(
+        release.contains("nfpm_${version}_amd64.deb"),
+        "release.yml must build the nfpm asset name from the version it asked for"
+    );
+
     // The prose names the packers too, and it was wrong for a release: it said
     // `apk.sh` and `apk mkpkg` after both had gone.
     // `apk mkpkg` is allowed in one place: the sentence that explains why the
