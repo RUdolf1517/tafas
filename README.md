@@ -52,7 +52,7 @@ $ tafas https://x.com/nasa/status/1732902605501431916 | xargs -r mpv
 ```bash
 curl -fsSL https://raw.githubusercontent.com/RUdolf1517/tafas/main/install.sh | sh   # binary, no Rust
 brew tap RUdolf1517/tafas https://github.com/RUdolf1517/tafas && brew install RUdolf1517/tafas/tafas
-cargo install --git https://github.com/RUdolf1517/tafas --tag v0.1.0                 # Rust 1.82+
+cargo install --git https://github.com/RUdolf1517/tafas --tag v0.2.0                 # Rust 1.82+
 ```
 
 Linux (x86_64 and ARM64), macOS (Apple silicon and Intel), Windows x64. The
@@ -185,27 +185,20 @@ Three sites have such a page, and they are the three marked above.
 
 ## Roadmap
 
-**No version is tagged until the whole roadmap is done.** The first release will
-carry v0.2 through v0.5 in one archive, so until then `main` is the freshest thing
-there is and `cargo install --git https://github.com/RUdolf1517/tafas` is how to
-get it. The rows below say what is *in the tree*, not what is downloadable —
-[roadmap](docs/roadmap.md) has the reasoning.
-
-**Where this is now: v0.4 is in the tree and v0.5 has not started.** v0.2 and
-v0.3 are complete in `main` except the playlist/channel *pages* and four
-packaging channels listed below; v0.4 finished with per-segment resume,
-reproducible and signed releases, the SBOM, budgets, the MSRV job and Windows
-long paths. What is left before a tag is v0.5 — a stable `Extractor` trait,
-feature-per-site builds and one documentation page per site — plus the v0.2
-items that name a URL.
+**0.2.0 carries the whole roadmap.** v0.2 through v0.5 were released together on
+2026-11-08, because a tag is a promise about an archive that cannot be edited
+afterwards and an item still being built is not a promise — so the first release
+after 0.1.0 was the one with everything in it. Everything below is in that
+archive; `main` is ahead of it again as soon as the next item lands, and
+`cargo install --git https://github.com/RUdolf1517/tafas` is how to get that.
 
 | Where it goes | State | What it is |
 | --- | --- | --- |
 | [v0.1.0](docs/roadmap.md#1-v010-shipped) | **shipped** | Three sites, DASH remuxing verified by a second reader, atomic `.part` commit, resume, `--json`, the manual page, completions, `--capabilities`. |
-| [v0.2](docs/roadmap.md#2-v02-the-shapes-users-actually-hit-done-not-yet-released) | **in the tree** | **In:** HLS → MP4, AES-128 keys, `--cookies`, `--write-info-json`, `--write-thumbnail`, `--write-subs`/`--sub-langs`, `--playlist-items` over HLS segment lists and over list pages (a YouTube playlist or channel, a Vimeo album or showcase, a Twitch collection), an independent test demuxer, `.deb`/`.rpm`, Homebrew, `install.sh`, the per-user Windows installer and the local winget manifests, an Alpine `.apk`, and AUR, Scoop and flake files rendered at release time. **Open:** nothing from this section. |
-| [v0.3](docs/roadmap.md#3-v03-reach-and-the-parts-that-are-not-a-url-done-not-yet-released) | **in the tree** | **In:** `--concurrent-fragments`; `--extractor-args`; fragmented MP4 (`EXT-X-MAP`/`moof`); a sample-table reader for a progressive MP4 (`mp4read::plain`); `--embed-subs`, one `wvtt` caption track inside the file; `cargo fuzz` targets, run weekly; Vimeo; Reddit; SoundCloud as MP3; Twitch VODs. **Open:** nothing from the site list. |
-| [v0.4](docs/roadmap.md#4-v04-speed-platforms-trust-done-not-yet-released) | **in the tree** | `--limit-rate` and per-segment resume; reproducible builds, an SPDX SBOM and signed checksums; size and startup budgets in CI; an MSRV job; Windows long paths. |
-| [v0.5](docs/roadmap.md#5-v05-extensibility-without-a-fork-done-not-yet-released) | **in the tree** | A stable `Extractor` trait, done as a table of readers; feature-per-site builds; one documentation page per site. **The last item before a tag.** |
+| [v0.2](docs/roadmap.md#2-v02-the-shapes-users-actually-hit-shipped-in-020) | **shipped in 0.2.0** | **In:** HLS → MP4, AES-128 keys, `--cookies`, `--write-info-json`, `--write-thumbnail`, `--write-subs`/`--sub-langs`, `--playlist-items` over HLS segment lists and over list pages (a YouTube playlist or channel, a Vimeo album or showcase, a Twitch collection), an independent test demuxer, `.deb`/`.rpm`, Homebrew, `install.sh`, the per-user Windows installer and the local winget manifests, an Alpine `.apk`, and AUR, Scoop and flake files rendered at release time. **Open:** nothing from this section. |
+| [v0.3](docs/roadmap.md#3-v03-reach-and-the-parts-that-are-not-a-url-shipped-in-020) | **shipped in 0.2.0** | **In:** `--concurrent-fragments`; `--extractor-args`; fragmented MP4 (`EXT-X-MAP`/`moof`); a sample-table reader for a progressive MP4 (`mp4read::plain`); `--embed-subs`, one `wvtt` caption track inside the file; `cargo fuzz` targets, run weekly; Vimeo; Reddit; SoundCloud as MP3; Twitch VODs. **Open:** nothing from the site list. |
+| [v0.4](docs/roadmap.md#4-v04-speed-platforms-trust-shipped-in-020) | **shipped in 0.2.0** | `--limit-rate` and per-segment resume; reproducible builds, an SPDX SBOM and signed checksums; size and startup budgets in CI; an MSRV job; Windows long paths. |
+| [v0.5](docs/roadmap.md#5-v05-extensibility-without-a-fork-shipped-in-020) | **shipped in 0.2.0** | A stable `Extractor` trait, done as a table of readers; feature-per-site builds; one documentation page per site. |
 
 A version is a plan, not a promise. The promise is
 [§7 of the roadmap](docs/roadmap.md#7-what-will-not-happen) — the list of things

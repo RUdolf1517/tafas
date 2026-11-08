@@ -13,16 +13,16 @@ Two rules keep this list honest:
 - an item that stays unsupported gets a refusal text in
   [extractors](extractors.md), because "not yet" is a feature only if it says so.
 
-**One rule decides when anything is tagged.** No version is released until the
-whole roadmap is done — v0.2 through v0.5 — so the first tag carries all of it.
-This is the project owner's decision, and it is a decision about *releases*, not
-about the work: commits land on `main` continuously and CI builds them, but a
-version number is a promise about a published archive, and the archive appears
-once. The consequence worth knowing as a user: `main` is ahead of every release
-by design, `cargo install --git` is the way to get what is described here, and
-the state of each item below says what is *in the tree*, not what is
-downloadable. [releases §1](releases.md#1-versioning) repeats the rule where a
-reader looks for a version.
+**One rule decided when anything is tagged.** No version was released until the
+whole roadmap was done — v0.2 through v0.5 — so the first tag after 0.1.0
+carried all of it: **0.2.0, 2026-11-08**. This is the project owner's decision,
+and it is a decision about *releases*, not about the work: commits land on
+`main` continuously and CI builds them, but a version number is a promise about
+a published archive, and the archive appears once. The consequence worth knowing
+as a user: everything in §2–§5 is in that archive, `main` is ahead of it again
+as soon as the next item lands, and `cargo install --git` is how to get what is
+not released yet. [releases §1](releases.md#1-versioning) states the rule, and
+what 0.2.0 does not contain.
 
 ## 1. v0.1.0 — shipped
 
@@ -34,7 +34,7 @@ reader before the file is renamed. Atomic `.part` commit, ranged resume, retries
 Deliberately absent: cookies, signature solving, HLS, playlists, subtitles,
 thumbnails, live streams, more than four sites.
 
-## 2. v0.2 — the shapes users actually hit — done, not yet released
+## 2. v0.2 — the shapes users actually hit — shipped in 0.2.0
 
 | Item | Why it is next |
 | --- | --- |
@@ -46,7 +46,7 @@ thumbnails, live streams, more than four sites.
 | **An independent demuxer in the tests** — *in: `tests/common/mp4.rs` reads a written file with its own box walker, sharing no code with `mux` or `mp4write`* | Verify a remux with a parser that shares no code with the writer (see [guarantees §6](guarantees.md#6-independence-stated-plainly)). Cheap, and it is the safety net the HLS work needs. |
 | **Packaging channels** — *done: `install.sh`, Homebrew, `.deb`/`.rpm`, the per-user Windows installer with winget manifests rendered from the shipped ZIP, an Alpine `.apk` built from the same static tarball, and AUR, Scoop and flake files rendered from the release's `SHA256SUMS` by `packaging/channels.py`* | The binary is static; distribution was the only thing standing between it and `apk add`. Two things are deliberately not automated, and both need a key this repository does not hold: the AUR package is pushed by whoever holds the AUR key, and the `.apk` is unsigned, so installing it says `--allow-untrusted`. |
 
-## 3. v0.3 — reach, and the parts that are not a URL — done, not yet released
+## 3. v0.3 — reach, and the parts that are not a URL — shipped in 0.2.0
 
 | Item | Why |
 | --- | --- |
@@ -58,12 +58,11 @@ thumbnails, live streams, more than four sites.
 | **`cargo fuzz` targets** — *done: `mp4read::plain`, `mp4read::dimensions`, `subtitles::cues` and `sites::json_after`, in a `fuzz/` package the binary never links, run weekly by `fuzz.yml` and never on a pull request* | The parsers that read bytes from someone else are the ones that deserve a corpus; `mux::verify`/`remux` came last because they take a path — their target owns a temporary file, which makes it the slow one. |
 | **`--extractor-args SITE:key=value`** — *done: a closed vocabulary (`youtube:client`, `tiktok:route`), checked before the first request and published by `--capabilities`* | An escape hatch so a site change does not need a release. Deliberately ugly, deliberately documented as one table in [extractors §12](extractors.md#12-the-escape-hatch---extractor-args): it is a pressure valve, not an interface. It only narrows — every value is a route the build already tries. |
 
-## 4. v0.4 — speed, platforms, trust — done, not yet released
+## 4. v0.4 — speed, platforms, trust — shipped in 0.2.0
 
-Everything below is in the tree and green in CI. It is not *released*: the crate
-is still `0.1.0` and the next tag carries v0.2, v0.3 and v0.4 together, because a
-version number is a promise about a published archive and none of these has one
-yet. The section says "done" about the work, not about a download.
+Everything below is in 0.2.0, together with v0.2, v0.3 and v0.5, because a
+version number is a promise about a published archive and these had none until
+it appeared.
 
 One sub-item is left open by its nature rather than by work: the release signature needs a key, and a key is a secret this repository
 does not hold. Until `packaging/minisign.pub` exists the publish job refuses to
@@ -79,7 +78,7 @@ signature. See [releases](releases.md#reproducibility-signatures-and-the-sbom).
 | **MSRV job** — *done: `msrv (1.82)` builds `--locked --all-targets` on every push, and publishes what broke when it does* | The dependency floor stopped moving, so the declared `rust-version` is now built rather than believed. A dependency that raises it fails this job and not a release. |
 | **Windows polish** — *done: `paths::verbatim` puts `\\?\` (or `\\?\UNC\`) in front of every path this program writes, the progress line fits `COLUMNS` by shortening the bar first, and the `.zip` keeps its two entries while the SBOM is published beside it* | Long paths are the one Windows failure that reads like a bug in the program: a deep output directory worked yesterday and does not today. The extension is applied where tafas writes — the part, the rename, the deep directory, the cache sidecars — and never to a path where prefixing could change what it means. |
 
-## 5. v0.5 — extensibility without a fork — done, not yet released
+## 5. v0.5 — extensibility without a fork — shipped in 0.2.0
 
 | Item | Why |
 | --- | --- |

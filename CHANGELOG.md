@@ -9,13 +9,18 @@ changing a default, an exit code's meaning or a JSON field's meaning is a major
 version; adding a site, a flag or a container is minor. The policy is in
 [docs/releases.md](docs/releases.md).
 
-## [Unreleased]
+## [0.2.0] - 2026-11-08
 
-Every item of v0.2, v0.3, v0.4 and v0.5 is below, and nothing here has been
-released yet: the next tag carries all four together
-([roadmap §1](docs/roadmap.md#1-v010-shipped) explains why). The one exception
-is the signing key, which is a secret rather than a change — the job that signs
-is in and stays dormant until the key exists.
+The first release since 0.1.0, and the one that carries all four planned
+versions: v0.2, v0.3, v0.4 and v0.5 of the [roadmap](docs/roadmap.md). A minor
+number, because everything here adds — sites, flags, containers, channels — and
+nothing removes a flag or changes the meaning of an exit code or a JSON field.
+
+Two things are in the tree and deliberately not in this archive, because both
+need a key this repository does not hold: the release is **unsigned** until
+`packaging/minisign.pub` exists, and an Alpine `.apk` built from these assets
+installs with `--allow-untrusted`. The publish job says so rather than
+publishing something nobody can check.
 
 ### Added
 

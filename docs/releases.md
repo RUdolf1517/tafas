@@ -21,13 +21,21 @@ What counts as breaking here is not the command line but the *contract*:
 `tafas --version` prints the crate version. The binary has no self-update
 mechanism, checks for nothing and downloads nothing except the URL you gave it.
 
-**Nothing is tagged until the whole roadmap is done.** The first release
-carries v0.2 through v0.5 in one archive; until then `main` is the freshest thing
-there is, and `cargo install --git https://github.com/RUdolf1517/tafas` is how a
-reader gets it. This is deliberate: a tag is a promise about an archive that
-cannot be edited afterwards, and an item in the [roadmap](roadmap.md) that is
-still being built is not a promise yet. When the tag is cut, this page and §4
-describe the archive it produces.
+**Nothing was tagged until the whole roadmap was done**, and then one archive
+carried all of it: **0.2.0, 2026-11-08**, with v0.2 through v0.5 of the
+[roadmap](roadmap.md). This is deliberate: a tag is a promise about an archive
+that cannot be edited afterwards, and an item that is still being built is not a
+promise yet. From here on, an item that lands is a minor release of its own when
+the owner says so; `main` is ahead of the last archive as soon as that happens,
+and `cargo install --git https://github.com/RUdolf1517/tafas` is how a reader
+gets what is not released.
+
+**0.2.0 is not signed, and one of its packages is not either.** Both need a key
+this repository does not hold, and both say so rather than pretending: the
+publish job signs when `MINISIGN_SECRET_KEY` and `packaging/minisign.pub` exist,
+and the Alpine `.apk` installs with `--allow-untrusted` ([§3](#3-channels)).
+Everything else — `SHA256SUMS`, the SBOM, the reproducible build — is in the
+archive as described below.
 
 ## 2. What a release contains
 
@@ -79,7 +87,7 @@ stable URL, which is what `install.sh` downloads from.
 | AUR | Arch (x86_64, aarch64) | `PKGBUILD` from `tafas-channels-X.Y.Z.tar.gz`, then `makepkg -si` |
 | Scoop | Windows 10/11 x64 | `tafas.json` from `tafas-channels-X.Y.Z.tar.gz` into a bucket, then `scoop install tafas` |
 | Nix | any NixOS or Nix on Linux/macOS | `flake.nix` from `tafas-channels-X.Y.Z.tar.gz`, then `nix profile install .` |
-| cargo | anything with Rust 1.82+ | `cargo install --git https://github.com/RUdolf1517/tafas --tag v0.1.0` |
+| cargo | anything with Rust 1.82+ | `cargo install --git https://github.com/RUdolf1517/tafas --tag v0.2.0` |
 | PowerShell | Windows 10/11 x64 | download `install.ps1` from the release, then `powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1` |
 | winget (local manifest) | Windows 10/11 x64 | unpack `tafas-winget-local-manifests-vX.Y.Z.zip`, then `winget install --manifest <version>` |
 | archive | everything else | unpack, put `tafas` on `PATH` |
@@ -147,9 +155,8 @@ promise this repository does not keep.
 
 ## 4. How a release is cut
 
-**This waits for the roadmap to be finished** ([§1](#1-versioning)): the steps
-below run once, for a release that carries v0.2 through v0.5, not once per
-version.
+These steps were run once, for 0.2.0, which carried the whole roadmap
+([§1](#1-versioning)); a later release runs the same steps for its own version.
 
 1. `CHANGELOG.md` gets its section, `Cargo.toml` its version.
 2. The version is committed to `main` with the tag that will carry it.
