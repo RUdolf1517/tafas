@@ -655,7 +655,7 @@ fn one_worker_fetches_one_segment_at_a_time() {
 }
 
 /// The playlist of `count` segments, with the third answering `truncated_by`
-/// bytes short of what it declared.
+/// bytes short of what it declared on its first answer.
 ///
 /// A short body is the interruption a test can time: the first run reads two
 /// whole segments and then stops on the third, because `http.get_bytes` checks
@@ -668,10 +668,7 @@ fn interrupted_routes(count: usize, segment: &[u8], truncated_by: usize) -> Vec<
     for index in 1..=count {
         let path = format!("/seg{index}.ts");
         if index == 3 {
-            routes.push(Route {
-                truncate_by: truncated_by,
-                ..Route::ok(&path, segment)
-            });
+            routes.push(Route::truncated_once(&path, segment, truncated_by));
         } else {
             routes.push(Route::ok(&path, segment));
         }
@@ -714,13 +711,11 @@ fn a_failed_list_is_resumed_from_the_segments_it_kept() {
         resume: Some(part.as_path()),
         ..Segments::default()
     };
-    // A healthy server: the third segment answers in full this time, which is
-    // what a rerun after an interruption is.
-    let whole = TestServer::start(interrupted_routes(count, &segment, 0));
-    let replay = Url::parse(&whole.url("/media.m3u8")).unwrap();
+    // The same server: the third segment was short once and answers in full
+    // now, which is what a rerun after an interrupted transfer is.
     let report = hlsfetch::fetch(
         &client(),
-        &replay,
+        &url,
         &[],
         Quality::Best,
         second,
@@ -795,25 +790,31 @@ fn a_forgotten_cache_starts_the_list_over() {
         resume: Some(part.as_path()),
         ..Segments::default()
     };
-    // The short segment is still short; the run does not need it to finish to
-    // show what a forgotten cache does, and the error it ends with is the same
-    // one the first run ended with.
-    let _ = hlsfetch::fetch(
+    // A healthy server: the run has to finish, and finishing from scratch is
+    // what a forgotten cache means.
+    let whole = TestServer::start(vec![
+        Route::ok("/media.m3u8", playlist_of(count).as_bytes()),
+        Route::ok("/seg1.ts", &segment),
+        Route::ok("/seg2.ts", &segment),
+        Route::ok("/seg3.ts", &segment),
+    ]);
+    let report = hlsfetch::fetch(
         &client(),
-        &url,
+        &Url::parse(&whole.url("/media.m3u8")).unwrap(),
         &[],
         Quality::Best,
         second,
         &out,
         &mut |_| {},
     )
-    .expect_err("the third segment is still short");
+    .expect("the second run fetches the list again");
+    assert_eq!(report.resumed_segments, 0, "nothing was left to resume");
     assert_eq!(
-        server.hits("/seg1.ts"),
-        2,
+        whole.hits("/seg1.ts"),
+        1,
         "a forgotten cache is a list fetched again"
     );
-    assert_eq!(server.hits("/seg2.ts"), 2);
+    assert_eq!(whole.hits("/seg3.ts"), 1);
     hlsfetch::forget(&part);
     let _ = std::fs::remove_file(&out);
 }

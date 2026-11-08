@@ -29,6 +29,12 @@ pub struct Route {
     pub support_range: bool,
     /// Truncate the declared body, to exercise the byte-count check.
     pub truncate_by: usize,
+    /// How many of this route's requests are answered short. `Route::truncated`
+    /// is short every time (`usize::MAX`); `Route::truncated_once` is short
+    /// once and whole after, which is an interrupted transfer followed by the
+    /// rerun that finishes it — on one server, so the URLs the rerun asks for
+    /// are the ones the first run saw.
+    pub short_first: usize,
     /// Answer only when the request carries this header with this value, and
     /// `403` otherwise: the shape a site with a session check has.
     pub requires_header: Option<(String, String)>,
@@ -41,6 +47,8 @@ pub struct Route {
     /// in one binary is spent by whichever test reaches it first, which makes
     /// `fail_first: 1` mean "fails once, somewhere" instead of "fails once".
     pub failed: AtomicUsize,
+    /// How many times this route has answered short, against `short_first`.
+    pub truncated: AtomicUsize,
 }
 
 impl Route {
@@ -51,9 +59,11 @@ impl Route {
             fail_first: 0,
             support_range: true,
             truncate_by: 0,
+            short_first: 0,
             requires_header: None,
             delay_ms: 0,
             failed: AtomicUsize::new(0),
+            truncated: AtomicUsize::new(0),
         }
     }
 
@@ -91,6 +101,16 @@ impl Route {
     pub fn truncated(path: &str, body: &[u8], by: usize) -> Route {
         Route {
             truncate_by: by,
+            short_first: usize::MAX,
+            ..Route::ok(path, body)
+        }
+    }
+
+    /// Short of the declared bytes on the first answer only.
+    pub fn truncated_once(path: &str, body: &[u8], by: usize) -> Route {
+        Route {
+            truncate_by: by,
+            short_first: 1,
             ..Route::ok(path, body)
         }
     }
@@ -261,6 +281,10 @@ fn handle_connection(
     // which is what a connection dropped mid-transfer actually looks like.
     let body = route.body.clone();
     let sent = body.len().saturating_sub(route.truncate_by);
+    let short = route.truncate_by > 0 && route.truncated.load(Ordering::SeqCst) < route.short_first;
+    if short {
+        route.truncated.fetch_add(1, Ordering::SeqCst);
+    }
 
     if let Some((name, value)) = &route.requires_header {
         let carried = headers
@@ -306,7 +330,7 @@ fn handle_connection(
             // A range past the end is what a finished file looks like.
             write_response(&mut stream, 416, "Range Not Satisfiable", b"", None)
         }
-        _ if route.truncate_by > 0 => write_short(&mut stream, body.len(), sent, &body),
+        _ if short => write_short(&mut stream, body.len(), sent, &body),
         _ => write_response(&mut stream, 200, "OK", &body, None),
     }
 }
