@@ -101,7 +101,12 @@ pub const READERS: &[Reader] = &[
     #[cfg(feature = "tiktok")]
     Reader {
         name: "tiktok",
-        hosts: &["tiktok.com", "vt.tiktok.com", "vm.tiktok.com", "m.tiktok.com"],
+        hosts: &[
+            "tiktok.com",
+            "vt.tiktok.com",
+            "vm.tiktok.com",
+            "m.tiktok.com",
+        ],
         args: true,
         listing: None,
         video: super::tiktok::extract,
