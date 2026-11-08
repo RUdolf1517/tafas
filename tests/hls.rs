@@ -683,8 +683,16 @@ fn a_failed_list_is_resumed_from_the_segments_it_kept() {
         resume: Some(part.as_path()),
         ..Segments::default()
     };
-    let error = hlsfetch::fetch(&client(), &url, &[], Quality::Best, first, &out, &mut |_| {})
-        .expect_err("the third segment fails once");
+    let error = hlsfetch::fetch(
+        &client(),
+        &url,
+        &[],
+        Quality::Best,
+        first,
+        &out,
+        &mut |_| {},
+    )
+    .expect_err("the third segment fails once");
     assert!(error.to_string().contains("seg3.ts"), "{error}");
     assert!(!out.exists(), "a failed walk leaves no MP4");
     assert_eq!(server.hits("/seg1.ts"), 1);
@@ -694,9 +702,20 @@ fn a_failed_list_is_resumed_from_the_segments_it_kept() {
         resume: Some(part.as_path()),
         ..Segments::default()
     };
-    let report = hlsfetch::fetch(&client(), &url, &[], Quality::Best, second, &out, &mut |_| {})
-        .expect("the second run finishes what the first started");
-    assert_eq!(report.resumed_segments, 2, "the first two segments were kept");
+    let report = hlsfetch::fetch(
+        &client(),
+        &url,
+        &[],
+        Quality::Best,
+        second,
+        &out,
+        &mut |_| {},
+    )
+    .expect("the second run finishes what the first started");
+    assert_eq!(
+        report.resumed_segments, 2,
+        "the first two segments were kept"
+    );
     assert_eq!(
         server.hits("/seg1.ts"),
         1,
@@ -730,8 +749,16 @@ fn a_forgotten_cache_starts_the_list_over() {
         resume: Some(part.as_path()),
         ..Segments::default()
     };
-    let _ = hlsfetch::fetch(&client(), &url, &[], Quality::Best, first, &out, &mut |_| {})
-        .expect_err("segment three fails");
+    let _ = hlsfetch::fetch(
+        &client(),
+        &url,
+        &[],
+        Quality::Best,
+        first,
+        &out,
+        &mut |_| {},
+    )
+    .expect_err("segment three fails");
 
     hlsfetch::forget(&part);
 
@@ -739,8 +766,16 @@ fn a_forgotten_cache_starts_the_list_over() {
         resume: Some(part.as_path()),
         ..Segments::default()
     };
-    let report = hlsfetch::fetch(&client(), &url, &[], Quality::Best, second, &out, &mut |_| {})
-        .expect("the second run finishes");
+    let report = hlsfetch::fetch(
+        &client(),
+        &url,
+        &[],
+        Quality::Best,
+        second,
+        &out,
+        &mut |_| {},
+    )
+    .expect("the second run finishes");
     assert_eq!(report.resumed_segments, 0, "nothing was left to resume");
     assert_eq!(
         server.hits("/seg1.ts"),

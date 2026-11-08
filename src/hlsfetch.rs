@@ -602,7 +602,11 @@ fn header_line(chosen: &[&Segment]) -> String {
 /// A journal that is torn, a header that names another selection and a payload
 /// shorter than its own journal all mean the same thing — take the prefix that
 /// is whole and forget the rest, or forget all of it.
-fn read_cache(payload_path: &Path, journal_path: &Path, header: &str) -> Option<(Vec<u8>, Vec<u64>)> {
+fn read_cache(
+    payload_path: &Path,
+    journal_path: &Path,
+    header: &str,
+) -> Option<(Vec<u8>, Vec<u64>)> {
     let journal = fs::read_to_string(journal_path).ok()?;
     let mut lines = journal.lines();
     if lines.next()? != header {
@@ -672,7 +676,11 @@ fn open_files(
 /// the journal does not claim, which recovery cuts; the other order would claim
 /// bytes that never landed. A segment is seconds of video, so a sync per segment
 /// costs nothing worth counting.
-fn write_segment(payload: &mut fs::File, journal: &mut fs::File, bytes: &[u8]) -> std::io::Result<()> {
+fn write_segment(
+    payload: &mut fs::File,
+    journal: &mut fs::File,
+    bytes: &[u8],
+) -> std::io::Result<()> {
     payload.write_all(bytes)?;
     payload.sync_data()?;
     writeln!(journal, "{}", bytes.len())?;
@@ -814,7 +822,6 @@ fn flush_ready(pieces: &mut [Option<Vec<u8>>], flushed: &mut usize, cache: &mut 
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -840,7 +847,10 @@ mod tests {
     fn cache_paths(name: &str) -> (PathBuf, PathBuf) {
         let dir = std::env::temp_dir().join(format!("tafas-cache-{}", std::process::id()));
         let _ = fs::create_dir_all(&dir);
-        (dir.join(format!("{name}.segments")), dir.join(format!("{name}.journal")))
+        (
+            dir.join(format!("{name}.segments")),
+            dir.join(format!("{name}.journal")),
+        )
     }
 
     #[test]
