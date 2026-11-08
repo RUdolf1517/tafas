@@ -28,12 +28,35 @@ jobs:
         with:
           components: rustfmt, clippy
 
-      # Failures are captured and published rather than only living in the job
-      # log: the log of a failed run is not reachable from every environment
-      # this project is developed in, and an error nobody can read is not a
-      # report.
+      # The generators are Python, and three of them produce files that ship.
+      # They are exercised here rather than only in the release job, because a
+      # generator that broke is a release that fails at 2 a.m.: `channels.py
+      # --self-test` renders the AUR, Scoop and flake files from a stand-in
+      # release and asserts the hashes and the versions in them, and the winget
+      # generator is rendered against a stand-in archive and checked.
+      - name: Channel generators
+        id: channels
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 packaging/channels.py --self-test
+          # The generator refuses an archive that is not exactly `tafas.exe` and
+          # `LICENSE`, so the stand-in is a real ZIP with those two entries.
+          mkdir -p /tmp/winget-check/build
+          printf 'tafas.exe\n' > /tmp/winget-check/build/tafas.exe
+          printf 'MIT\n' > /tmp/winget-check/build/LICENSE
+          (cd /tmp/winget-check/build && python3 -c "import zipfile; \
+            z = zipfile.ZipFile('../tafas-x86_64-pc-windows-msvc.zip', 'w'); \
+            z.write('tafas.exe'); z.write('LICENSE'); z.close()")
+          python3 packaging/winget/generate.py --tag v9.9.9 \
+            --windows-archive /tmp/winget-check/tafas-x86_64-pc-windows-msvc.zip \
+            --output-dir /tmp/winget-check/manifests
+          python3 packaging/winget/tests/check.py /tmp/winget-check/manifests
+
       - name: Clippy
         id: clippy
+        if: steps.channels.outcome == 'success'
         continue-on-error: true
         shell: bash
         run: cargo clippy --all-targets -- -D warnings 2>&1 | tee clippy.log
@@ -53,7 +76,7 @@ jobs:
         run: cargo build --release 2>&1 | tee build.log
 
       - name: Publish the failure
-        if: always() && (steps.clippy.outcome == 'failure' || steps.test.outcome == 'failure' || steps.build.outcome == 'failure')
+        if: always() && (steps.channels.outcome == 'failure' || steps.clippy.outcome == 'failure' || steps.test.outcome == 'failure' || steps.build.outcome == 'failure')
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
