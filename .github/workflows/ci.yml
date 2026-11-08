@@ -68,9 +68,13 @@ jobs:
         shell: bash
         run: cargo test --all-targets 2>&1 | tee test.log
 
+      # `success` and not `== 'success'`: `cargo test --all-targets` builds the
+      # binary in debug, and the release build is the one that has to link, so
+      # this step runs whenever nothing before it failed. The distinction cost a
+      # whole green run: the step was silently skipped and the job still passed.
       - name: Release build
         id: build
-        if: steps.clippy.outcome == 'success' && steps.test.outcome == 'success'
+        if: steps.clippy.outcome == 'success' && success()
         continue-on-error: true
         shell: bash
         run: cargo build --release 2>&1 | tee build.log
@@ -116,7 +120,7 @@ jobs:
           gh pr comment "$number" --body-file failure.md || true
 
       - name: Fail the job
-        if: steps.clippy.outcome == 'failure' || steps.test.outcome == 'failure' || steps.build.outcome == 'failure'
+        if: steps.channels.outcome == 'failure' || steps.clippy.outcome == 'failure' || steps.test.outcome == 'failure' || steps.build.outcome == 'failure'
         shell: bash
         run: exit 1
 
