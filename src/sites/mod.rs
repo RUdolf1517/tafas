@@ -7,35 +7,56 @@
 //! format whose URL is cipher-protected is dropped, and a page that answers with
 //! a consent wall is a refusal rather than an empty success.
 
+pub mod reddit;
+pub mod soundcloud;
 pub mod tiktok;
+pub mod twitch;
+pub mod vimeo;
 pub mod x;
 pub mod youtube;
 
 use serde_json::Value;
 
 use crate::error::{Error, Result};
+use crate::extractor_args::ExtractorArgs;
 use crate::http::Http;
 use crate::model::{Media, Site};
 use crate::url::Url;
 
-/// Reads `*url` with the extractor for its host.
-pub fn extract(http: &Http, raw_url: &str) -> Result<Media> {
+/// Reads `raw_url` with the extractor for its host.
+///
+/// `args` is `--extractor-args`, already checked against the closed vocabulary
+/// in [`crate::extractor_args`], so an extractor may read it without having to
+/// defend against a value it has never seen.
+pub fn extract(http: &Http, raw_url: &str, args: &ExtractorArgs) -> Result<Media> {
     let url = Url::parse(raw_url)?;
     let site = Site::from_url(&url).ok_or_else(|| {
         Error::Unsupported(format!(
-            "no extractor for {raw_url}: this build reads youtube, tiktok and x"
+            "no extractor for {raw_url}: this build reads youtube, tiktok, x, vimeo, reddit, soundcloud and twitch"
         ))
     })?;
     match site {
-        Site::YouTube => youtube::extract(http, &url, raw_url),
-        Site::TikTok => tiktok::extract(http, &url, raw_url),
+        Site::YouTube => youtube::extract(http, &url, raw_url, args),
+        Site::TikTok => tiktok::extract(http, &url, raw_url, args),
         Site::X => x::extract(http, &url, raw_url),
+        Site::Vimeo => vimeo::extract(http, &url, raw_url),
+        Site::Reddit => reddit::extract(http, &url, raw_url),
+        Site::SoundCloud => soundcloud::extract(http, &url, raw_url),
+        Site::Twitch => twitch::extract(http, &url, raw_url),
     }
 }
 
 /// The site names this build reads, for `--capabilities` and for the error
 /// message above.
-pub const SITES: [&str; 3] = ["youtube", "tiktok", "x"];
+pub const SITES: [&str; 7] = [
+    "youtube",
+    "tiktok",
+    "x",
+    "vimeo",
+    "reddit",
+    "soundcloud",
+    "twitch",
+];
 
 // --- small JSON helpers ----------------------------------------------------
 //
@@ -82,7 +103,7 @@ pub(crate) fn list<'a>(value: &'a Value, path: &[&str]) -> &'a [Value] {
 /// Sites inline their state as `var x = {...};`, so the object has to be found
 /// by brace matching that understands strings and escapes — a `}` inside a
 /// title would otherwise truncate the document.
-pub(crate) fn json_after<'a>(page: &'a str, marker: &str) -> Option<&'a str> {
+pub fn json_after<'a>(page: &'a str, marker: &str) -> Option<&'a str> {
     let start = page.find(marker)?;
     let tail = &page[start + marker.len()..];
     let open = tail.find('{')?;

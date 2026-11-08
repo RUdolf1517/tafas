@@ -24,8 +24,11 @@ use crate::http::Http;
 use crate::info;
 use crate::items;
 use crate::model::{Container, Format, Image, Media, Subtitle};
+use crate::mp4read;
+use crate::mp4write;
 use crate::mux;
 use crate::names;
+use crate::paths;
 use crate::progress::{human_bytes, Progress};
 use crate::report::{self, Item, Status, Totals};
 use crate::select::{self, Plan};
@@ -49,6 +52,8 @@ pub struct Options {
     pub write_thumbnail: bool,
     /// `--write-subs`: the caption tracks, beside the file.
     pub write_subs: bool,
+    /// `--embed-subs`: put the cues inside the MP4 instead of beside it.
+    pub embed_subs: bool,
     /// `--sub-langs`: which of them. `None` means "every track the page lists".
     pub sub_langs: Option<subtitles::Selection>,
     pub format: Option<String>,
@@ -64,10 +69,17 @@ pub struct Options {
     pub jobs: usize,
     pub retries: u32,
     pub timeout: u64,
+    /// `--limit-rate`: the average a transfer may not exceed, in bytes per
+    /// second. `None` means no limit at all.
+    pub limit_rate: Option<u64>,
     /// A Netscape cookie file to send from, when the user named one.
     pub cookies: Option<PathBuf>,
     /// `--playlist-items`: which segments of an HLS list to take.
     pub playlist_items: Option<items::Items>,
+    /// `--concurrent-fragments`: how many segments of one list may be in flight.
+    pub concurrent_fragments: usize,
+    /// `--extractor-args`: a site's route, narrowed by hand.
+    pub extractor_args: crate::extractor_args::ExtractorArgs,
     pub verbose: u8,
     pub color: style::Choice,
 }
@@ -82,6 +94,7 @@ impl Default for Options {
             write_info_json: false,
             write_thumbnail: false,
             write_subs: false,
+            embed_subs: false,
             sub_langs: None,
             format: None,
             no_mux: false,
@@ -96,8 +109,11 @@ impl Default for Options {
             jobs: 1,
             retries: 3,
             timeout: 60,
+            limit_rate: None,
             cookies: None,
             playlist_items: None,
+            concurrent_fragments: 1,
+            extractor_args: crate::extractor_args::ExtractorArgs::default(),
             verbose: 0,
             color: style::Choice::Auto,
         }
@@ -189,6 +205,7 @@ pub fn run(urls: &[String], options: &Options) -> u8 {
             }
         },
     };
+    let http = http.with_limit_rate(options.limit_rate);
     let printer = Printer::new(options);
 
     let mut items: Vec<Item> = if options.jobs <= 1 || urls.len() <= 1 {
@@ -319,7 +336,7 @@ fn handle(
     printer: &Printer,
     item: &mut Item,
 ) -> Result<Status> {
-    let media = sites::extract(http, url)?;
+    let media = sites::extract(http, url, &options.extractor_args)?;
     item.site = media.site.as_str().to_string();
     item.id = media.id.clone();
     item.title = media.title.clone();
@@ -342,12 +359,17 @@ fn handle(
     )?;
     item.selection = plan.describe();
 
-    if options.playlist_items.is_some()
-        && !matches!(&plan, Plan::Single(format) if format.container == Container::Hls)
-    {
+    let hls_plan = matches!(&plan, Plan::Single(format) if format.container == Container::Hls);
+    if options.playlist_items.is_some() && !hls_plan {
         printer.warn(
             "note: --playlist-items applies to an HLS segment list; this selection is not \
              one, so it was ignored",
+        );
+    }
+    if options.concurrent_fragments > 1 && !hls_plan {
+        printer.warn(
+            "note: --concurrent-fragments applies to the segments of an HLS list; this \
+             selection is not one, so it was ignored",
         );
     }
 
@@ -396,6 +418,10 @@ fn handle(
 
     if options.write_subs {
         write_subtitles(http, &media, &target, options, printer)?;
+    }
+
+    if options.embed_subs {
+        item.bytes = embed_subtitles(http, &media, &plan, &target, options, printer)?;
     }
 
     if options.write_info_json {
@@ -460,7 +486,8 @@ fn write_subtitles(
                     .join(", ")
             };
             return Err(Error::Refused(format!(
-                "{} {}: no caption track matches --sub-langs {selection}; the page offers {available}",
+                "{} {}: no caption track matches --sub-langs {selection}; the page offers \
+                 {available}",
                 media.site, media.id
             )));
         }
@@ -475,6 +502,127 @@ fn write_subtitles(
         }
     }
     Ok(())
+}
+
+/// `--embed-subs`: the selected caption track, written into the MP4 this run
+/// just produced.
+///
+/// The file is read back with `mp4read`, the cues become one more track, and the
+/// whole thing is laid out again by the writer that produced it. Samples are the
+/// same bytes, so nothing is re-encoded and the picture is untouched; what
+/// changes is one `trak`, which is why the rewrite is a `moov` rebuild and not a
+/// remux of two sources.
+///
+/// A run that did not produce exactly one MP4 says so and changes nothing: two
+/// files, a photo post or an audio-only file is not a place a subtitle track can
+/// go without inventing a second output the user did not ask for.
+fn embed_subtitles(
+    http: &Http,
+    media: &Media,
+    plan: &Plan,
+    target: &Path,
+    options: &Options,
+    printer: &Printer,
+) -> Result<u64> {
+    let size = std::fs::metadata(target)
+        .map(|meta| meta.len())
+        .unwrap_or(0);
+    let one_mp4 = match plan {
+        Plan::Single(format) => format.container == Container::Mp4,
+        Plan::Pair { .. } => true,
+        Plan::Separate { .. } | Plan::Audio(_) | Plan::Images(_) => false,
+    };
+    if !one_mp4 {
+        printer.warn(
+            "note: --embed-subs needs one MP4 from this run; this selection is not one, so no \
+             track was added",
+        );
+        return Ok(size);
+    }
+
+    let selection = options
+        .sub_langs
+        .clone()
+        .unwrap_or_else(subtitles::Selection::all);
+    let chosen: Vec<&Subtitle> = media
+        .subtitles
+        .iter()
+        .filter(|subtitle| selection.matches(&subtitle.language))
+        .collect();
+    if chosen.is_empty() {
+        if options.sub_langs.is_some() {
+            let available = if media.subtitles.is_empty() {
+                "none".to_string()
+            } else {
+                media
+                    .subtitles
+                    .iter()
+                    .map(|subtitle| subtitle.language.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            };
+            return Err(Error::Refused(format!(
+                "{} {}: no caption track matches --sub-langs {selection}; the page offers \
+                 {available}",
+                media.site, media.id
+            )));
+        }
+        printer.note("note: this page offers no caption tracks; no track was added");
+        return Ok(size);
+    }
+    if chosen.len() > 1 {
+        let languages = chosen
+            .iter()
+            .map(|subtitle| subtitle.language.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err(Error::Usage(format!(
+            "--embed-subs writes one track and --sub-langs {selection} matches {}: {languages}; \
+             name one language, or use --write-subs for all of them",
+            chosen.len()
+        )));
+    }
+    let subtitle = chosen[0];
+    let body = subtitles::body(http, subtitle)?;
+    let cues = subtitles::cues(&body)?;
+    if cues.is_empty() {
+        return Err(Error::Refused(format!(
+            "{}: the caption body parsed to no cues, so there is nothing to put in a track",
+            subtitle.url
+        )));
+    }
+
+    let bytes = std::fs::read(target).map_err(|error| {
+        Error::Io(io::Error::new(
+            error.kind(),
+            format!(
+                "could not read {} back to add a subtitle track: {error}",
+                target.display()
+            ),
+        ))
+    })?;
+    let dimensions = mp4read::dimensions(&bytes).unwrap_or((0, 0));
+    let mut tracks = mp4read::plain(&bytes)?;
+    tracks.push(subtitles::track(&cues));
+
+    let temporary = part_path(target);
+    let report = mp4write::write(&tracks, dimensions, &temporary)?;
+    std::fs::rename(&temporary, target).map_err(|error| {
+        let _ = std::fs::remove_file(&temporary);
+        Error::Io(io::Error::new(
+            error.kind(),
+            format!("could not put {} in place: {error}", target.display()),
+        ))
+    })?;
+    if !options.json && !options.quiet {
+        printer.note(&format!(
+            "embedded {} ({} cues) into {}",
+            subtitle.language,
+            cues.len(),
+            target.display()
+        ));
+    }
+    Ok(report.bytes)
 }
 
 /// `--write-thumbnail`: the poster frame, beside the media file.
@@ -705,9 +853,12 @@ fn fetch_plan(
 /// Fetches an HLS stream: playlist, segments, demux, MP4.
 ///
 /// The staging file is `<target>.part` like every other fetch, so an
-/// interrupted HLS download leaves the same debris — and `--resume` does not
-/// apply, because a segment list is fetched as a whole and a half-written MP4
-/// has no meaningful offset to resume from.
+/// interrupted HLS download leaves the same debris. What is resumed is not the
+/// MP4 — a half-written one has no offset worth continuing from — but the
+/// segment stream beside it: `<target>.part.segments` with a journal of lengths,
+/// both deleted the moment the MP4 is committed. `--no-resume` removes them
+/// before the first request, so a cache is never spliced into a run that did not
+/// ask for one.
 fn fetch_hls(
     http: &Http,
     format: &Format,
@@ -728,13 +879,21 @@ fn fetch_hls(
         }
     }
 
+    if !options.resume {
+        hlsfetch::forget(&part);
+    }
+
     let mut progress = printer.progress(format!("{} hls", format.label()), None);
     let result = hlsfetch::fetch(
         http,
         &url,
         &request_headers(format),
         options.quality,
-        options.playlist_items.as_ref(),
+        hlsfetch::Segments {
+            items: options.playlist_items.as_ref(),
+            concurrent: options.concurrent_fragments,
+            resume: options.resume.then_some(part.as_path()),
+        },
         &part,
         &mut |bytes| progress.add(bytes),
     );
@@ -758,8 +917,16 @@ fn fetch_hls(
     }
 
     commit(&part, target, options.overwrite)?;
+    // The MP4 is the file that was asked for; the cache beside it is debris now.
+    hlsfetch::forget(&part);
     for warning in &report.warnings {
         printer.warn(&format!("warning: {warning}"));
+    }
+    if report.resumed_segments > 0 && !options.json {
+        printer.note(&format!(
+            "hls: {} of {} segments came from the previous run",
+            report.resumed_segments, report.segments
+        ));
     }
     if !options.json {
         printer.note(&format!(
@@ -941,9 +1108,12 @@ fn fetch_stream_to(
 fn open_part(path: &Path, append: bool) -> Result<File> {
     if let Some(parent) = path.parent() {
         if !parent.as_os_str().is_empty() {
-            fs::create_dir_all(parent)?;
+            fs::create_dir_all(paths::verbatim(parent))?;
         }
     }
+    // `paths::verbatim` is the identity everywhere but Windows, where it is what
+    // lets a deep output directory hold a file at all.
+    let path = paths::verbatim(path);
     if append {
         OpenOptions::new()
             .append(true)
@@ -963,7 +1133,7 @@ fn commit(part: &Path, target: &Path, overwrite: bool) -> Result<()> {
             target.display()
         )));
     }
-    fs::rename(part, target).map_err(|e| {
+    fs::rename(paths::verbatim(part), paths::verbatim(target)).map_err(|e| {
         Error::Io(io::Error::new(
             e.kind(),
             format!(
@@ -1054,6 +1224,7 @@ fn print_formats(media: &Media, printer: &Printer) -> Result<()> {
             Container::Ts => "ts",
             Container::Hls => "hls",
             Container::Jpeg => "jpg",
+            Container::Mp3 => "mp3",
             Container::Unknown => "?",
         };
         let size = match format.bytes {

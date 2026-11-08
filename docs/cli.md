@@ -69,6 +69,8 @@ above it is used — the run does not fail on a request the user cannot act on.
 Video and audio are joined only when both are ISO-BMFF (`mp4`/`m4a`). A webm
 audio stream is downloaded separately and the terminal says why:
 
+A SoundCloud track arrives as an **MP3** and is one of the two files this program writes without rebuilding a container (a poster image is the other). It is copied byte for byte, named `.mp3`, and checked by byte count alone — there is no box structure to verify and nothing here pretends there is.
+
 ```
 note: the audio stream is opus, which cannot be remuxed with mp4 video without re-encoding
 ```
@@ -83,6 +85,7 @@ index without seeking to the end (see [guarantees §3](guarantees.md#3-g2--struc
 | `--write-info-json` | write `<name>.info.json` beside each file |
 | `--write-thumbnail` | write the page's poster frame beside each file |
 | `--write-subs` | write the page's caption tracks beside each file, as WebVTT |
+| `--embed-subs` | put one caption track inside the MP4, as a `wvtt` track |
 | `--sub-langs LANGS` | which caption languages: `all` (default), `en`, `pt-BR`, `en*` |
 
 `--write-thumbnail` fetches the poster the page names and puts it beside the
@@ -105,8 +108,11 @@ case-insensitively. Three outcomes are told apart:
 | `--sub-langs` matches no track | refusal (1), naming the languages the page does offer or `none` |
 | a track's body is empty or is not WebVTT | refusal (1) quoting the route — an empty `timedtext` body is a network matter, not a missing language |
 
-`--sub-langs` without `--write-subs` is a usage error (2), decided before any
-request: a flag that would do nothing is a mistake, not a preference.
+`--sub-langs` without `--write-subs` or `--embed-subs` is a usage error (2),
+decided before any request: a flag that would do nothing is a mistake, not a
+preference. So is giving both writers at once, because one asks for a file beside
+the video and the other for a track inside it, and a run that quietly did both
+would leave the user guessing which one the flag meant.
 
 The sidecar is written **after** the media file has been renamed into place, so a
 failed run never leaves a document describing a file that does not exist. It
@@ -116,16 +122,46 @@ pipe, so there is nothing to sit beside, and a photo post has one file per image
 so there is no single file the document describes. Both print a note and carry
 on.
 
+`--embed-subs` puts the cues **inside** the MP4 instead: one `wvtt` track
+(WebVTT in ISO-BMFF), written by the same track builder the muxer uses. The file
+the run just produced is read back, the cues become one more `trak`, and the
+whole thing is laid out again — samples are passed through byte for byte, so
+nothing is re-encoded and the picture does not change. What goes in:
+
+| In the body | In the track |
+| --- | --- |
+| `00:00:01.500 --> 00:00:03.000` | timescale 1000: the cue time becomes `pts`, the sample lasts 1500 ms |
+| a gap before the cue | `stts` cannot state a decode time, only a length, so `dts` is the summed length of the cues before it and the gap becomes a positive `ctts` offset — the cue still appears when the body said |
+| the cue text, line breaks kept | a `vttc` box holding a `payl` box with the text |
+| cue settings (`align:`, `line:`, `size:`) | dropped: the player places the cue, and `vttc` has no field for them |
+| `STYLE` and `REGION` blocks | dropped, for the same reason |
+| the track's language | **not** carried: `mdhd` says `und`, and the language lives in the sidecar's name |
+
+One track per file, so `--sub-langs` has to name one language; a selection that
+matches several is a refusal (1) that lists them, because two tracks would need
+two more `trak`s and a menu the player has to guess at. The gaps between cues are
+kept as gaps: a cue states its own duration, so a three-second silence after a
+cue is not a five-second cue.
+
+Four cases are named rather than silent: a run that did not produce exactly one
+MP4 (two files, `--no-mux`, an audio-only file, a photo post) prints a note and
+adds nothing; a page with no caption tracks prints a note; a body with no cues is
+a refusal; and `stpp`/TTML, which some pages offer instead of WebVTT, is refused
+by name rather than converted.
+
 ## 4. Transfer
 
 | Flag | Meaning |
 | --- | --- |
-| `--no-resume` | do not continue a `.part`; start the transfer over |
+| `--no-resume` | do not continue a `.part` (or a segment cache) beside the target; start the transfer over |
 | `--retries N` | retries for one request (default 3) |
 | `--timeout SECS` | deadline for one metadata request (default 60) |
 | `-j, --jobs N` | how many URLs to work on at once (default 1; `0` means four) |
 | `--cookies FILE` | send the cookies in a Netscape cookie file (read once, never written back) |
 | `--playlist-items ITEMS` | take only these entries of a list: `3`, `1-5`, `2-`, mixed with commas |
+| `--concurrent-fragments N` | fetch this many HLS segments at once (`1`–`16`, default `1`) |
+| `--limit-rate RATE` | cap a transfer at `RATE` bytes per second (`500K`, `2M`, `1.5M`; default no limit) |
+| `--extractor-args SITE:KEY=VALUE` | narrow an extractor's route by hand (repeatable; see below) |
 
 Retried: transport failures, `429`, and `5xx`, with a growing delay (0.4 s,
 0.8 s, 1.6 s, 3.2 s, capped at 5 s). Not retried: `400`, `401`, `403`, `404`,
@@ -140,6 +176,16 @@ prefix, `Secure` and expiry are all checked per request — and a `cookie` heade
 the extractor itself sets (YouTube's consent pair) is kept, with the jar's
 cookies appended rather than replacing it.
 
+`--resume` (the default) applies to both shapes of download. A progressive file
+continues from its `.part` with a `Range` request; a segment list cannot, because
+its `.part` is an MP4 written at the end, so segments are cached beside it
+instead (`<target>.part.segments` and a journal of their lengths, [hls §6](hls.md#6-what-is-resumed)).
+A rerun replays the cache and asks the server only for the segments that are
+missing, and says how many came from the previous run. The cache is dropped when
+it describes a different selection — another playlist, another
+`--playlist-items`, another build — rather than being spliced into a file it does
+not describe. `--no-resume` deletes it before the first request.
+
 `--playlist-items ITEMS` is parsed before the first request, so a typo is a
 usage error (2) rather than a half-written file. Entries are 1-based and
 inclusive at both ends; `2-` means "from the second to the end". Today the only
@@ -149,6 +195,60 @@ is still read in full, so the count in the refusal is the count the server
 served. A selection that matches no segment is a refusal (1); one that does not
 start on a keyframe is written, with a warning that the first frames will not
 decode.
+
+Long paths on Windows are handled rather than refused: every path tafas writes —
+the staging file, the rename into place, a deep output directory, the HLS cache
+sidecars — is opened in its `\\?\` form when the platform needs it, which lifts
+the 260-character limit. A relative path, a path already in that form, one
+carrying `.`/`..` or forward slashes is passed through untouched, and a UNC path
+becomes `\\?\UNC\`. Nothing about this is visible on Linux or macOS.
+
+`--limit-rate RATE` caps the media bytes this run pulls: a progressive body and
+every segment of a list are charged against one budget, so `--concurrent-fragments
+4` divides the rate rather than multiplying it. `RATE` is bytes per second with an
+optional `K`, `M` or `G` suffix in powers of 1024, decimals allowed, checked
+before the first request: below `1K` the run would be slower than its own
+timeouts, so that is a usage error rather than a clamp, and above `1G` the flag
+asks for nothing. Metadata — the page, the JSON, a thumbnail — is not charged;
+the budget is for the bytes a shared line is spent on. The limiter is an average
+and not a sleep per chunk: each chunk reserves the time it is worth, the worker
+waits until its turn, and the wait happens with no lock held so several segments
+still overlap. One chunk of slack is deliberate — the first read is never
+delayed — so a run can overshoot by a buffer and converges from there.
+
+`--concurrent-fragments N` decides how many segments of one HLS list are in
+flight at once; the default, `1`, fetches them one after another, so the flag is
+the only thing that changes the order requests are made in. `N` is bounded to
+`1`–`16` before the first request, because every worker holds its segment in
+memory until the writer has it, and a number the program quietly reduced would be
+a lie about what it did. Segments arrive out of order and are written into their
+own slot, so the file is the playlist's order however the network interleaves
+them; the byte counter behind the progress line moves as segments land, not as
+they are written. The first failure cancels the segments still queued — the rest
+would be bytes for a file that is not going to exist. Like `--playlist-items`,
+it applies to a segment list only: on a progressive download it prints a note and
+changes nothing.
+
+`--extractor-args SITE:KEY=VALUE` is the escape hatch for the day a site
+changes the document an extractor reads. Its vocabulary is closed and small, and
+it is checked before the first request, so a typo is exit 2 with the accepted
+spellings in the message rather than a download that quietly took the default
+route:
+
+| value | effect |
+| --- | --- |
+| `youtube:client=NAME` | use only this InnerTube client: `android_vr`, `ios`, `android`, `tv_embedded` (or `tv`), `web`; the watch page is not asked, because its formats are the web client's |
+| `tiktok:route=web` | read the page's rehydration document only; the mobile feed is not asked |
+| `tiktok:route=app` | ask only the mobile feed; the page is not asked |
+
+The flag is repeatable, one occurrence per site, and the occurrences are folded
+into one table. Naming the same key twice — in one occurrence or across two — is
+a usage error: the flag is repeatable so that each site gets its own occurrence,
+not so that two of them can disagree. A route the flag excludes is named in the
+failure the extractor prints, so "the site said no twice" and "you told me to ask
+once" never look the same. Every value here is a route the build already has;
+nothing can be switched on that a release did not ship, which is why
+`--capabilities` lists the whole vocabulary under `extractor_args`.
 
 A media transfer has no total deadline: a 500 MiB file on a slow line is not an
 error. A resumed transfer sends `Range: bytes=N-`; a server that answers `200`
@@ -198,7 +298,7 @@ Schema version 1:
 | --- | --- |
 | `schema` | `1`; a change of meaning bumps it |
 | `status` | `downloaded`, `planned`, `listed`, `failed` |
-| `site` | `youtube`, `tiktok`, `x`, or `""` before the page was read |
+| `site` | `youtube`, `tiktok`, `x`, `vimeo`, or `""` before the page was read |
 | `id` | the site's own id for the item |
 | `selection` | the human description of what was chosen |
 | `path` | the written file, or `null` on failure and for `-o -` |
@@ -225,6 +325,12 @@ expects. `tafas --man | head -1` and `tafas URL | xargs mpv` both behave.
 Progress is drawn only when stderr is a terminal, `--quiet`/`--json`/
 `--no-progress` are absent, and `-j` is 1. With several jobs the per-item line
 takes its place, so two workers cannot draw on top of each other.
+
+The line is fitted to the terminal: it is shortened to `COLUMNS` columns by
+taking width from the bar first, because the numbers are what a narrow window
+cannot do without, and a `COLUMNS` below 24 is treated as unset rather than
+believed. Windows consoles are the case this exists for — a long path in a
+default 80-column window used to wrap and leave two half-lines behind.
 
 ## 8. Colour
 

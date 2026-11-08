@@ -18,16 +18,26 @@
 use serde_json::{json, Value};
 
 use crate::error::{Error, Result};
+use crate::extractor_args::ExtractorArgs;
 use crate::http::{Http, UA_ANDROID, UA_DESKTOP, UA_IOS};
 use crate::model::{Container, Format, Image, Media, Site, StreamKind, Subtitle};
 use crate::sites::{at, json_after, list, text, uint};
 use crate::url::Url;
 
-/// The InnerTube key that youtube.com serves to an anonymous browser. It is a
-/// public identifier embedded in the site's own HTML, not a credential; the
-/// page's value is preferred whenever it can be read, and this one only fills
-/// the gap when the page could not be fetched at all.
-const FALLBACK_API_KEY: &str = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8";
+/// YouTube's own web-client key, as served to an anonymous browser on every
+/// `watch` page and shipped by every other reader of this API.
+///
+/// It is *not* a credential. It identifies the web client to a public endpoint
+/// and unlocks no account, no private video and no quota of ours; the only
+/// thing Google associates with it is the caller's IP address. The page's own
+/// `INNERTUBE_API_KEY` is preferred whenever the page can be read, and this
+/// value only fills the gap when the page could not be fetched at all — which
+/// is the one case where dropping it would cost the whole InnerTube route.
+///
+/// GitHub's secret scanning flags the string, because it is shaped like a
+/// Google API key. There is no secret to rotate: dismissing that alert as a
+/// false positive is correct, and `SECURITY.md` says so out loud.
+const PUBLIC_WEB_API_KEY: &str = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8";
 
 const UA_ANDROID_VR: &str =
     "com.google.android.apps.youtube.vr.oculus/1.60.19 (Linux; U; Android 12; GB) gzip";
@@ -40,7 +50,7 @@ const PAGE_HEADERS: [(&str, &str); 3] = [
     ("accept", "text/html,application/xhtml+xml"),
 ];
 
-pub fn extract(http: &Http, url: &Url, raw: &str) -> Result<Media> {
+pub fn extract(http: &Http, url: &Url, raw: &str, args: &ExtractorArgs) -> Result<Media> {
     let id = video_id(url).ok_or_else(|| {
         Error::Usage(format!(
             "{raw} is not a YouTube video URL: expected /watch?v=ID, /shorts/ID or youtu.be/ID"
@@ -54,19 +64,33 @@ pub fn extract(http: &Http, url: &Url, raw: &str) -> Result<Media> {
     );
     let mut notes: Vec<String> = Vec::new();
 
+    let pinned = args.get("youtube", "client");
+
     let watch_url =
         format!("https://www.youtube.com/watch?v={id}&hl=en&bpctr=9999999999&has_verified=1");
-    let page = match http.get_text(&watch_url, &PAGE_HEADERS) {
-        Ok(page) => Some(page),
-        Err(error) => {
-            // A missing watch page is not fatal: the API route below does not
-            // need it. It costs the API key, so the fallback key is used.
-            notes.push(format!("watch page: {error}"));
+    let page = match pinned {
+        // A pinned client means the watch page is not asked at all. Its formats
+        // come out of the web player response, which is the one route the pin
+        // is there to avoid; asking it and then discarding the answer would only
+        // cost a request and confuse the notes.
+        Some(name) => {
+            notes.push(format!(
+                "watch page: not asked, --extractor-args pinned youtube:client={name}"
+            ));
             None
         }
+        None => match http.get_text(&watch_url, &PAGE_HEADERS) {
+            Ok(page) => Some(page),
+            Err(error) => {
+                // A missing watch page is not fatal: the API route below does not
+                // need it. It costs the API key, so the fallback key is used.
+                notes.push(format!("watch page: {error}"));
+                None
+            }
+        },
     };
 
-    let mut api_key = FALLBACK_API_KEY.to_string();
+    let mut api_key = PUBLIC_WEB_API_KEY.to_string();
     if let Some(page) = &page {
         if let Some(key) = inline_string(page, "INNERTUBE_API_KEY") {
             api_key = key;
@@ -88,6 +112,11 @@ pub fn extract(http: &Http, url: &Url, raw: &str) -> Result<Media> {
     let endpoint =
         format!("https://www.youtube.com/youtubei/v1/player?key={api_key}&prettyPrint=false");
     for (name, user_agent, context) in clients() {
+        if let Some(pinned) = pinned {
+            if name != pinned {
+                continue;
+            }
+        }
         let body = json!({
             "context": context,
             "videoId": id,
@@ -111,13 +140,13 @@ pub fn extract(http: &Http, url: &Url, raw: &str) -> Result<Media> {
         }
     }
 
-    Err(refusal(&id, &notes))
+    Err(refusal(&id, &notes, pinned))
 }
 
 /// Turns the accumulated failure reasons into the one sentence the user gets.
 /// A bot check and a cipher are different problems with different answers, so
 /// they are named separately instead of being flattened into "failed".
-fn refusal(id: &str, notes: &[String]) -> Error {
+fn refusal(id: &str, notes: &[String], pinned: Option<&str>) -> Error {
     let joined = notes.join("; ").to_ascii_lowercase();
     if joined.contains("sign in to confirm") || joined.contains("not a bot") {
         return Error::Refused(format!(
@@ -139,14 +168,19 @@ fn refusal(id: &str, notes: &[String]) -> Error {
              with an export from a signed-in browser (docs/extractors.md §3)"
         ));
     }
-    Error::Refused(format!(
-        "youtube: {id} could not be read: {}",
-        if notes.is_empty() {
-            "no client returned a playable format".to_string()
-        } else {
-            notes.join("; ")
-        }
-    ))
+    let tried = if notes.is_empty() {
+        "no client returned a playable format".to_string()
+    } else {
+        notes.join("; ")
+    };
+    let tried = match pinned {
+        Some(pinned) => format!(
+            "{tried}; --extractor-args pinned youtube:client={pinned}, so the other clients were \
+             not tried"
+        ),
+        None => tried,
+    };
+    Error::Refused(format!("youtube: {id} could not be read: {tried}"))
 }
 
 fn first_bot_sentence(notes: &[String]) -> String {
@@ -682,7 +716,7 @@ mod tests {
         assert!(info.formats.is_empty());
         assert!(describe(&info).contains("Sign in to confirm"));
 
-        let error = refusal("dQw4w9WgXcQ", &[format!("web: {}", describe(&info))]);
+        let error = refusal("dQw4w9WgXcQ", &[format!("web: {}", describe(&info))], None);
         assert!(matches!(error, Error::Refused(_)));
         assert!(error.to_string().contains("sign-in check"));
     }
@@ -700,7 +734,11 @@ mod tests {
         let info = read_player(&document, "test");
         assert_eq!(info.ciphered, 1);
         assert!(info.formats.is_empty());
-        let error = refusal("dQw4w9WgXcQ", &[format!("android_vr: {}", describe(&info))]);
+        let error = refusal(
+            "dQw4w9WgXcQ",
+            &[format!("android_vr: {}", describe(&info))],
+            None,
+        );
         assert!(error.to_string().contains("signature-protected"));
     }
 

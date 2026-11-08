@@ -36,7 +36,7 @@ and a badge turning red at 03:00 is not a test.
 | `clap_complete` | 4.5 | MIT OR Apache-2.0 | completions generated from the live parser |
 | `reqwest` | 0.12 (blocking) | MIT OR Apache-2.0 | HTTP/1.1 + HTTP/2, redirects, chunked bodies, gzip, proxies |
 | `rustls` | 0.23 (`ring`) | Apache-2.0 OR ISC OR MIT | TLS without OpenSSL |
-| `serde_json` | 1 | MIT OR Apache-2.0 | the three sites speak JSON; so does `--json` |
+| `serde_json` | 1 | MIT OR Apache-2.0 | the seven sites speak JSON; so does `--json` |
 | `aes` | 0.8 | MIT OR Apache-2.0 | AES-128 block cipher, for encrypted HLS segments |
 | `cbc` | 0.1 | MIT OR Apache-2.0 | CBC mode and PKCS#7 padding, which is the mode HLS specifies |
 
@@ -159,6 +159,20 @@ project made for convenience.
 
 There is no `libav*`, no OpenSSL, no `libcurl`, no `ffmpeg` and no Python. A
 build from source needs a C compiler for `ring`; the released binaries do not.
+
+## 3.1 The fuzz crate, which is not a dependency of the binary
+
+`fuzz/` is its own package: `publish = false`, never built by `cargo build`,
+never linked into a release. Its one dependency does not appear in the binary's
+graph at all.
+
+| Crate | Version | Licence | Why |
+| --- | --- | --- | --- |
+| `libfuzzer-sys` | 0.4 | MIT OR Apache-2.0 | the `cargo fuzz` runtime: a corpus, a coverage signal and a crash report |
+
+Nightly-only, dev-only, and the measurement §4 asks for comes out as zero — no
+byte of the released binary changed. That is a honest measurement, not a missing
+one. The targets themselves are described in [testing §6](testing.md#6-fuzzing).
 
 ## 4. Adding a dependency
 

@@ -29,9 +29,26 @@ pub struct Route {
     pub support_range: bool,
     /// Truncate the declared body, to exercise the byte-count check.
     pub truncate_by: usize,
+    /// How many of this route's requests are answered short. `Route::truncated`
+    /// is short every time (`usize::MAX`); `Route::truncated_once` is short
+    /// once and whole after, which is an interrupted transfer followed by the
+    /// rerun that finishes it — on one server, so the URLs the rerun asks for
+    /// are the ones the first run saw.
+    pub short_first: usize,
     /// Answer only when the request carries this header with this value, and
     /// `403` otherwise: the shape a site with a session check has.
     pub requires_header: Option<(String, String)>,
+    /// Hold the response for this long. A test that fetches segments in
+    /// parallel needs the requests to overlap on the server, and a delay is a
+    /// larger signal than a wall-clock assertion on a loaded runner.
+    pub delay_ms: u64,
+    /// How many of this route's requests have already been answered with a
+    /// 5xx. Per route rather than per process: a counter shared by every test
+    /// in one binary is spent by whichever test reaches it first, which makes
+    /// `fail_first: 1` mean "fails once, somewhere" instead of "fails once".
+    pub failed: AtomicUsize,
+    /// How many times this route has answered short, against `short_first`.
+    pub truncated: AtomicUsize,
 }
 
 impl Route {
@@ -42,7 +59,20 @@ impl Route {
             fail_first: 0,
             support_range: true,
             truncate_by: 0,
+            short_first: 0,
             requires_header: None,
+            delay_ms: 0,
+            failed: AtomicUsize::new(0),
+            truncated: AtomicUsize::new(0),
+        }
+    }
+
+    /// A route that answers after `delay_ms`, so two requests can be in flight
+    /// at once even when the body is tiny.
+    pub fn slow(path: &str, body: &[u8], delay_ms: u64) -> Route {
+        Route {
+            delay_ms,
+            ..Route::ok(path, body)
         }
     }
 
@@ -71,6 +101,16 @@ impl Route {
     pub fn truncated(path: &str, body: &[u8], by: usize) -> Route {
         Route {
             truncate_by: by,
+            short_first: usize::MAX,
+            ..Route::ok(path, body)
+        }
+    }
+
+    /// Short of the declared bytes on the first answer only.
+    pub fn truncated_once(path: &str, body: &[u8], by: usize) -> Route {
+        Route {
+            truncate_by: by,
+            short_first: 1,
             ..Route::ok(path, body)
         }
     }
@@ -84,6 +124,9 @@ pub struct TestServer {
     /// Requests per path, so a test can assert that a resource was fetched
     /// once rather than counting connections.
     hits: Arc<Mutex<HashMap<String, usize>>>,
+    /// Requests being served right now, and the highest number seen at once.
+    live: Arc<AtomicUsize>,
+    peak: Arc<AtomicUsize>,
 }
 
 impl TestServer {
@@ -97,9 +140,13 @@ impl TestServer {
         let stop = Arc::new(AtomicBool::new(false));
         let requests = Arc::new(AtomicUsize::new(0));
         let hits = Arc::new(Mutex::new(HashMap::new()));
+        let live = Arc::new(AtomicUsize::new(0));
+        let peak = Arc::new(AtomicUsize::new(0));
         let stop_flag = Arc::clone(&stop);
         let counter = Arc::clone(&requests);
         let path_hits = Arc::clone(&hits);
+        let live_now = Arc::clone(&live);
+        let peak_now = Arc::clone(&peak);
         let routes = Arc::new(routes);
 
         let handle = thread::spawn(move || {
@@ -107,7 +154,21 @@ impl TestServer {
                 match listener.accept() {
                     Ok((stream, _)) => {
                         counter.fetch_add(1, Ordering::SeqCst);
-                        let _ = handle_connection(stream, &routes, &path_hits);
+                        // One thread per connection, so a client that asks for
+                        // several things at once is served them at once.
+                        let routes = Arc::clone(&routes);
+                        let path_hits = Arc::clone(&path_hits);
+                        let live = Arc::clone(&live_now);
+                        let peak = Arc::clone(&peak_now);
+                        thread::spawn(move || {
+                            let _ = handle_connection(
+                                stream,
+                                routes.as_slice(),
+                                &path_hits,
+                                &live,
+                                &peak,
+                            );
+                        });
                     }
                     Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                         thread::sleep(Duration::from_millis(2));
@@ -123,7 +184,16 @@ impl TestServer {
             handle: Some(handle),
             requests,
             hits,
+            live,
+            peak,
         }
+    }
+
+    /// The most requests that were ever held back at the same moment. Only
+    /// routes built with `Route::slow` are counted, because those are the ones
+    /// whose overlap is a fact rather than a race.
+    pub fn peak_concurrent(&self) -> usize {
+        self.peak.load(Ordering::SeqCst)
     }
 
     /// How many requests a path received.
@@ -154,6 +224,8 @@ fn handle_connection(
     mut stream: TcpStream,
     routes: &[Route],
     hits: &Mutex<HashMap<String, usize>>,
+    live: &AtomicUsize,
+    peak: &AtomicUsize,
 ) -> std::io::Result<()> {
     stream.set_read_timeout(Some(Duration::from_secs(5)))?;
     let mut reader = BufReader::new(stream.try_clone()?);
@@ -205,13 +277,14 @@ fn handle_connection(
         None => return write_response(&mut stream, 404, "Not Found", b"no route", None),
     };
 
-    // Failures are counted per process, not per route, which is enough for a
-    // retry test: the second request finds the counter exhausted.
-    static FAILURES: AtomicUsize = AtomicUsize::new(0);
     // `truncate_by` keeps the declared length honest and cuts the bytes sent,
     // which is what a connection dropped mid-transfer actually looks like.
     let body = route.body.clone();
     let sent = body.len().saturating_sub(route.truncate_by);
+    let short = route.truncate_by > 0 && route.truncated.load(Ordering::SeqCst) < route.short_first;
+    if short {
+        route.truncated.fetch_add(1, Ordering::SeqCst);
+    }
 
     if let Some((name, value)) = &route.requires_header {
         let carried = headers
@@ -223,9 +296,22 @@ fn handle_connection(
         }
     }
 
-    let already = FAILURES.load(Ordering::SeqCst);
+    // The delay is where a request is observably in flight. Counting it here —
+    // rather than around the whole connection — is what makes "one at a time"
+    // and "two at a time" deterministic instead of a race with the client
+    // reading the answer and asking for the next segment.
+    if route.delay_ms > 0 {
+        let in_flight = live.fetch_add(1, Ordering::SeqCst) + 1;
+        peak.fetch_max(in_flight, Ordering::SeqCst);
+        thread::sleep(Duration::from_millis(route.delay_ms));
+        live.fetch_sub(1, Ordering::SeqCst);
+    }
+
+    // Counted on the route, so a second request to *this* path finds the
+    // counter exhausted and no other test can spend this one's failure.
+    let already = route.failed.load(Ordering::SeqCst);
     if already < route.fail_first {
-        FAILURES.store(already + 1, Ordering::SeqCst);
+        route.failed.store(already + 1, Ordering::SeqCst);
         return write_response(
             &mut stream,
             500,
@@ -244,7 +330,7 @@ fn handle_connection(
             // A range past the end is what a finished file looks like.
             write_response(&mut stream, 416, "Range Not Satisfiable", b"", None)
         }
-        _ if route.truncate_by > 0 => write_short(&mut stream, body.len(), sent, &body),
+        _ if short => write_short(&mut stream, body.len(), sent, &body),
         _ => write_response(&mut stream, 200, "OK", &body, None),
     }
 }
@@ -471,4 +557,130 @@ pub fn ts_segment() -> Vec<u8> {
     out.extend_from_slice(&packet(482, true, 0, &pes(0xc0, 90_000, None, &audio)));
     out.extend_from_slice(&packet(482, true, 1, &pes(0xc0, 93_000, None, &audio)));
     out
+}
+
+// ---------------------------------------------------------------------------
+// fragmented MP4
+// ---------------------------------------------------------------------------
+
+fn boxed(kind: &[u8; 4], payload: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(payload.len() + 8);
+    out.extend_from_slice(&((payload.len() as u32) + 8).to_be_bytes());
+    out.extend_from_slice(kind);
+    out.extend_from_slice(payload);
+    out
+}
+
+fn full_box(kind: &[u8; 4], version: u8, flags: u32, payload: &[u8]) -> Vec<u8> {
+    let mut body = Vec::new();
+    body.push(version);
+    body.extend_from_slice(&flags.to_be_bytes()[1..]);
+    body.extend_from_slice(payload);
+    boxed(kind, &body)
+}
+
+fn joined(parts: &[Vec<u8>]) -> Vec<u8> {
+    let mut out = Vec::new();
+    for part in parts {
+        out.extend_from_slice(part);
+    }
+    out
+}
+
+/// The `EXT-X-MAP` header of a fragmented-MP4 stream: one H.264 track, 90 kHz,
+/// with `trex` defaults for the sample sizes and durations the fragments carry.
+pub fn fmp4_init() -> Vec<u8> {
+    // A baseline `avcC`: profile 0x42, level 0x1e, one SPS and one PPS. The
+    // bytes are not decoded by anything under test, but they are the shape a
+    // player reads, so the fixture does not teach the reader anything false.
+    let avcc = vec![
+        0x01, 0x42, 0xc0, 0x1e, 0xff, 0xe1, 0x00, 0x04, 0x67, 0x42, 0xc0, 0x1e, 0x01, 0x00, 0x04,
+        0x68, 0xce, 0x3c, 0x80,
+    ];
+    let mut entry = vec![0u8; 6];
+    entry.extend_from_slice(&1u16.to_be_bytes()); // data_reference_index
+    entry.extend_from_slice(&[0u8; 70]); // width, height, resolution, depth, …
+    entry.extend_from_slice(&boxed(b"avcC", &avcc));
+    let avc1 = boxed(b"avc1", &entry);
+
+    let stsd = full_box(b"stsd", 0, 0, &joined(&[1u32.to_be_bytes().to_vec(), avc1]));
+    let stbl = boxed(b"stbl", &stsd);
+    let minf = boxed(b"minf", &stbl);
+
+    let mut mdhd_body = Vec::new();
+    mdhd_body.extend_from_slice(&0u32.to_be_bytes()); // creation
+    mdhd_body.extend_from_slice(&0u32.to_be_bytes()); // modification
+    mdhd_body.extend_from_slice(&90_000u32.to_be_bytes());
+    mdhd_body.extend_from_slice(&0u32.to_be_bytes()); // duration
+    mdhd_body.extend_from_slice(&[0u8; 4]); // language + pre_defined
+    let mdhd = full_box(b"mdhd", 0, 0, &mdhd_body);
+    let mdia = boxed(b"mdia", &joined(&[mdhd, minf]));
+
+    let mut tkhd_body = Vec::new();
+    tkhd_body.extend_from_slice(&0u32.to_be_bytes()); // creation
+    tkhd_body.extend_from_slice(&0u32.to_be_bytes()); // modification
+    tkhd_body.extend_from_slice(&1u32.to_be_bytes()); // track_ID
+    tkhd_body.extend_from_slice(&[0u8; 60]);
+    let tkhd = full_box(b"tkhd", 0, 3, &tkhd_body);
+    let trak = boxed(b"trak", &joined(&[tkhd, mdia]));
+
+    let mut trex_body = 1u32.to_be_bytes().to_vec(); // track_ID
+    trex_body.extend_from_slice(&1u32.to_be_bytes()); // sample description index
+    trex_body.extend_from_slice(&3_000u32.to_be_bytes()); // default duration
+    trex_body.extend_from_slice(&0u32.to_be_bytes()); // default size
+    trex_body.extend_from_slice(&0u32.to_be_bytes()); // default flags
+    let trex = full_box(b"trex", 0, 0, &trex_body);
+    let mvex = boxed(b"mvex", &trex);
+
+    let mvhd = full_box(b"mvhd", 0, 0, &[0u8; 96]);
+    let mut ftyp = b"isom".to_vec();
+    ftyp.extend_from_slice(&0x0000_0200u32.to_be_bytes());
+    ftyp.extend_from_slice(b"isomiso6mp41");
+    joined(&[
+        boxed(b"ftyp", &ftyp),
+        boxed(b"moov", &joined(&[mvhd, trak, mvex])),
+    ])
+}
+
+/// One media segment: a `moof` and the `mdat` its `trun` points into. Each
+/// sample is `(payload, keyframe)`, decode times start at `base_time`, and each
+/// sample lasts the `trex` default of 3 000 ticks.
+pub fn fmp4_fragment(base_time: u64, samples: &[(&[u8], bool)]) -> Vec<u8> {
+    let moof = |data_offset: i32| {
+        let tfhd = full_box(b"tfhd", 0, 0x020000, &1u32.to_be_bytes()); // default-base-is-moof
+        let tfdt = full_box(b"tfdt", 1, 0, &base_time.to_be_bytes());
+        let mut trun_body = (samples.len() as u32).to_be_bytes().to_vec();
+        trun_body.extend_from_slice(&data_offset.to_be_bytes());
+        for (payload, keyframe) in samples {
+            trun_body.extend_from_slice(&(payload.len() as u32).to_be_bytes());
+            let flags: u32 = if *keyframe { 0x0200_0000 } else { 0x0001_0000 };
+            trun_body.extend_from_slice(&flags.to_be_bytes());
+        }
+        // data offset, per-sample size, per-sample flags; the duration comes
+        // from `trex`, which is what a real fragment does.
+        let trun = full_box(b"trun", 0, 0x000601, &trun_body);
+        let traf = boxed(b"traf", &joined(&[tfhd, tfdt, trun]));
+        boxed(b"moof", &traf)
+    };
+    let header = moof(0);
+    let offset = (header.len() + 8) as i32;
+    let payload = joined(
+        &samples
+            .iter()
+            .map(|(payload, _)| payload.to_vec())
+            .collect::<Vec<_>>(),
+    );
+    joined(&[moof(offset), boxed(b"mdat", &payload)])
+}
+
+/// The playlist a fragmented-MP4 HLS stream is described by.
+pub fn fmp4_playlist(segments: &[&str]) -> String {
+    let mut text = String::from(
+        "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:6\n#EXT-X-MAP:URI=\"init.mp4\"\n",
+    );
+    for segment in segments {
+        text.push_str(&format!("#EXTINF:6.0,\n{segment}\n"));
+    }
+    text.push_str("#EXT-X-ENDLIST\n");
+    text
 }

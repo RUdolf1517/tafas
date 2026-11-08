@@ -96,3 +96,99 @@ jobs:
         if: steps.clippy.outcome == 'failure' || steps.test.outcome == 'failure' || steps.build.outcome == 'failure'
         shell: bash
         run: exit 1
+
+  # A downloader is allowed to grow; it is not allowed to grow silently. The two
+  # numbers in `packaging/budgets.json` — the size of the binary and the time it
+  # takes to print its own name — are compared against here, on one platform,
+  # because a budget that is only printed is a budget nobody reads.
+  budgets:
+    name: budgets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build
+        shell: bash
+        run: cargo build --release --locked
+
+      - name: Check the budget
+        id: budget
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          python3 packaging/tests/budgets.py target/release/tafas | tee budget.log
+
+      # Same reason as the `test` job: the numbers that failed are published
+      # where the reader is, not only in a log this project cannot always reach.
+      - name: Publish what was measured
+        if: steps.budget.outcome == 'failure'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
+          set -uo pipefail
+          number="$(gh pr list --head "$HEAD_BRANCH" --state open --json number -q '.[0].number' 2>/dev/null || true)"
+          if [ -z "$number" ]; then
+            echo "no open pull request for $HEAD_BRANCH; see the step log"
+            exit 0
+          fi
+          {
+            echo '### `budgets` — the numbers this build has'
+            echo '```'
+            tail -n 40 budget.log
+            echo '```'
+          } > budget.md
+          gh pr comment "$number" --body-file budget.md || true
+
+      - name: Fail the job
+        if: steps.budget.outcome == 'failure'
+        shell: bash
+        run: exit 1
+
+  # `rust-version = "1.82"` is a promise, and a promise nobody builds is a wish.
+  # One build at the declared floor is enough to notice a dependency that moved
+  # it, which is the failure mode this job exists for.
+  msrv:
+    name: msrv (1.82)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.82"
+
+      - name: Build at the declared floor
+        id: floor
+        continue-on-error: true
+        shell: bash
+        run: cargo build --locked --all-targets 2>&1 | tee msrv.log
+
+      - name: Publish the failure
+        if: steps.floor.outcome == 'failure'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
+          set -uo pipefail
+          number="$(gh pr list --head "$HEAD_BRANCH" --state open --json number -q '.[0].number' 2>/dev/null || true)"
+          if [ -z "$number" ]; then
+            echo "no open pull request for $HEAD_BRANCH; see the step log"
+            exit 0
+          fi
+          {
+            echo '### `msrv` — the declared floor does not build'
+            echo '```'
+            grep -vE "^ *(Downloading|Downloaded|Compiling|Checking|Updating|Adding|Locking)" msrv.log \
+              | tail -n 80
+            echo '```'
+          } > msrv.md
+          gh pr comment "$number" --body-file msrv.md || true
+
+      - name: Fail the job
+        if: steps.floor.outcome == 'failure'
+        shell: bash
+        run: exit 1

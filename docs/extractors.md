@@ -21,6 +21,10 @@ rather than with an empty file.
 | `youtube.com`, `music.youtube.com`, `youtube-nocookie.com`, `youtu.be` | YouTube |
 | `tiktok.com`, `vm.tiktok.com`, `vt.tiktok.com` | TikTok |
 | `x.com`, `twitter.com`, `t.co` | X |
+| `vimeo.com`, `player.vimeo.com` | Vimeo |
+| `reddit.com`, `old.reddit.com`, `redd.it`, `v.redd.it` | Reddit |
+| `soundcloud.com`, `on.soundcloud.com` | SoundCloud |
+| `twitch.tv` | Twitch |
 
 `m.` and `mobile.` prefixes are stripped before the comparison, and so is a
 trailing dot. `notyoutube.com` and `youtube.com.evil.example` are **not**
@@ -37,6 +41,12 @@ YouTube: the comparison is on the whole host, which is why a lookalike is a
    browser receives, so it is parsed directly (brace-matched, string-aware, so a
    `}` inside a title cannot truncate it). The page also supplies
    `INNERTUBE_API_KEY`, which the next route needs.
+   The page's `INNERTUBE_API_KEY` is what route 2 authenticates with. When the
+   page cannot be read at all, the key in the source (`PUBLIC_WEB_API_KEY`) is
+   used: it is YouTube's own web-client key, public, in every page, and a
+   secret scanner will call it a leak. [SECURITY.md § Credentials in the
+   source](../SECURITY.md#credentials-in-the-source-and-what-to-do-when-a-scanner-flags-one)
+   explains why it stays.
 2. **InnerTube**, `POST /youtubei/v1/player`, with the clients below in this
    order. Each is a different `context.client`, because YouTube serves different
    documents to different clients, and the difference is exactly whether a
@@ -194,7 +204,7 @@ video; use `--list-formats` to see both.
 
 | Situation | Output |
 | --- | --- |
-| only an fMP4 playlist (`EXT-X-MAP`) | refusal naming `EXT-X-MAP`; fragments are not stitched yet |
+| only a fragmented-MP4 playlist (`EXT-X-MAP`) | read, since v0.3: the header is fetched once and the fragments are stitched ([hls §2](hls.md#2-two-containers-one-writer)) |
 | a `SAMPLE-AES` playlist | refusal at parse time: the cipher is inside the container's framing |
 | tombstone (deleted, protected, age-restricted) | refusal naming the missing account |
 | post with no media at all | `unsupported` |
@@ -204,7 +214,160 @@ video; use `--list-formats` to see both.
 The X refusal table stays three rows long on purpose: a post either has media or
 it does not, and a caption flag cannot change that.
 
-## 5. What a refusal looks like, and what it does not
+## 5. Vimeo
+
+### 5.1 Route
+
+One request: `https://player.vimeo.com/video/<id>/config`, the JSON the embed
+player asks for itself, with a `vimeo.com` referer and origin because the player
+checks them. The document lists `request.files.progressive[]` — complete MP4s,
+picture and sound in one stream — and `request.files.hls.cdns[*].url` when the
+video has a playlist. No HTML is parsed: the page is a player, and the player
+already knows what it would play.
+
+An unlisted video needs the hash that its URL carries (`/76979871/1a2b3c4d5e`,
+or `?h=` on the player host), and the hash is passed back as `?h=`.
+
+### 5.2 What is selected
+
+| In the document | Becomes |
+| --- | --- |
+| `request.files.progressive[].url` | a `Mp4` format, `vimeo-<quality>`, with its height, fps and bitrate |
+| `request.files.hls.cdns[*].url` | one `Hls` format, `vimeo-hls`; the Google origin first, because it answers without a token |
+| `video.thumbs` | the poster, widest key wins (`--write-thumbnail`) |
+| `video.title`, `video.owner.name`, `video.duration` | the name, the uploader, the duration |
+
+Progressive files are kept *beside* the playlist rather than instead of it. The
+playlist states no size, so selection prefers a progressive MP4 by itself, and
+`--format vimeo-hls` can still ask for the playlist when that is what the user
+wants.
+
+### 5.3 Refused
+
+| Situation | Result |
+| --- | --- |
+| `404` on the config endpoint | refusal (1): gone, private, or unlisted without its hash |
+| no progressive file and no playlist | refusal (1): password-protected, private or blocked from embedding; `--cookies FILE` is sent when named, no challenge is solved |
+| `request.files.dash` and nothing else | refusal (1) naming DASH and `SegmentBase`: this build does not read it |
+| a `progressive` entry whose `mime` is not MP4 | dropped, not converted |
+
+**What it cannot reach:** DASH-only videos (that is what `SegmentBase` would need),
+videos behind a password, and anything that requires solving a challenge. There is
+no fallback that pretends otherwise.
+
+## 6. Reddit
+
+### 6.1 Route
+
+`/comments/<id>.json?raw_json=1` for a post — the listing the old mobile clients
+asked for; its first child is the post, and `secure_media.reddit_video` is the
+video. A bare `v.redd.it/<hash>` needs no JSON at all: the master playlist lives
+at a fixed path under the same hash, so the URL is built.
+
+### 6.2 One route, and why not the two obvious ones
+
+Only `hls_url` is taken, and the two alternatives in the same object are named
+here rather than silently skipped:
+
+| Field | Why it is not offered |
+| --- | --- |
+| `fallback_url` (`DASH_<height>.mp4`) | it is a **video-only** MP4: no audio track at all. Writing it as a finished video would be a file with a picture and no sound |
+| `dash_url` (`DASHPlaylist.mpd`) | DASH `SegmentBase`, which this build does not read |
+| `hls_url` | a master playlist with the video renditions and an `EXT-X-MEDIA` audio rendition, which `hlsfetch` follows and joins into one MP4 — **taken** |
+
+A `v.redd.it` GIF is the same route, and comes out with no audio because the
+source has none.
+
+### 6.3 Refused
+
+| Situation | Result |
+| --- | --- |
+| `404` on the post listing | refusal (1): deleted, private, or a community that is gone |
+| `removed_by_category` present | refusal (1) naming the category |
+| no `reddit_video` | refusal (1): a text, link, gallery or photo post is not a video |
+| a video with no `hls_url` | refusal (1) that says the progressive files carry no audio, so no silent file is written |
+| `over_18` and nothing playable | refusal (1) that names `--cookies FILE`; nothing challenges a wall |
+
+**What it cannot reach:** videos behind a wall or a private community (a session
+may help), and anything the post lists only as DASH.
+
+## 7. SoundCloud
+
+### 7.1 Route
+
+Three requests, and each one is needed:
+
+1. the track page, for `window.__sc_hydration` — the array the site's own player
+   renders from. The entry with `"hydratable":"sound"` carries the title, the
+   uploader, the duration, the artwork and `media.transcodings`;
+2. the transcoding URL, with the page's own public `client_id` appended. It
+   answers a small JSON document, not audio;
+3. the CDN URL that document names — the bytes.
+
+`on.soundcloud.com` is a redirector, so one redirect is followed first. The
+`client_id` is scraped from the page (`client_id=<32 alphanumerics>`, in a script
+URL or inline JSON), never guessed and never hard-coded.
+
+### 7.2 What is selected
+
+| In the document | Becomes |
+| --- | --- |
+| the first `transcodings[]` entry with `protocol: "progressive"` and `mime_type: "audio/mpeg"` | the stream, as an **MP3** copied verbatim |
+| `title`, `user.username`, `duration`, `artwork_url` | the name, the uploader, the duration, the poster |
+
+One format, no selection to make: a track is one file. `--audio-only` is
+therefore implied rather than required, and `--quality` has nothing to choose
+between.
+
+### 7.3 Refused
+
+| Situation | Result |
+| --- | --- |
+| a set (`/<artist>/sets/<slug>`) | refusal naming it: a set is a list of tracks, and one URL is one file |
+| no `__sc_hydration` | refusal (1): a consent wall, a block on this address, or not a track |
+| no page `client_id` | refusal (1), naming `--cookies FILE` |
+| only HLS/opus transcodings | refusal (1): this build demuxes neither opus nor a fragmented audio playlist |
+| no progressive transcoding | refusal (1): a Go+ track, or only a preview of one |
+| the transcoding answers no `url` | refusal (1), which is what a region block looks like |
+
+**What it cannot reach:** Go+ tracks, opus-only renditions, sets, and anything
+behind a consent wall. An MP3 is also the one written file that is **not**
+structurally verified — there is no container to check, so the byte count is the
+whole guarantee.
+
+## 8. Twitch
+
+### 8.1 Route
+
+One batched GraphQL request carries two operations:
+
+1. `PlaybackAccessToken`, asked by persisted-query hash with the **public web
+   client id** in a `client-id` header. It answers `value` and `signature`;
+2. `video(id:)` for the title, the uploader, the length and the poster — so a
+   capture does not pay a second round trip just to name the file.
+
+Those two values become the playlist URL:
+`https://usher.ttvnw.net/vod/<id>.m3u8?...&nauth=<token>&nauthsig=<signature>`.
+`value` is a JSON document, so it is percent-encoded before it goes in the query
+string; `signature` is a signature over it and is sent as it arrived. `hlsfetch`
+then assembles the playlist like any other — the renditions are MPEG-TS, and the
+audio-only variant is offered by the same master list.
+
+### 8.2 Refused
+
+| Situation | Result |
+| --- | --- |
+| a channel URL (`twitch.tv/<name>`) | unsupported (1): a live stream has no end, and a file needs one |
+| `streamPlaybackAccessToken` null | refusal (1): expired, deleted, or subscriber-only; `--cookies FILE` is named |
+| a token without `value` or without `signature` | refusal (1) naming which field is missing |
+| an `errors` array in the answer | refusal (1) quoting the API's own message, because a changed persisted-query hash arrives exactly that way |
+
+**What it cannot reach:** live channels, clips (`clips.twitch.tv` has no reader
+here), subscriber-only VODs without a session, and anything Twitch has already
+expired. The client id is public and is not a credential — `SECURITY.md` says so
+next to YouTube's key.
+
+## 9. What a refusal looks like, and what it does not
 
 A refusal is a **failure**: exit 1, one line on stderr, and — under `--json` —
 an object with `"status": "failed"` and a `reason`. It is not a skip that exits
@@ -214,13 +377,44 @@ Nothing is ever written on a refusal. No empty file, no directory, no truncated
 `.mp4` with a valid header: the extractors run before the first byte of media is
 requested, so a refusal costs one or two page requests and no disk.
 
-## 6. When a site changes
+## 10. When a site changes
 
 Every extractor is written to *fail* rather than to produce something wrong:
 `read_player` returns "no formats" instead of panicking on a missing field, the
 JSON lookup helpers are total, and media URLs are used only when they are
 strings. A changed page therefore produces a refusal with the status the site
 reported, which is the single most useful thing a bug report can contain.
+
+## 11. The escape hatch: `--extractor-args`
+
+Section 6 ends with "a changed page produces a refusal", and a refusal is useful
+but not a download. The flag for the day between the change and the release is
+`--extractor-args SITE:KEY=VALUE`, and it is deliberately the smallest thing that
+could work.
+
+There are two keys, both of them routes this build already has:
+
+| value | what it does | when it helps |
+| --- | --- | --- |
+| `youtube:client=NAME` | asks one InnerTube client and drops the rest of the chain (`android_vr`, `ios`, `android`, `tv_embedded`, `web`) | one client still answers while the default order trips a bot check |
+| `tiktok:route=web` | reads the page only, never the mobile feed | the page works and the feed 403s, so the fallback wastes a request |
+| `tiktok:route=app` | asks the feed only, never the page | the desktop page serves a verification wall and the feed does not |
+
+Three rules make it an escape hatch rather than a configuration language. The
+vocabulary is **closed**: a site's keys, and each key's values, are constants in
+`src/extractor_args.rs`, and `--capabilities` publishes the same lists, so the
+set of values a release accepts is documented where a script can read it. It is
+**checked before the first request**, so `youtube:client=flash` is exit 2 with
+`android_vr|ios|android|tv_embedded|web` in the message, not a download that
+quietly used the default. And it **only narrows**: there is no value that turns
+on a route the build does not already try by default, so a pinned client is a
+subset of the chain, and the failure for a pinned route names the pin — "no
+other client was tried" is the difference between a site problem and a
+self-inflicted one.
+
+A pinned route is never silent in the other direction either: dropping a route
+puts a note in the failure that names the flag, and `youtube:client=NAME` skips
+the watch page instead of asking it and discarding the answer.
 
 If a site changes and tafas writes a file that a player rejects, that is the
 highest-priority bug class in this project. [SECURITY.md](../SECURITY.md) covers

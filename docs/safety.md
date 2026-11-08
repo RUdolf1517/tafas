@@ -54,6 +54,7 @@ same instruction neighbourhood as the rename.
 | `.part` present, server answers `206` | bytes appended, offsets verified by the byte count |
 | `.part` present, server answers `200` | body restarted: the file is truncated first, so the beginning cannot appear twice |
 | `.part` present, server answers `416` | treated as "already complete or stale": the transfer restarts from zero |
+| `.part.segments` + `.part.journal` beside an HLS part | the segments already fetched are replayed, the rest is requested ([hls §6](../docs/hls.md#6-what-is-resumed)); deleted with the part, never renamed |
 | `--no-resume` | `.part` is truncated and the transfer starts over |
 
 A `.part` file is never renamed on its own. Stale parts are the user's to
@@ -82,6 +83,14 @@ Output directories are created with `create_dir_all` when the user named a
 directory that does not exist. Nothing else is created, and nothing is deleted
 except the temporaries this run made.
 
+The length of a path is not one of the rules above: it is a platform detail.
+On Windows every path this program creates, renames or deletes is handed over in
+its `\\?\` form (`paths::verbatim`), which lifts the 260-character limit; a UNC
+path becomes `\\?\UNC\`, and a path where prefixing could change the meaning —
+relative, already prefixed, or carrying `.`/`..` or forward slashes — is passed
+through unchanged. Elsewhere the function is the identity, so there is one code
+path and no platform branch at the call sites.
+
 ## 5. Network
 
 | Decision | Value |
@@ -100,7 +109,7 @@ except the temporaries this run made.
 | credentials | file names only: a cookie jar is read once and never written back, and no cookie value is logged, printed or quoted in an error; a `user:pass@` in a URL is dropped before use |
 | telemetry | none; the only requests are the ones a capture needs |
 
-The user agent is a browser string, because that is what the three sites serve
+The user agent is a browser string, because that is what the seven sites serve
 data to. That is a statement about the sites, not about the program: tafas does
 not execute JavaScript, does not run a headless browser, and does not solve
 challenges.

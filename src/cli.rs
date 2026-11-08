@@ -139,13 +139,39 @@ pub struct Args {
     #[arg(long, value_name = "SECS", default_value_t = 60)]
     pub timeout: u64,
 
+    /// Cap a transfer at this many bytes per second (500K, 2M, 1.5M)
+    #[arg(long, value_name = "RATE", value_parser = parse_limit_rate)]
+    pub limit_rate: Option<u64>,
+
     /// Take only these segments of an HLS list: 3, 1-5, 2- (1-based)
     #[arg(long, value_name = "ITEMS", value_parser = parse_items)]
     pub playlist_items: Option<crate::items::Items>,
 
+    /// Fetch this many HLS segments at once (1 = one after another)
+    #[arg(
+        long,
+        value_name = "N",
+        default_value_t = 1,
+        value_parser = parse_concurrency
+    )]
+    pub concurrent_fragments: usize,
+
+    /// Mux the selected caption track into the MP4 instead of writing a .vtt
+    #[arg(long)]
+    pub embed_subs: bool,
+
     /// Send cookies from a Netscape cookie file (read once, never written back)
     #[arg(long, value_name = "FILE")]
     pub cookies: Option<PathBuf>,
+
+    /// Narrow an extractor's route: SITE:key=value (repeatable)
+    #[arg(
+        long,
+        value_name = "SITE:KEY=VALUE",
+        value_parser = parse_extractor_args,
+        action = clap::ArgAction::Append
+    )]
+    pub extractor_args: Vec<crate::extractor_args::ExtractorArgs>,
 
     /// Log requests and decisions on stderr (repeatable)
     #[arg(short = 'v', long, action = clap::ArgAction::Count)]
@@ -193,11 +219,52 @@ fn parse_items(text: &str) -> Result<crate::items::Items, String> {
     crate::items::Items::parse(text).map_err(|error| error.to_string())
 }
 
+/// `--limit-rate RATE`: the syntax lives in `ratelimit` so the message and the
+/// bound are one piece of code, checked before the first request.
+fn parse_limit_rate(text: &str) -> Result<u64, String> {
+    crate::ratelimit::parse(text)
+}
+
 fn parse_color(text: &str) -> Result<Choice, String> {
     Choice::parse(text)
 }
 
+/// clap wants a message here, not an [`crate::error::Error`], so the check is
+/// done once in `extractor_args` and the text is reused.
+fn parse_extractor_args(text: &str) -> Result<crate::extractor_args::ExtractorArgs, String> {
+    crate::extractor_args::ExtractorArgs::parse(text).map_err(|error| error.to_string())
+}
+
+/// `--concurrent-fragments N`: at least one, and no more than the fetch path
+/// will actually run — a number the program silently reduced would be a lie
+/// about what it did.
+fn parse_concurrency(text: &str) -> Result<usize, String> {
+    let limit = crate::hlsfetch::CONCURRENCY_LIMIT;
+    let value: usize = text.trim().parse().map_err(|_| {
+        format!("--concurrent-fragments takes a whole number between 1 and {limit}, not {text:?}")
+    })?;
+    if value == 0 || value > limit {
+        return Err(format!(
+            "--concurrent-fragments must be between 1 and {limit}, not {value}"
+        ));
+    }
+    Ok(value)
+}
+
 impl Args {
+    /// `--extractor-args` folded into one table.
+    ///
+    /// A key named twice is a usage error rather than a silent last-one-wins:
+    /// the flag is repeatable so that each site gets its own occurrence, not so
+    /// that two of them can disagree.
+    fn extractor_args(&self) -> crate::error::Result<crate::extractor_args::ExtractorArgs> {
+        let mut folded = crate::extractor_args::ExtractorArgs::default();
+        for args in &self.extractor_args {
+            folded.absorb(args.clone())?;
+        }
+        Ok(folded)
+    }
+
     /// The colour decision after `--no-color` has had its say.
     pub fn color(&self) -> Choice {
         if self.no_color {
@@ -218,8 +285,8 @@ impl Args {
         }
     }
 
-    pub fn options(&self) -> Options {
-        Options {
+    pub fn options(&self) -> crate::error::Result<Options> {
+        Ok(Options {
             output: self.output.clone(),
             multiple: self.urls.len() > 1,
             quality: self.quality,
@@ -227,6 +294,7 @@ impl Args {
             write_info_json: self.write_info_json,
             write_thumbnail: self.write_thumbnail,
             write_subs: self.write_subs,
+            embed_subs: self.embed_subs,
             sub_langs: self.sub_langs.clone(),
             format: self.format.clone(),
             no_mux: self.no_mux,
@@ -241,11 +309,14 @@ impl Args {
             jobs: self.jobs(),
             retries: self.retries,
             timeout: self.timeout,
+            limit_rate: self.limit_rate,
             cookies: self.cookies.clone(),
+            extractor_args: self.extractor_args()?,
             playlist_items: self.playlist_items.clone(),
+            concurrent_fragments: self.concurrent_fragments,
             verbose: self.verbose,
             color: self.color(),
-        }
+        })
     }
 
     /// Flags that answer a question and exit, so a missing URL is not an error.
@@ -268,7 +339,7 @@ mod tests {
     #[test]
     fn defaults_match_the_documented_ones() {
         let args = Args::parse_from(["tafas", "https://youtu.be/dQw4w9WgXcQ"]);
-        let options = args.options();
+        let options = args.options().unwrap();
         assert_eq!(options.quality, Quality::Best);
         assert!(options.resume);
         assert!(!options.overwrite);
@@ -288,7 +359,7 @@ mod tests {
             "never",
             "https://x.com/a/status/1",
         ]);
-        assert_eq!(args.options().quality, Quality::Height(720));
+        assert_eq!(args.options().unwrap().quality, Quality::Height(720));
         assert_eq!(args.color(), Choice::Never);
     }
 
@@ -296,7 +367,7 @@ mod tests {
     fn jobs_zero_means_four() {
         let args = Args::parse_from(["tafas", "-j", "0", "https://youtu.be/dQw4w9WgXcQ"]);
         assert_eq!(args.jobs(), 4);
-        assert!(!args.options().multiple);
+        assert!(!args.options().unwrap().multiple);
     }
 
     #[test]
@@ -308,7 +379,7 @@ mod tests {
             "https://youtu.be/dQw4w9WgXcQ",
             "https://x.com/a/status/1",
         ]);
-        assert!(args.options().multiple);
+        assert!(args.options().unwrap().multiple);
     }
 
     #[test]

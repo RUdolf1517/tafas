@@ -11,8 +11,87 @@ version; adding a site, a flag or a container is minor. The policy is in
 
 ## [Unreleased]
 
+Every item of
+[v0.4](docs/roadmap.md#4-v04--speed-platforms-trust--done-not-yet-released) is
+below, and nothing here has been released yet: the next tag carries v0.2, v0.3
+and v0.4 together. The one exception is the signing key, which is a secret
+rather than a change — the job that signs is in and stays dormant until the key
+exists.
+
 ### Added
 
+- **Reproducible releases, a signature and an SBOM.** The release build no longer
+  carries its own clock, directory or cargo home: `SOURCE_DATE_EPOCH` is the
+  commit's time, `--remap-path-prefix` folds the runner's paths into `/build` and
+  `/cargo`, and `CARGO_INCREMENTAL` is off. The release publishes
+  `tafas-release-X.Y.Z.spdx.json`, an SPDX 2.3 document built from `Cargo.lock` by
+  `packaging/sbom.py` — 154 packages, sorted, reproducible, no network. When the
+  `MINISIGN_SECRET_KEY` secret exists, `packaging/sign.sh` signs every artifact
+  and `SHA256SUMS`, publishes `minisign.pub` beside them and verifies all of it
+  against that key before uploading; without a published key it refuses to sign
+  rather than publish a signature nobody can check. Documented in
+  [docs/releases.md](docs/releases.md).
+- **An `msrv` job.** `rust-version = "1.82"` was a line in the release procedure
+  and is now a job: `cargo build --locked --all-targets` at the declared floor,
+  with the failure published to the pull request. A dependency that raises the
+  floor fails here instead of in a release.
+- **Windows long paths.** `paths::verbatim` puts `\\?\` (or `\\?\UNC\`) in
+  front of the paths tafas writes — the `.part`, the rename into place, a deep
+  output directory and the HLS cache sidecars — which is what makes a target past
+  260 characters work. A path where prefixing could change the meaning (relative,
+  already verbatim, `.`/`..`, forward slashes) is left exactly as it was.
+- **A progress line that fits.** The bar is drawn as wide as the terminal says
+  (`COLUMNS`) and gives up its width before the numbers do; below 24 columns it
+  is left alone rather than guessed at.
+
+- **Per-segment resume.** An interrupted HLS download no longer starts over. The
+  segments that landed are cached beside the staging file
+  (`<target>.part.segments`, one length per line in `<target>.part.journal`,
+  separately for a split audio rendition), and a rerun replays them and asks the
+  server only for what is missing — and says how many it replayed. The journal
+  starts with a fingerprint of the selection, so another playlist, another
+  `--playlist-items` or another build drops the cache instead of splicing it into
+  a file it does not describe; the payload is written and synced before its
+  length is recorded, so a torn tail is cut back to the last whole segment.
+  `--no-resume` deletes the cache before the first request. Documented in
+  [docs/hls.md](docs/hls.md#6-what-is-resumed).
+
+- **`--limit-rate RATE`.** One budget for the bytes coming off the wire: a
+  progressive body and every segment of an HLS list are charged against the same
+  clock, so `--concurrent-fragments 4` divides the rate rather than multiplying
+  it. `RATE` takes an optional `K`, `M` or `G` suffix in powers of 1024 with
+  decimals allowed; below `1K` the run would be slower than its own timeouts so
+  that is a usage error (2) rather than a clamp, and the ceiling is `1G`.
+  Metadata — the page, the JSON, a thumbnail — is not charged. The wait happens
+  outside the budget's lock, so concurrent segments still overlap, and one
+  chunk of slack at the start keeps the first read instant. Documented in
+  [docs/cli.md](docs/cli.md#4-transfer).
+- **Fragmented MP4 in HLS** (`src/mp4read.rs`). A playlist with `EXT-X-MAP` is
+  no longer refused: the header is fetched once, `moov`/`trak`/`stsd` are read for
+  the timescale and the codec record (`avcC`, or `esds` down to the two-byte
+  `AudioSpecificConfig`), and each segment's `moof`/`trun`/`tfhd`/`tfdt` becomes
+  the same `Track`/`Sample` pair the transport-stream demuxer produces, so
+  `mp4write` lays both out unchanged. Defaults cascade `trun` → `tfhd` → `trex`,
+  decode times come from `tfdt` and carry across fragments, and every sample
+  offset is bounds-checked against the bytes it came in. `SAMPLE-AES` (`senc`),
+  HEVC and AC-3 sample entries, a swapped `EXT-X-MAP` and a header that is not
+  ISO-BMFF are refused by name. Documented in [docs/hls.md](docs/hls.md).
+- **`--extractor-args SITE:KEY=VALUE`.** A closed, checked escape hatch for the
+  day a site reorders the document an extractor reads: `youtube:client=NAME`
+  pins one InnerTube client instead of walking the chain, and
+  `tiktok:route=web|app` drops one of TikTok's two routes. The vocabulary is
+  validated before the first request — an unknown key or value is exit 2 with
+  the accepted spellings in the message — a pinned route is named in the
+  refusal it causes, and `--capabilities` publishes the same lists under
+  `extractor_args`. Nothing can be enabled that a release did not ship.
+- **`--concurrent-fragments N`.** Fetch up to sixteen segments of one HLS list
+  at once instead of one after another; the default of `1` is the behaviour that
+  existed before. Arrivals are written into their own slot, so the file is the
+  playlist's order whatever the network does; the progress counter moves as
+  segments land. A failure cancels the segments still queued rather than
+  fetching bytes for a file that will not exist, and the flag is bounded to
+  `1`–`16` before the first request. Like `--playlist-items` it applies to a
+  segment list only, and says so when it does not.
 - **A per-user Windows installer** (`packaging/windows/install.ps1`, published as
   a release asset and covered by `SHA256SUMS`). Installs into
   `%LOCALAPPDATA%\Programs\tafas`, adds one user `PATH` entry, and refuses to
@@ -98,16 +177,80 @@ version; adding a site, a flag or a container is minor. The policy is in
 - **`X` posts that offer only a playlist** now download. A progressive MP4 is
   still preferred when the post offers both, and `--list-formats` shows the
   playlist as `hls`.
+- **Vimeo.** `vimeo.com/<id>`, channel URLs, unlisted `<id>/<hash>` URLs and
+  `player.vimeo.com/video/<id>`, read from the player's own configuration
+  endpoint — one request, no HTML. Progressive MP4s are offered as the video
+  files they are, the HLS rendition is kept beside them for videos that have only
+  that, and the poster and duration come from the same document. DASH is not
+  read and the refusal names `SegmentBase`; a video behind a password is a
+  refusal that says so; an unlisted video without its hash gets the same `404` a
+  deleted one gets. Shapes this cannot reach are in
+  [extractors §5](docs/extractors.md#5-vimeo).
+- **Reddit.** `/r/<sub>/comments/<id>/`, `redd.it` and bare `v.redd.it/<hash>`
+  URLs. A post is read from `/comments/<id>.json`; a bare media URL needs no
+  JSON, because its playlist lives at a fixed path. One route is taken —
+  `hls_url`, a master playlist with an `EXT-X-MEDIA` audio rendition that
+  `hlsfetch` joins into one MP4 — and the two obvious alternatives are refusals
+  that say why: `fallback_url` (`DASH_<height>.mp4`) is a **video-only** MP4,
+  and `dash_url` is `SegmentBase`, which this build does not read. A removed
+  post, a gallery or a text post and an over-18 post with nothing playable are
+  each named. The limitations are in
+  [extractors §6](docs/extractors.md#6-reddit).
+- **SoundCloud.** Track URLs and `on.soundcloud.com` short links, read from the
+  page's own hydration document, then the transcoding it names, then the bytes.
+  The result is an **MP3** — the first non-ISO-BMFF media this program writes, and
+  the reason `Container::Mp3` exists: there is no container to rebuild and nothing
+  beyond the byte count to verify, which `docs/cli.md` §3 and
+  [extractors §7](docs/extractors.md#7-soundcloud) both say out loud. A set, a
+  Go+ track, an opus-only rendition and a consent wall are refusals by name; the
+  public `client_id` is scraped from the page rather than hard-coded.
+- **Twitch VODs.** `twitch.tv/videos/<id>`, through one batched GraphQL request:
+  `PlaybackAccessToken` (asked by persisted-query hash, with the public web
+  client id — not a credential, and `SECURITY.md` now says so beside YouTube's
+  key) and a `video(id:)` query for the title, the uploader, the length and the
+  poster. The token is a JSON document, so it is percent-encoded into
+  `nauth`/`nauthsig` on the usher playlist, which `hlsfetch` assembles like any
+  other list. A channel (a live stream has no end), a clip, a subscriber-only
+  recording and an API error are refusals that say which they are;
+  [extractors §8](docs/extractors.md#8-twitch).
 - **`Url::join`**, with dot-segment removal: playlist URIs are relative far more
   often than they are absolute, and `../` is common.
+- **`--embed-subs`.** The cues of one caption track go *inside* the MP4 as a
+  `wvtt` track (WebVTT in ISO-BMFF): the file the run just wrote is read back
+  with the sample-table reader, the cues become one more `trak` — `hdlr` `subt`,
+  `sthd`, a `wvtt` sample entry with an empty `vttC` — and the whole thing is laid
+  out again, samples passed through byte for byte. Timescale 1000, one sample per
+  cue, a `vttc`→`payl` payload with the text, each sample stating its own
+  duration, and a gap between two cues turned into a positive `ctts` offset — a
+  decode time cannot be stated in `stts`, only a length, so the cue's own time
+  rides in the composition offset and it still appears when the body said. Cue settings, `STYLE` and `REGION`
+  blocks are dropped, and the track's `mdhd` language is `und`: both are in
+  `docs/cli.md` §3. One track per file, so the selection has to name one
+  language; a run that did not produce exactly one MP4 says so and changes
+  nothing. `stpp`/TTML is refused by name rather than converted.
+- **The sample-table MP4 reader** (`mp4read::plain`): a progressive file's
+  `stbl` walked into tracks and samples — `stsz`, `stts`, `ctts` (v0 and v1),
+  `stss`, `stco`/`co64` and `stsc` — with every sample bounds-checked against the
+  file and a fragmented file refused by naming the `moof`. It is what
+  `--embed-subs` reads the file back with, and it is verified against a file the
+  writer made.
+
+### Changed
+
+- **`FALLBACK_API_KEY` is now `PUBLIC_WEB_API_KEY`, and the comment says what it
+  is.** The string is YouTube's own web-client key, public and in every watch
+  page; secret scanning flags it because it is shaped like a Google API key, and
+  there is nothing to rotate. [SECURITY.md](SECURITY.md) now says that out loud,
+  explains why the fallback exists, and says that no other alert gets the same
+  treatment.
 
 `--quality` now applies to a variant list as well: a height ceiling picks the
 best variant at or below it, and `best`/`worst` fall back to bandwidth when the
-playlist states no resolution. One gate remains, named before any file is
-created: a playlist of fMP4 segments (`EXT-X-MAP`). Next are the packaging
-channels — AUR, Alpine, Scoop and a flake — and the independent demuxer that
-`tests/common/mp4.rs` now gives the test suite. Nothing in this section changes
-any existing flag.
+playlist states no resolution. Both HLS containers are read, and the independent
+demuxer in `tests/common/mp4.rs` checks what is written. Captions can now live in
+the file as well as beside it, and a progressive MP4 can be read as well as
+written. Next are the fuzz targets and the remaining v0.3 sites. Nothing in this
+section removes a flag.
 
 ## [0.1.0] - 2026-11-04
 

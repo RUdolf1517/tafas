@@ -12,6 +12,7 @@
 use serde_json::Value;
 
 use crate::error::{Error, Result};
+use crate::extractor_args::ExtractorArgs;
 use crate::http::{Http, UA_DESKTOP};
 use crate::model::{Container, Format, Image, Media, Site, StreamKind};
 use crate::sites::{at, json_after, list, text, uint};
@@ -28,7 +29,7 @@ const UA_APP: &str = "com.ss.android.ugc.trill/190500 (Linux; U; Android 13; en;
                       Build/TQ3A.230805.001)";
 const UA_APP_HEADERS_NAME: &str = "com.ss.android.ugc.trill";
 
-pub fn extract(http: &Http, url: &Url, raw: &str) -> Result<Media> {
+pub fn extract(http: &Http, url: &Url, raw: &str, args: &ExtractorArgs) -> Result<Media> {
     let target = resolve(http, url, raw)?;
     let target_url = Url::parse(&target)?;
     let id = aweme_id(&target_url).ok_or_else(|| {
@@ -44,43 +45,61 @@ pub fn extract(http: &Http, url: &Url, raw: &str) -> Result<Media> {
     ];
     let mut notes: Vec<String> = Vec::new();
 
-    match http.get_text(&canonical, &PAGE_HEADERS) {
-        Ok(page) => {
-            if let Some(document) = json_after(&page, "__UNIVERSAL_DATA_FOR_REHYDRATION__") {
-                match serde_json::from_str::<Value>(document) {
-                    Ok(value) => {
-                        if let Some(item) = at(
-                            &value,
-                            &[
-                                "__DEFAULT_SCOPE__",
-                                "webapp.video-detail",
-                                "itemInfo",
-                                "itemStruct",
-                            ],
-                        ) {
-                            let media = from_item(item, &id, &canonical, &headers);
-                            if !media.formats.is_empty() || !media.images.is_empty() {
-                                return Ok(media);
-                            }
-                            notes.push("web page: the item has no media URL".into());
-                        } else {
-                            let status = text(
+    // `tiktok:route=` narrows the two routes. Both are on by default and the
+    // second is the fallback, so a route that was excluded by hand is worth a
+    // note rather than a silence: it is the difference between "the site said
+    // no twice" and "you told me to ask once".
+    let route = args.get("tiktok", "route");
+
+    if route != Some("app") {
+        match http.get_text(&canonical, &PAGE_HEADERS) {
+            Ok(page) => {
+                if let Some(document) = json_after(&page, "__UNIVERSAL_DATA_FOR_REHYDRATION__") {
+                    match serde_json::from_str::<Value>(document) {
+                        Ok(value) => {
+                            if let Some(item) = at(
                                 &value,
-                                &["__DEFAULT_SCOPE__", "webapp.video-detail", "statusMsg"],
-                            )
-                            .unwrap_or_else(|| "no itemInfo in the page".into());
-                            notes.push(format!("web page: {status}"));
+                                &[
+                                    "__DEFAULT_SCOPE__",
+                                    "webapp.video-detail",
+                                    "itemInfo",
+                                    "itemStruct",
+                                ],
+                            ) {
+                                let media = from_item(item, &id, &canonical, &headers);
+                                if !media.formats.is_empty() || !media.images.is_empty() {
+                                    return Ok(media);
+                                }
+                                notes.push("web page: the item has no media URL".into());
+                            } else {
+                                let status = text(
+                                    &value,
+                                    &["__DEFAULT_SCOPE__", "webapp.video-detail", "statusMsg"],
+                                )
+                                .unwrap_or_else(|| "no itemInfo in the page".into());
+                                notes.push(format!("web page: {status}"));
+                            }
+                        }
+                        Err(error) => {
+                            notes.push(format!("web page: the inline data did not parse ({error})"))
                         }
                     }
-                    Err(error) => {
-                        notes.push(format!("web page: the inline data did not parse ({error})"))
-                    }
+                } else {
+                    notes.push("web page: no inline state (verification wall?)".into());
                 }
-            } else {
-                notes.push("web page: no inline state (verification wall?)".into());
             }
+            Err(error) => notes.push(format!("web page: {error}")),
         }
-        Err(error) => notes.push(format!("web page: {error}")),
+    } else {
+        notes.push("web page: not asked, --extractor-args pinned tiktok:route=app".to_string());
+    }
+
+    if route == Some("web") {
+        notes.push("mobile feed: not asked, --extractor-args pinned tiktok:route=web".to_string());
+        return Err(Error::Refused(format!(
+            "tiktok: {id} could not be read from the web page: {}",
+            notes.join("; ")
+        )));
     }
 
     match mobile_feed(http, &id, &canonical, &headers) {

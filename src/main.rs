@@ -44,10 +44,19 @@ fn main() -> ExitCode {
         usage(&args, "no URL given");
         return ExitCode::from(2);
     }
-    if args.sub_langs.is_some() && !args.write_subs {
+    if args.sub_langs.is_some() && !args.write_subs && !args.embed_subs {
         usage(
             &args,
-            "--sub-langs chooses which caption tracks to write, so it needs --write-subs",
+            "--sub-langs chooses which caption tracks to take, so it needs --write-subs or \
+             --embed-subs",
+        );
+        return ExitCode::from(2);
+    }
+    if args.write_subs && args.embed_subs {
+        usage(
+            &args,
+            "--write-subs writes a .vtt beside the file and --embed-subs puts the cues inside \
+             it; pick one",
         );
         return ExitCode::from(2);
     }
@@ -59,7 +68,13 @@ fn main() -> ExitCode {
         return ExitCode::from(2);
     }
 
-    let options = args.options();
+    let options = match args.options() {
+        Ok(options) => options,
+        Err(error) => {
+            usage(&args, &error.to_string());
+            return ExitCode::from(2);
+        }
+    };
     let code = download::run(&args.urls, &options);
     ExitCode::from(code)
 }
@@ -109,27 +124,62 @@ fn capabilities() -> String {
                 "routes": ["syndication tweet-result"],
                 "hls": true,
                 "cookies": "user-supplied (--cookies FILE)"
+            },
+            "vimeo": {
+                "routes": ["player config (progressive MP4, HLS)"],
+                "hls": true,
+                "dash": false,
+                "cookies": "user-supplied (--cookies FILE)"
+            },
+            "reddit": {
+                "routes": ["post json (comments/<id>.json)", "v.redd.it playlist"],
+                "hls": true,
+                "progressive": "not offered: DASH_<height>.mp4 carries no audio",
+                "cookies": "user-supplied (--cookies FILE)"
+            },
+            "soundcloud": {
+                "routes": ["page hydration, then the transcoding document"],
+                "container": "mp3, copied verbatim",
+                "hls_opus": false,
+                "cookies": "user-supplied (--cookies FILE)"
+            },
+            "twitch": {
+                "routes": ["gql playback token, then the usher playlist"],
+                "hls": true,
+                "live": false,
+                "cookies": "user-supplied (--cookies FILE)"
             }
         },
-        "containers": ["mp4", "m4a"],
+        "extractor_args": {
+            "youtube:client": tafas::extractor_args::YOUTUBE_CLIENTS,
+            "tiktok:route": tafas::extractor_args::TIKTOK_ROUTES
+        },
+        "containers": ["mp4", "m4a", "mp3"],
+        "subtitles": {
+            "sidecar": "webvtt, one .vtt per selected track",
+            "embedded": "wvtt (WebVTT in ISO-BMFF), one track per file",
+            "languages": "all, an exact code, or a * prefix"
+        },
         "hls": {
             "playlists": ["master", "media"],
-            "segments": "mpeg-ts",
+            "segments": ["mpeg-ts", "fmp4"],
             "encryption": ["aes-128"],
-            "fmp4": false,
+            "fmp4": true,
             "live": false
         },
         "muxing": {
             "container": "mp4",
             "reencode": false,
-            "fragmented_input": false,
+            "fragmented_input": "hls segments (EXT-X-MAP)",
             "verified": true
         },
         "transfers": {
             "range_resume": true,
             "atomic_commit": true,
             "retries_default": 3,
-            "max_redirects": 10
+            "max_redirects": 10,
+            "concurrent_fragments": { "default": 1, "max": 16 },
+            "limit_rate": { "default": "unlimited", "min": 1024, "max": 1073741824 }
         },
         "external_binaries": [],
         "tls": "rustls (ring provider)",
@@ -147,7 +197,9 @@ fn info(args: &Args) -> String {
         pen.paint(style::BOLD, "tafas"),
         env!("CARGO_PKG_VERSION")
     ));
-    out.push_str("capture YouTube, TikTok and X as one playable MP4, without re-encoding\n\n");
+    out.push_str(
+        "capture YouTube, TikTok, X, Vimeo, Reddit and Twitch as one playable MP4, and SoundCloud as an MP3, without re-encoding\n\n",
+    );
     out.push_str(&format!("sites        {}\n", SITES.join(", ")));
     out.push_str("muxing       mp4 (streams copied, index rebuilt, output verified)\n");
     out.push_str("tls          rustls with the ring provider\n");
@@ -166,7 +218,11 @@ mod tests {
         let value: serde_json::Value = serde_json::from_str(&capabilities()).unwrap();
         assert_eq!(value["capabilities_schema_version"], 1);
         assert_eq!(value["result_schema_version"], RESULT_SCHEMA_VERSION);
-        assert_eq!(value["sites"].as_array().unwrap().len(), 3);
+        assert_eq!(
+            value["sites"].as_array().unwrap().len(),
+            SITES.len(),
+            "the document lists every site the build reads"
+        );
         assert_eq!(value["muxing"]["reencode"], false);
         assert_eq!(value["external_binaries"].as_array().unwrap().len(), 0);
     }

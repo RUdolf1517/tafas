@@ -124,7 +124,15 @@ fn info_names_the_sites() {
     let output = tafas(&["--info"]);
     assert_eq!(code(&output), 0);
     let text = stdout(&output);
-    for site in ["youtube", "tiktok", "x"] {
+    for site in [
+        "youtube",
+        "tiktok",
+        "x",
+        "vimeo",
+        "reddit",
+        "soundcloud",
+        "twitch",
+    ] {
         assert!(text.contains(site), "{site} missing from --info");
     }
 }
@@ -151,6 +159,18 @@ fn sub_langs_without_write_subs_is_a_usage_error() {
     );
     assert!(stdout(&output).is_empty());
     assert!(stderr(&output).contains("--write-subs"));
+}
+
+#[test]
+fn write_subs_and_embed_subs_together_is_a_usage_error() {
+    let output = tafas(&[
+        "--write-subs",
+        "--embed-subs",
+        "https://youtu.be/dQw4w9WgXcQ",
+    ]);
+    assert_eq!(code(&output), 2, "one asks for a file, the other a track");
+    assert!(stdout(&output).is_empty());
+    assert!(stderr(&output).contains("--embed-subs"));
 }
 
 #[test]
@@ -212,4 +232,103 @@ fn a_cookie_file_with_no_cookies_in_it_is_a_usage_error() {
         "a jar with no cookies is a mistake in the arguments"
     );
     assert!(stderr(&output).contains("Netscape"), "{}", stderr(&output));
+}
+
+#[test]
+fn concurrent_fragments_is_bounded_before_anything_is_requested() {
+    for bad in ["0", "17", "four"] {
+        let output = tafas(&[
+            "--concurrent-fragments",
+            bad,
+            "https://youtu.be/aqz-KE-bpKQ",
+        ]);
+        assert_eq!(code(&output), 2, "--concurrent-fragments {bad}");
+        assert!(stdout(&output).is_empty());
+        let text = stderr(&output);
+        assert!(text.contains("--concurrent-fragments"), "{text}");
+        assert!(
+            text.contains("between 1 and 16"),
+            "the bound is named, not just rejected: {text}"
+        );
+    }
+}
+
+#[test]
+fn limit_rate_is_bounded_before_anything_is_requested() {
+    // Each of these is wrong in a different way — zero, a rate the program
+    // would spend all its time honouring, a rate above the ceiling, and words —
+    // and all of them are wrong before a request, so the exit code is the usage
+    // one and the message names the spelling that would have worked.
+    for bad in ["0", "1", "5G", "fast"] {
+        let output = tafas(&["--limit-rate", bad, "https://youtu.be/aqz-KE-bpKQ"]);
+        assert_eq!(code(&output), 2, "--limit-rate {bad}");
+        assert!(stdout(&output).is_empty());
+        let text = stderr(&output);
+        assert!(text.contains("--limit-rate"), "{text}");
+    }
+    // What a rate looks like is in the message for a value that is not one.
+    let output = tafas(&["--limit-rate", "fast", "https://youtu.be/aqz-KE-bpKQ"]);
+    assert!(
+        stderr(&output).contains("500K"),
+        "the message says what a rate looks like: {}",
+        stderr(&output)
+    );
+}
+
+#[test]
+fn extractor_args_are_checked_against_a_closed_vocabulary() {
+    // Every one of these is wrong in a different way and all of them are wrong
+    // before a request, so the exit code is the usage one and the message names
+    // the spellings that would have worked.
+    for bad in [
+        "youtube:client=flash",
+        "youtube:client",
+        "youtube",
+        "x:route=web",
+        "tiktok:route=mobile",
+    ] {
+        let output = tafas(&["--extractor-args", bad, "https://youtu.be/aqz-KE-bpKQ"]);
+        assert_eq!(code(&output), 2, "--extractor-args {bad}");
+        assert!(stdout(&output).is_empty());
+        let text = stderr(&output);
+        assert!(text.contains("--extractor-args"), "{bad}: {text}");
+        assert!(
+            text.contains("android_vr"),
+            "the refusal lists what is accepted: {bad}: {text}"
+        );
+    }
+}
+
+#[test]
+fn extractor_args_are_folded_from_several_flags() {
+    // One flag per site is the shape the option is meant to be used in, so both
+    // are accepted; the run then stops for the older reason, which is the proof
+    // that neither occurrence was rejected.
+    let output = tafas(&[
+        "--extractor-args",
+        "youtube:client=ios",
+        "--extractor-args",
+        "tiktok:route=app",
+    ]);
+    assert_eq!(code(&output), 2);
+    let text = stderr(&output);
+    assert!(text.contains("no URL given"), "{text}");
+}
+
+#[test]
+fn one_key_named_twice_is_a_usage_error() {
+    let output = tafas(&[
+        "--extractor-args",
+        "youtube:client=ios",
+        "--extractor-args",
+        "youtube:client=web",
+        "https://youtu.be/aqz-KE-bpKQ",
+    ]);
+    assert_eq!(code(&output), 2);
+    assert!(stdout(&output).is_empty());
+    let text = stderr(&output);
+    assert!(
+        text.contains("youtube:client twice"),
+        "the duplicate is named, not silently resolved: {text}"
+    );
 }

@@ -20,14 +20,15 @@ this repository opens and closes itself.
 
 | Layer | Where | What it proves |
 | --- | --- | --- |
-| unit | `#[cfg(test)]` in each module | URL parsing and rejection, title sanitising, format classification, selection rules, box parsing and patching, exit-code mapping, colour precedence |
+| unit | `#[cfg(test)]` in each module | URL parsing and rejection, title sanitising, format classification, selection rules, box parsing and patching, the `--extractor-args` vocabulary, exit-code mapping, colour precedence |
 | remux | `src/mux.rs` tests | a synthetic two-file remux produces one file with both tracks, both payloads intact, `moov` first, and `verify` accepting it |
 | end-to-end | `tests/cli.rs` | the real binary, spawned, against a local HTTP server this test starts on `127.0.0.1:0` |
 | sidecar | unit tests in `src/info.rs` | the document names the page, the streams and the files, carries no media URL, and is written through a temporary that is gone after the rename |
 | cookies | `tests/cookies.rs` | a jar on disk and a fixture route that answers `403` without the session cookie; host, `Secure` and header-merging rules |
-| HLS | `tests/hls.rs` | a playlist, segments, byte ranges and AES-128 segments on a socket, assembled into an MP4 that `mux::verify` accepts; fMP4, short keys and ignored ranges refused before a file exists |
+| HLS | `tests/hls.rs` | a playlist, segments, byte ranges and AES-128 segments on a socket, assembled into an MP4 that `mux::verify` accepts; the same for a fragmented-MP4 playlist, whose header is fetched once; a swapped header, a header that is not ISO-BMFF, short keys and ignored ranges refused before a file exists |
 | independent reader | `tests/common/mp4.rs`, `tests/mp4.rs` | a second box walker, sharing no code with `mux` or `mp4write`, that reads the written file and checks every sample offset against `mdat`; tested against a file it builds itself byte by byte |
-| packaging | `tests/packaging.rs` | every option in `--help` appears in `man/tafas.1`; no `Command::new` in `src/`; the capability document is valid JSON |
+| captions | `tests/subs.rs`, `src/subtitles.rs` | a WebVTT body becomes cues and one `wvtt` track; a written MP4 is read back, given that track and written again, and the independent reader finds three tracks, `wvtt`, one sample per cue, every caption sample inside `mdat`; a body with no cues, a backwards cue and a TTML track refused by name |
+| packaging | `tests/packaging.rs` | every option in `--help` appears in `man/tafas.1`; no `Command::new` in `src/`; the capability document is valid JSON; the release still builds its SBOM, signs what it publishes and keeps the Windows ZIP at two entries |
 
 Fixtures are **built by code**, never committed. A reviewer can read what a test
 feeds the binary, and adding a case is writing a constructor rather than adding a
@@ -60,11 +61,25 @@ survived the remux and are findable in the output.
 | a server that ignores `Range` | the file restarts rather than doubling its beginning |
 | a body shorter than `Content-Length` | exit 4, no destination, `.part` kept |
 | a closed stdout pipe | exit 0, no panic, no error text |
+| `--concurrent-fragments 4` over four segments the server holds for 80 ms | the server saw more than one request at once, and the file is still the four segments in playlist order |
+| the same fixtures with the default `1` | the server never saw two requests at once |
+| a 404 on the first segment of a parallel run | the queued segments are never requested, and nothing is written |
+| an HLS list whose third segment fails once, then the same run again | the second run reports `resumed_segments: 2`, the server sees each of the first two segments **once**, the segment that failed is fetched again, and the file verifies |
+| the same list again after `hlsfetch::forget`, which is what `--no-resume` calls | nothing is resumed, and every segment is fetched again |
+| an `EXT-X-MAP` playlist with two fragments | one request for the header, two for the segments, and the written file verifies |
+| the same playlist with a header that changes half way | refused, naming the segment and both headers, and nothing is written |
+| an `EXT-X-MAP` body that is not ISO-BMFF | refused with the box that failed, not with a panic |
+| a path past 260 characters, on Windows | written, renamed and read back through `paths::verbatim`, which is the identity everywhere else |
+| `--limit-rate 0`, `1`, `5G`, `fast` | exit 2 before any request, and the message shows the spelling that would have worked |
+| `--extractor-args youtube:client=flash` (and five other shapes) | exit 2 before any request, and the message lists the values that would have worked |
+| two `--extractor-args` flags, one per site | both are accepted; the same key named twice is exit 2, not a silent last-one-wins |
 
 The local server is a few dozen lines of `std::net::TcpListener`: it parses the
 request line and headers, answers a canned body, and can be told to fail a given
-number of times first. It exists so that the resume and retry paths are tested
-against a real socket rather than a mock.
+number of times first. It serves each connection on its own thread, so a test can
+ask for several things at once, and a route can be told to hold its answer for a
+moment — the overlap in the parallel test is a fact about the server's clock
+rather than an assertion about how long the client took.
 
 ## 5. Not covered, and said so
 
@@ -73,7 +88,10 @@ against a real socket rather than a mock.
   by the refusal paths; a page that has changed produces a refusal, and a bug
   report with that refusal in it is the mechanism that fixes it.
 - **Actual playback.** No test decodes a frame. `verify` checks the container,
-  not the codec (see [guarantees §2](guarantees.md#2-g2--structural-verification)).
+  not the codec (see [guarantees §2](guarantees.md#2-g2--structural-verification)),
+  and the same holds for a caption track: the samples are where `stbl` says they
+  are and hold a `vttc` with the cue text, but nothing renders them. Cue settings,
+  `STYLE` and `REGION` are dropped on purpose, so there is no promise to test.
 - **Windows ACLs and case-insensitive collisions.** The name sanitiser is tested;
   the filesystem below it is not.
 - **HTTP/2-specific behaviour.** The client speaks both; the fixture server
@@ -89,15 +107,39 @@ against a real socket rather than a mock.
 
 ## 6. Fuzzing
 
-The parsers worth fuzzing are the two that read bytes from someone else:
-`mux::scan`/`verify` (ISO-BMFF) and `sites::json_after` (brace matching). Both are
-pure functions over a slice, both are `#![forbid(unsafe_code)]`, and both are
-written to return an error rather than index out of bounds — which is what a fuzz
-target would be asserting.
+The parsers worth fuzzing are the ones that read bytes from someone else, and
+all four are pure functions over a slice: `mp4read::plain` (the `stbl` tables),
+`mp4read::dimensions` (`tkhd`), `subtitles::cues` (a WebVTT body) and
+`sites::json_after` (brace matching in a page). None of them is allowed to panic:
+a panic inside a parser is the bug, not the input that found it.
 
-A fuzz target is planned with the independent-demuxer work in
-[roadmap §3](roadmap.md#3-v03--reach-and-the-parts-that-are-not-a-url). Until then, the parser tests
-include truncated and padded inputs explicitly.
+`fuzz/` is a separate crate — `cargo install cargo-fuzz`, a nightly toolchain,
+and nothing it builds ends up in the binary:
+
+```
+cargo +nightly fuzz run mp4_read
+cargo +nightly fuzz run webvtt
+cargo +nightly fuzz run json_after
+cargo +nightly fuzz run mux_file
+```
+
+`.github/workflows/fuzz.yml` runs each target for five minutes, weekly and on
+demand. Nothing about it runs on a pull request, because a fuzzer that gates a
+merge is a fuzzer people learn to ignore. A crash arrives as an artifact under
+`fuzz/artifacts/`; that file is committed with the fix and replayed with
+`cargo fuzz run <target> fuzz/artifacts/<target>/<file>`.
+
+`mux::verify` and `mux::remux` are reached through a fourth target, `mux_file`,
+which writes the input to a temporary file first: both take a path, because the
+verifier re-reads its own output from disk. That makes it the slow one — a few
+hundred executions a second rather than a hundred thousand — so its corpus is
+worth a shorter run. It asks two things of the same bytes: that `verify` walks
+any file at all without panicking, and that `remux` refuses anything that is not
+two ISO-BMFF tracks instead of guessing at offsets.
+
+A five-minute weekly run is not a proof of anything; it is a smoke detector. The
+parser tests still include truncated and padded inputs explicitly, so a plain
+regression fails in `cargo test` rather than only under a fuzzer.
 
 ## 7. CI
 
@@ -105,8 +147,10 @@ include truncated and padded inputs explicitly.
 | --- | --- | --- |
 | `ci.yml` | `test (ubuntu, macos, windows)` | `cargo clippy --all-targets -D warnings`, `cargo test --all-targets`, `cargo build --release` |
 | `format.yml` | `format` | `cargo fmt` plus `cargo generate-lockfile`, committed back to the branch |
-| `release.yml` | `build (five targets)` | `cargo build --release --locked`, archives, `SHA256SUMS`, packages |
+| `release.yml` | `build (five targets)` | `cargo build --release --locked` under `SOURCE_DATE_EPOCH` and `--remap-path-prefix`, archives, the SBOM, `SHA256SUMS`, the signature when the key exists, packages |
 | `windows-installer.yml` | `installer` (windows-latest) | `packaging/windows/tests/Install.Integration.ps1`: install, upgrade, refusal, rollback and uninstall against locally built release fixtures |
+| `ci.yml` | `msrv (1.82)` | `cargo build --locked --all-targets` at the declared floor, publishing what broke |
+| `ci.yml` | `budgets` (ubuntu-latest) | `cargo build --release --locked`, then `packaging/tests/budgets.py`: the size of the binary and the median of seven `--version` starts, compared against `packaging/budgets.json` |
 | `windows-installer.yml` | `winget-manifests` (ubuntu-latest) | `packaging/winget/tests/check.py`, plus a render of the manifests from a ZIP built the way the release builds it |
 
 Three platforms, one job each, because the failures this project has actually had

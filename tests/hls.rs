@@ -8,8 +8,9 @@
 
 mod common;
 
-use common::{temp_dir, ts_segment, Route, TestServer};
+use common::{fmp4_fragment, fmp4_init, fmp4_playlist, temp_dir, ts_segment, Route, TestServer};
 use tafas::hlsfetch;
+use tafas::hlsfetch::Segments;
 use tafas::http::Http;
 use tafas::items::Items;
 use tafas::mux;
@@ -63,7 +64,7 @@ fn a_media_playlist_becomes_an_mp4() {
         &url,
         &[],
         Quality::Best,
-        None,
+        Segments::default(),
         &out,
         &mut |bytes| seen += bytes,
     )
@@ -108,7 +109,7 @@ fn a_master_playlist_is_walked_to_the_chosen_variant() {
         &url,
         &[],
         Quality::Height(720),
-        None,
+        Segments::default(),
         &out,
         &mut |_| {},
     )
@@ -123,23 +124,133 @@ fn a_master_playlist_is_walked_to_the_chosen_variant() {
 }
 
 #[test]
-fn an_fmp4_playlist_is_refused_before_a_file_appears() {
-    let playlist = "#EXTM3U\n\
-                    #EXT-X-MAP:URI=\"init.mp4\"\n\
-                    #EXT-X-TARGETDURATION:6\n\
-                    #EXTINF:6.0,\n\
-                    seg1.m4s\n\
-                    #EXT-X-ENDLIST\n";
-    let server = TestServer::start(vec![Route::ok("/media.m3u8", playlist.as_bytes())]);
+fn an_fmp4_playlist_becomes_an_mp4() {
+    let init = fmp4_init();
+    let first = fmp4_fragment(0, &[(b"first-sample", true)]);
+    let second = fmp4_fragment(3_000, &[(b"second-sample", false)]);
+    let playlist = fmp4_playlist(&["seg1.m4s", "seg2.m4s"]);
+    let server = TestServer::start(vec![
+        Route::ok("/media.m3u8", playlist.as_bytes()),
+        Route::ok("/init.mp4", &init),
+        Route::ok("/seg1.m4s", &first),
+        Route::ok("/seg2.m4s", &second),
+    ]);
     let out = temp_dir("hls-fmp4").join("clip.mp4");
     let url = Url::parse(&server.url("/media.m3u8")).unwrap();
 
-    let error = hlsfetch::fetch(&client(), &url, &[], Quality::Best, None, &out, &mut |_| {})
-        .expect_err("fMP4 segments are not read by this build");
+    let mut seen = 0u64;
+    let report = hlsfetch::fetch(
+        &client(),
+        &url,
+        &[],
+        Quality::Best,
+        Segments::default(),
+        &out,
+        &mut |bytes| seen += bytes,
+    )
+    .expect("a fragmented-MP4 playlist should be read");
+
+    assert_eq!(report.segments, 2);
+    assert_eq!(report.video_samples, 2);
+    assert_eq!(report.audio_samples, 0);
+    assert_eq!(
+        seen,
+        (init.len() + first.len() + second.len()) as u64,
+        "the header is bytes on the wire too, so the counter counts it"
+    );
+    assert_eq!(
+        server.hits("/init.mp4"),
+        1,
+        "the header is fetched once, not once per segment"
+    );
+    mux::verify(&out).expect("the written file verifies");
+}
+
+#[test]
+fn an_fmp4_playlist_is_parsed_against_the_header_it_names() {
+    // Two segments, one of them empty of samples: the sample count comes from
+    // the fragments, not from the number of segments.
+    let init = fmp4_init();
+    let busy = fmp4_fragment(0, &[(b"one", true), (b"two", false), (b"three", false)]);
+    let playlist = fmp4_playlist(&["seg1.m4s"]);
+    let server = TestServer::start(vec![
+        Route::ok("/media.m3u8", playlist.as_bytes()),
+        Route::ok("/init.mp4", &init),
+        Route::ok("/seg1.m4s", &busy),
+    ]);
+    let out = temp_dir("hls-fmp4-samples").join("clip.mp4");
+    let url = Url::parse(&server.url("/media.m3u8")).unwrap();
+
+    let report = hlsfetch::fetch(
+        &client(),
+        &url,
+        &[],
+        Quality::Best,
+        Segments::default(),
+        &out,
+        &mut |_| {},
+    )
+    .expect("three samples in one fragment are still one segment");
+    assert_eq!(report.segments, 1);
+    assert_eq!(report.video_samples, 3);
+    mux::verify(&out).expect("the written file verifies");
+}
+
+#[test]
+fn a_header_that_is_not_mp4_is_refused_by_name() {
+    let playlist = fmp4_playlist(&["seg1.m4s"]);
+    let server = TestServer::start(vec![
+        Route::ok("/media.m3u8", playlist.as_bytes()),
+        Route::ok("/init.mp4", b"not an mp4 at all, just text"),
+        Route::ok("/seg1.m4s", &fmp4_fragment(0, &[(b"x", true)])),
+    ]);
+    let out = temp_dir("hls-fmp4-bad-init").join("clip.mp4");
+    let url = Url::parse(&server.url("/media.m3u8")).unwrap();
+
+    let error = hlsfetch::fetch(
+        &client(),
+        &url,
+        &[],
+        Quality::Best,
+        Segments::default(),
+        &out,
+        &mut |_| {},
+    )
+    .expect_err("a header that is not a header is a failure");
     let text = error.to_string();
-    assert!(text.contains("fMP4"), "{text}");
-    assert!(text.contains("EXT-X-MAP"), "{text}");
+    assert!(text.contains("moov") || text.contains("box"), "{text}");
     assert!(!out.exists(), "a refusal leaves no half-written file");
+}
+
+#[test]
+fn a_playlist_that_changes_its_header_is_refused() {
+    let text = "#EXTM3U\n\
+                #EXT-X-TARGETDURATION:6\n\
+                #EXT-X-MAP:URI=\"init.mp4\"\n\
+                #EXTINF:6.0,\n\
+                seg1.m4s\n\
+                #EXT-X-MAP:URI=\"other-init.mp4\"\n\
+                #EXTINF:6.0,\n\
+                seg2.m4s\n\
+                #EXT-X-ENDLIST\n";
+    let server = TestServer::start(vec![Route::ok("/media.m3u8", text.as_bytes())]);
+    let out = temp_dir("hls-fmp4-two-maps").join("clip.mp4");
+    let url = Url::parse(&server.url("/media.m3u8")).unwrap();
+
+    let error = hlsfetch::fetch(
+        &client(),
+        &url,
+        &[],
+        Quality::Best,
+        Segments::default(),
+        &out,
+        &mut |_| {},
+    )
+    .expect_err("two headers describe two track sets");
+    let message = error.to_string();
+    assert!(message.contains("EXT-X-MAP"), "{message}");
+    assert!(message.contains("segment 2"), "{message}");
+    assert!(!out.exists());
 }
 
 #[test]
@@ -163,8 +274,16 @@ fn byte_ranged_segments_are_cut_out_of_one_object() {
     let out = temp_dir("hls-range").join("clip.mp4");
     let url = Url::parse(&server.url("/media.m3u8")).unwrap();
 
-    let report = hlsfetch::fetch(&client(), &url, &[], Quality::Best, None, &out, &mut |_| {})
-        .expect("a byte-range playlist should be assembled");
+    let report = hlsfetch::fetch(
+        &client(),
+        &url,
+        &[],
+        Quality::Best,
+        Segments::default(),
+        &out,
+        &mut |_| {},
+    )
+    .expect("a byte-range playlist should be assembled");
 
     assert_eq!(report.segments, 2);
     assert_eq!(report.video_samples, 2);
@@ -188,8 +307,16 @@ fn a_server_that_ignores_byte_ranges_is_refused() {
     let out = temp_dir("hls-range-ignored").join("clip.mp4");
     let url = Url::parse(&server.url("/media.m3u8")).unwrap();
 
-    let error = hlsfetch::fetch(&client(), &url, &[], Quality::Best, None, &out, &mut |_| {})
-        .expect_err("a 200 in place of a 206 means the window is wrong");
+    let error = hlsfetch::fetch(
+        &client(),
+        &url,
+        &[],
+        Quality::Best,
+        Segments::default(),
+        &out,
+        &mut |_| {},
+    )
+    .expect_err("a 200 in place of a 206 means the window is wrong");
     assert!(
         error.to_string().contains("byte-range"),
         "the refusal should name the byte range, not the codec: {error}"
@@ -232,8 +359,16 @@ fn aes128_segments_are_decrypted_and_the_key_is_fetched_once() {
     let out = temp_dir("hls-aes").join("clip.mp4");
     let url = Url::parse(&server.url("/media.m3u8")).unwrap();
 
-    let report = hlsfetch::fetch(&client(), &url, &[], Quality::Best, None, &out, &mut |_| {})
-        .expect("an AES-128 playlist should decrypt into the same file");
+    let report = hlsfetch::fetch(
+        &client(),
+        &url,
+        &[],
+        Quality::Best,
+        Segments::default(),
+        &out,
+        &mut |_| {},
+    )
+    .expect("an AES-128 playlist should decrypt into the same file");
 
     assert_eq!(report.segments, 2);
     assert_eq!(report.video_samples, 2);
@@ -265,8 +400,16 @@ fn a_key_of_the_wrong_size_is_refused() {
     let out = temp_dir("hls-aes-short-key").join("clip.mp4");
     let url = Url::parse(&server.url("/media.m3u8")).unwrap();
 
-    let error = hlsfetch::fetch(&client(), &url, &[], Quality::Best, None, &out, &mut |_| {})
-        .expect_err("eight bytes are not a key");
+    let error = hlsfetch::fetch(
+        &client(),
+        &url,
+        &[],
+        Quality::Best,
+        Segments::default(),
+        &out,
+        &mut |_| {},
+    )
+    .expect_err("eight bytes are not a key");
     let text = error.to_string();
     assert!(text.contains("16 bytes"), "{text}");
     assert!(!out.exists());
@@ -299,7 +442,10 @@ fn a_playlist_selection_fetches_only_the_segments_it_names() {
         &url,
         &[],
         Quality::Best,
-        Some(&items),
+        Segments {
+            items: Some(&items),
+            ..Segments::default()
+        },
         &out,
         &mut |_| {},
     )
@@ -333,7 +479,10 @@ fn a_selection_that_matches_nothing_is_refused() {
         &url,
         &[],
         Quality::Best,
-        Some(&items),
+        Segments {
+            items: Some(&items),
+            ..Segments::default()
+        },
         &out,
         &mut |_| {},
     )
@@ -357,8 +506,16 @@ fn an_independent_reader_agrees_with_the_written_file() {
     let out = temp_dir("hls-independent").join("clip.mp4");
     let url = Url::parse(&server.url("/media.m3u8")).unwrap();
 
-    hlsfetch::fetch(&client(), &url, &[], Quality::Best, None, &out, &mut |_| {})
-        .expect("the pipeline should accept a plain media playlist");
+    hlsfetch::fetch(
+        &client(),
+        &url,
+        &[],
+        Quality::Best,
+        Segments::default(),
+        &out,
+        &mut |_| {},
+    )
+    .expect("the pipeline should accept a plain media playlist");
 
     let bytes = std::fs::read(&out).expect("the file is on disk");
     let movie = common::mp4::read(&bytes).expect("the independent reader accepts it");
@@ -384,4 +541,331 @@ fn an_independent_reader_agrees_with_the_written_file() {
         );
     }
     assert_eq!(video.keyframes(), 2, "both slices are IDRs");
+}
+
+/// A playlist of `count` segments whose durations differ, so the total the
+/// writer reports proves the list was read in order.
+fn playlist_of(count: usize) -> String {
+    let mut text = String::from(
+        "#EXTM3U\n\
+         #EXT-X-VERSION:3\n\
+         #EXT-X-TARGETDURATION:24\n\
+         #EXT-X-MEDIA-SEQUENCE:0\n",
+    );
+    for index in 1..=count {
+        text.push_str(&format!("#EXTINF:{}.0,\nseg{index}.ts\n", index * 6));
+    }
+    text.push_str("#EXT-X-ENDLIST\n");
+    text
+}
+
+/// Four segments, each of which the server holds for 80 ms. Four workers are
+/// asked for, so the server must see more than one request at a time; the file
+/// must still be the four segments in playlist order.
+#[test]
+fn segments_are_fetched_in_parallel_when_more_than_one_worker_is_asked_for() {
+    let segment = ts_segment();
+    let count = 4usize;
+    let mut routes = vec![Route::ok("/media.m3u8", playlist_of(count).as_bytes())];
+    for index in 1..=count {
+        routes.push(Route::slow(&format!("/seg{index}.ts"), &segment, 80));
+    }
+    let server = TestServer::start(routes);
+    let out = temp_dir("hls-parallel").join("clip.mp4");
+    let url = Url::parse(&server.url("/media.m3u8")).unwrap();
+
+    let mut seen = 0u64;
+    let report = hlsfetch::fetch(
+        &client(),
+        &url,
+        &[],
+        Quality::Best,
+        Segments {
+            concurrent: 4,
+            ..Segments::default()
+        },
+        &out,
+        &mut |bytes| seen += bytes,
+    )
+    .expect("four segments and four workers");
+
+    assert_eq!(report.segments, 4);
+    assert_eq!(
+        seen,
+        (segment.len() * count) as u64,
+        "every byte counted once"
+    );
+    assert!(
+        server.peak_concurrent() >= 2,
+        "the segments overlapped on the server: peak {}",
+        server.peak_concurrent()
+    );
+    assert_eq!(
+        report.duration_ms, 60_000,
+        "6 + 12 + 18 + 24 seconds, in the order the playlist names them"
+    );
+    let verified = mux::verify(&out).expect("the assembled file should be readable");
+    assert_eq!(
+        verified.sample_total(),
+        4 * count as u64,
+        "every segment contributed its samples"
+    );
+    for index in 1..=count {
+        assert_eq!(
+            server.hits(&format!("/seg{index}.ts")),
+            1,
+            "segment {index}"
+        );
+    }
+}
+
+/// The default: one request at a time, on the same fixtures, so the flag is
+/// what changes the behaviour and not the fixture.
+#[test]
+fn one_worker_fetches_one_segment_at_a_time() {
+    let segment = ts_segment();
+    let count = 4usize;
+    let mut routes = vec![Route::ok("/media.m3u8", playlist_of(count).as_bytes())];
+    for index in 1..=count {
+        routes.push(Route::slow(&format!("/seg{index}.ts"), &segment, 30));
+    }
+    let server = TestServer::start(routes);
+    let out = temp_dir("hls-serial").join("clip.mp4");
+    let url = Url::parse(&server.url("/media.m3u8")).unwrap();
+
+    let report = hlsfetch::fetch(
+        &client(),
+        &url,
+        &[],
+        Quality::Best,
+        Segments::default(),
+        &out,
+        &mut |_| {},
+    )
+    .expect("four segments, one at a time");
+
+    assert_eq!(report.segments, 4);
+    assert_eq!(
+        server.peak_concurrent(),
+        1,
+        "with one worker the server never sees two requests at once"
+    );
+    let verified = mux::verify(&out).expect("the assembled file should be readable");
+    assert_eq!(verified.sample_total(), 4 * count as u64);
+}
+
+/// The playlist of `count` segments, with the third answering `truncated_by`
+/// bytes short of what it declared on its first answer.
+///
+/// A short body is the interruption a test can time: the first run reads two
+/// whole segments and then stops on the third, because `http.get_bytes` checks
+/// the length it was promised before it hands the bytes back. A 5xx would not
+/// do — that is the case the client retries, so whether the first run fails
+/// would depend on `--retries`, and a cache that is only correct when retries
+/// are off is not correct.
+fn interrupted_routes(count: usize, segment: &[u8], truncated_by: usize) -> Vec<Route> {
+    let mut routes = vec![Route::ok("/media.m3u8", playlist_of(count).as_bytes())];
+    for index in 1..=count {
+        let path = format!("/seg{index}.ts");
+        if index == 3 {
+            routes.push(Route::truncated_once(&path, segment, truncated_by));
+        } else {
+            routes.push(Route::ok(&path, segment));
+        }
+    }
+    routes
+}
+
+/// What an interrupted list leaves behind is what the next run starts from.
+#[test]
+fn a_failed_list_is_resumed_from_the_segments_it_kept() {
+    let count = 4;
+    let segment = ts_segment();
+    // Half a segment short: whole enough to parse, short of what was declared.
+    let server = TestServer::start(interrupted_routes(count, &segment, segment.len() / 2));
+    let dir = temp_dir("hls-resume");
+    let out = dir.join("clip.mp4");
+    let part = dir.join("clip.mp4.part");
+    let url = Url::parse(&server.url("/media.m3u8")).unwrap();
+
+    let first = Segments {
+        resume: Some(part.as_path()),
+        ..Segments::default()
+    };
+    let error = hlsfetch::fetch(
+        &client(),
+        &url,
+        &[],
+        Quality::Best,
+        first,
+        &out,
+        &mut |_| {},
+    )
+    .expect_err("the third segment is short of the bytes it promised");
+    assert!(error.to_string().contains("seg3.ts"), "{error}");
+    assert!(!out.exists(), "a failed walk leaves no MP4");
+    assert_eq!(server.hits("/seg1.ts"), 1);
+    assert_eq!(server.hits("/seg2.ts"), 1);
+
+    let second = Segments {
+        resume: Some(part.as_path()),
+        ..Segments::default()
+    };
+    // The same server: the third segment was short once and answers in full
+    // now, which is what a rerun after an interrupted transfer is.
+    let report = hlsfetch::fetch(
+        &client(),
+        &url,
+        &[],
+        Quality::Best,
+        second,
+        &out,
+        &mut |_| {},
+    )
+    .expect("the second run finishes what the first started");
+    assert_eq!(
+        report.resumed_segments, 2,
+        "the first two segments were kept"
+    );
+    assert_eq!(
+        server.hits("/seg1.ts"),
+        1,
+        "a cached segment is not asked for twice"
+    );
+    assert_eq!(server.hits("/seg2.ts"), 1);
+    assert_eq!(
+        server.hits("/seg3.ts"),
+        2,
+        "the segment that failed is fetched again"
+    );
+    assert_eq!(server.hits("/seg4.ts"), 1);
+    // Eight samples: two segments the cache kept and two the server sent, each
+    // contributing a video sample and an audio one.
+    assert_eq!(report.video_samples, 2 * count as u64);
+    hlsfetch::forget(&part);
+    let _ = std::fs::remove_file(&out);
+}
+
+/// `forget` is what `--no-resume` calls before the first request: the cache is
+/// gone, so the next run asks for everything.
+#[test]
+fn a_forgotten_cache_starts_the_list_over() {
+    let count = 3;
+    let segment = ts_segment();
+    let server = TestServer::start(interrupted_routes(count, &segment, segment.len() / 2));
+    let dir = temp_dir("hls-forget");
+    let out = dir.join("clip.mp4");
+    let part = dir.join("clip.mp4.part");
+    let url = Url::parse(&server.url("/media.m3u8")).unwrap();
+
+    let first = Segments {
+        resume: Some(part.as_path()),
+        ..Segments::default()
+    };
+    let _ = hlsfetch::fetch(
+        &client(),
+        &url,
+        &[],
+        Quality::Best,
+        first,
+        &out,
+        &mut |_| {},
+    )
+    .expect_err("segment three is short of the bytes it promised");
+
+    let payload = format!("{}.segments", part.display());
+    let journal = format!("{}.journal", part.display());
+    assert!(
+        std::path::Path::new(&payload).exists() && std::path::Path::new(&journal).exists(),
+        "an interrupted run leaves the cache it has so far"
+    );
+
+    hlsfetch::forget(&part);
+
+    assert!(
+        !std::path::Path::new(&payload).exists() && !std::path::Path::new(&journal).exists(),
+        "--no-resume removes the cache before the first request"
+    );
+
+    let second = Segments {
+        resume: Some(part.as_path()),
+        ..Segments::default()
+    };
+    // A healthy server: the run has to finish, and finishing from scratch is
+    // what a forgotten cache means.
+    let whole = TestServer::start(vec![
+        Route::ok("/media.m3u8", playlist_of(count).as_bytes()),
+        Route::ok("/seg1.ts", &segment),
+        Route::ok("/seg2.ts", &segment),
+        Route::ok("/seg3.ts", &segment),
+    ]);
+    let report = hlsfetch::fetch(
+        &client(),
+        &Url::parse(&whole.url("/media.m3u8")).unwrap(),
+        &[],
+        Quality::Best,
+        second,
+        &out,
+        &mut |_| {},
+    )
+    .expect("the second run fetches the list again");
+    assert_eq!(report.resumed_segments, 0, "nothing was left to resume");
+    assert_eq!(
+        whole.hits("/seg1.ts"),
+        1,
+        "a forgotten cache is a list fetched again"
+    );
+    assert_eq!(whole.hits("/seg3.ts"), 1);
+    hlsfetch::forget(&part);
+    let _ = std::fs::remove_file(&out);
+}
+
+/// A failing segment stops the walk rather than fetching the rest of a
+/// playlist whose output would be thrown away.
+#[test]
+fn a_failed_segment_cancels_the_segments_that_are_still_queued() {
+    let segment = ts_segment();
+    let count = 4usize;
+    // `seg1.ts` has no route, so the server answers 404: a failure on the very
+    // first segment, with three more already queued behind it.
+    // The slow segments have to outlast the failing one by a wide margin, or the
+    // assertion below becomes a race: a worker that finishes a 40 ms segment can
+    // reach for the next one before the 404 on `seg1.ts` has been processed, and
+    // that is a scheduling fact about the machine rather than a bug. 400 ms is
+    // an order of magnitude past anything a 404 needs on a loaded runner.
+    let routes = vec![
+        Route::ok("/media.m3u8", playlist_of(count).as_bytes()),
+        Route::slow("/seg2.ts", &segment, 400),
+        Route::slow("/seg3.ts", &segment, 400),
+        Route::slow("/seg4.ts", &segment, 400),
+    ];
+    let server = TestServer::start(routes);
+    let out = temp_dir("hls-cancel").join("clip.mp4");
+    let url = Url::parse(&server.url("/media.m3u8")).unwrap();
+
+    let error = hlsfetch::fetch(
+        &client(),
+        &url,
+        &[],
+        Quality::Best,
+        Segments {
+            concurrent: 2,
+            ..Segments::default()
+        },
+        &out,
+        &mut |_| {},
+    )
+    .expect_err("a 404 on a segment is a failure");
+    let text = error.to_string();
+    assert!(text.contains("seg1.ts"), "{text}");
+    assert!(!out.exists(), "nothing is left on disk");
+    assert_eq!(
+        server.hits("/seg4.ts"),
+        0,
+        "the queue stopped when the first worker failed"
+    );
+    assert!(
+        server.hits("/seg3.ts") <= 1,
+        "at most the one segment already in flight may have been started"
+    );
 }

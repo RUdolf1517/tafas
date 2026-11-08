@@ -22,7 +22,7 @@ the rename. A short or long body is a verification failure: the `.part` file
 stays for a resume, the destination is never created, and the exit code is 4.
 
 **Where it is weaker than it sounds.** `Content-Length` is what the server says,
-not a checksum, and none of the three sites publish one for media. A server that
+not a checksum, and none of the seven sites publish one for media. A server that
 returns a *complete but wrong* body would pass. That is not a gap this project
 can close with the information available — TLS already excludes a third party
 changing bytes in flight, so the remaining risk is the server itself, which is
@@ -99,7 +99,7 @@ reports success without a complete commit. The refusal classes are:
 
 | Kind | Meaning | Exit |
 | --- | --- | --- |
-| `refused` | understood and declined: cipher, age gate, fMP4 HLS, sign-in check | 1 |
+| `refused` | understood and declined: cipher, age gate, `SAMPLE-AES`, HEVC fragments, sign-in check | 1 |
 | `unsupported` | the site has nothing this build can take: no media, live stream, deleted post | 1 |
 | `parse` | the response was not what it claimed to be | 1 |
 | `http` | transport, after retries | 1 |

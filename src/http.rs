@@ -9,7 +9,7 @@ use crate::cookies::Jar;
 use crate::error::{Error, Result};
 use crate::url::Url;
 
-/// Sent with everything that is not a media request. The three sites serve a
+/// Sent with everything that is not a media request. The seven sites serve a
 /// different page to a browser user agent, and a different page again to
 /// `curl`; the browser string is the one that carries the data we need.
 pub const UA_DESKTOP: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
@@ -59,6 +59,10 @@ pub struct Http {
     /// stores none of its own: a cookie is a credential, and a credential this
     /// program invented would be one it has to keep.
     cookies: Option<Jar>,
+    /// `--limit-rate`: one budget shared by every body this client streams.
+    /// `None` means the flag was not given, which is not the same as a very
+    /// large number: an unbounded transfer never touches the clock.
+    limit: Option<std::sync::Mutex<crate::ratelimit::Budget>>,
 }
 
 /// rustls refuses to guess between crypto providers, and reqwest is built with
@@ -96,12 +100,24 @@ impl Http {
             timeout: Duration::from_secs(timeout_secs.max(1)),
             verbose,
             cookies: None,
+            limit: None,
         })
     }
 
     /// Attaches a jar to every request this client makes.
     pub fn with_cookies(mut self, jar: Jar) -> Http {
         self.cookies = Some(jar);
+        self
+    }
+
+    /// `--limit-rate`: caps the bytes this client streams to a sink.
+    ///
+    /// The budget is one per client, so `--jobs` and `--concurrent-fragments`
+    /// divide the rate rather than multiply it. Metadata is not charged: it is
+    /// read in full and bounded by its own limits, not streamed.
+    pub fn with_limit_rate(mut self, bytes_per_second: Option<u64>) -> Http {
+        self.limit =
+            bytes_per_second.map(|rate| std::sync::Mutex::new(crate::ratelimit::Budget::new(rate)));
         self
     }
 
@@ -295,7 +311,7 @@ impl Http {
     }
 
     /// A JSON document from a GET. `Ok(None)` means the endpoint answered 404,
-    /// which two of the three sites use to mean "this post is gone" rather than
+    /// which two of the seven sites use to mean "this post is gone" rather than
     /// "your request is broken".
     pub fn get_json_opt(
         &self,
@@ -415,6 +431,19 @@ impl Http {
             }
             sink.write_all(&buffer[..read])?;
             written += read as u64;
+            // The reservation is arithmetic and happens under the lock; the
+            // wait happens after it, so concurrent segments share the rate
+            // without serialising on each other's sleeps.
+            let owed = match &self.limit {
+                None => Duration::ZERO,
+                Some(budget) => budget
+                    .lock()
+                    .map(|mut budget| budget.reserve(read as u64))
+                    .unwrap_or_default(),
+            };
+            if !owed.is_zero() {
+                std::thread::sleep(owed);
+            }
             on_bytes(read as u64);
         }
 

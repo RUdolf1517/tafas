@@ -262,3 +262,92 @@ fn the_winget_templates_match_the_generator() {
         );
     }
 }
+
+/// The parts of a release that make it checkable have to stay wired together:
+/// the SBOM is built by a script that exists, from the lock file that ships, and
+/// the signature step signs what the checksum step wrote and verifies it against
+/// a key a reader has. Each of these is one line in a workflow, which is exactly
+/// the kind of thing that rots without a test.
+#[test]
+fn the_release_builds_an_sbom_and_signs_what_it_publishes() {
+    let release = read(".github/workflows/release.yml");
+    let docs = read("docs/releases.md");
+
+    for required in [
+        "packaging/sbom.py",
+        "packaging/sign.sh",
+        "--version \"$version\"",
+        "SOURCE_DATE_EPOCH",
+        "--remap-path-prefix",
+        "CARGO_INCREMENTAL=0",
+    ] {
+        assert!(release.contains(required), "release.yml lost {required:?}");
+    }
+    assert!(
+        manifest_dir().join("packaging/sbom.py").is_file(),
+        "packaging/sbom.py is named by the release job and does not exist"
+    );
+    // The signature covers the checksum file and is verified before an upload:
+    // signing what was not verified publishes a promise nobody checked.
+    let sign = read("packaging/sign.sh");
+    assert!(
+        sign.contains("SHA256SUMS.minisig"),
+        "sign.sh must sign SHA256SUMS"
+    );
+    assert!(
+        sign.contains("minisign -Vm"),
+        "sign.sh must verify what it wrote"
+    );
+    // A key that is committed is the public half; the secret is a secret.
+    assert!(
+        release.contains("packaging/minisign.pub"),
+        "release.yml must check against the published public key"
+    );
+    assert!(
+        docs.contains("minisign.pub") && docs.contains("spdx.json"),
+        "docs/releases.md must tell a reader what to verify and how"
+    );
+    // The Windows ZIP keeps its two entries: the installer and the manifest
+    // generator both refuse anything else, so an extra file here is a broken
+    // release rather than a richer one.
+    let zip_line = release
+        .lines()
+        .find(|line| line.contains("7z a"))
+        .expect("the release job builds the Windows ZIP");
+    assert!(
+        zip_line.contains("tafas.exe LICENSE"),
+        "the Windows ZIP must still carry the binary and the licence: {zip_line}"
+    );
+    assert!(
+        !zip_line.contains(" man") && !zip_line.contains("spdx"),
+        "the Windows ZIP must hold exactly two entries: {zip_line}"
+    );
+}
+
+/// A release is cut only when the roadmap is finished, and the three places a
+/// reader looks — the readme, the roadmap, the releases page — have to say so.
+/// The rule lives in prose, which is exactly the kind of thing that survives one
+/// edit and not two.
+#[test]
+fn no_release_is_cut_before_the_roadmap_is_done() {
+    for file in ["README.md", "docs/roadmap.md", "docs/releases.md"] {
+        // Prose wraps: the sentence is checked the way a reader reads it, with
+        // line breaks folded into spaces.
+        let text = read(file).split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(
+            text.contains("until the whole roadmap is done"),
+            "{file} no longer says that nothing is tagged before the roadmap is done"
+        );
+    }
+    // And the procedure itself points at the rule, so nobody follows it in the
+    // belief that a version comes out of it today.
+    let releases = read("docs/releases.md");
+    let cut = releases
+        .split("## 4. How a release is cut")
+        .nth(1)
+        .expect("docs/releases.md describes how a release is cut");
+    assert!(
+        cut.contains("waits for the roadmap"),
+        "the release procedure must say what it is waiting for"
+    );
+}

@@ -53,6 +53,36 @@ second. The version without a watermark is preferred when the page offers both.
 Posts with video, animated GIF or photos, through the syndication endpoint. A
 post that offers only an HLS playlist is fetched segment by segment, demuxed and
 written as an MP4 in process; a progressive MP4 is preferred when both exist.
+.TP
+.B Vimeo
+\fBvimeo.com/<id>\fR, channel URLs, unlisted \fB<id>/<hash>\fR URLs and
+\fBplayer.vimeo.com/video/<id>\fR, read from the player's own configuration
+endpoint. Progressive MP4s are preferred; a video that offers only an HLS
+playlist is fetched, demuxed and written in process. DASH is not read and the
+refusal says so, and an unlisted video without its hash is the same 404 a deleted
+one gets, which the refusal also says.
+.TP
+.B Reddit
+Posts whose `secure_media.reddit_video` lists a playlist, and bare
+\fBv.redd.it/<hash>\fR URLs, read from \fB/comments/<id>.json\fR. Only the HLS
+playlist is taken: the progressive \fBDASH_<height>.mp4\fR files carry no audio
+at all, and the DASH manifest is `SegmentBase`, which is not read \- both are
+refusals that say so rather than a silent file. An over\-18 post with nothing
+playable names \fB\-\-cookies\fR.
+.TP
+.B SoundCloud
+Track URLs (\fBsoundcloud.com/<artist>/<track>\fR) and \fBon.soundcloud.com\fR
+short links, read from the page's own hydration document. The track is written as
+an \fBMP3\fR, copied byte for byte from the CDN address the site's transcoding
+names. A set, a Go+ track, an opus-only rendition and a consent wall are refusals
+that name themselves; a set is a list, and one URL is one file.
+.TP
+.B Twitch
+\fBtwitch.tv/videos/<id>\fR, through one batched GraphQL request: the playback
+token, and the title, length and poster that name the file. The playlist the
+token unlocks is assembled into an MP4 like any other HLS list. A channel, a clip
+and a subscriber\-only recording are refusals that name themselves; the client id
+is public and is not a credential.
 .SH OPTIONS
 .SS Destination
 .TP
@@ -85,8 +115,19 @@ quietly, and a photo post is skipped by name: every image is already a file.
 Write the page's caption tracks beside each file, as WebVTT:
 \fI<name>.<language>.vtt\fR, or \fI<name>.<language>.auto.vtt\fR when the site
 transcribed the audio instead of a person writing the cues. One file per track;
-nothing is merged. YouTube is the only site of the three that lists tracks, so
+nothing is merged. YouTube is the only site of the seven that lists tracks, so
 elsewhere this is a note rather than a file.
+.TP
+.B \-\-embed\-subs
+Put one caption track inside the MP4 instead of beside it, as a \fBwvtt\fR
+track (WebVTT in ISO\-BMFF). The cues keep their times and their text; cue
+settings, \fBSTYLE\fR and \fBREGION\fR blocks are dropped, because the
+container's cue box has nowhere to put them and the player places the cue
+anyway. The track's language is not carried: \fBmdhd\fR says \fBund\fR, and
+the language lives in the sidecar's name. The file is read back, given the
+track and laid out again; samples are copied, so nothing is re\-encoded.
+One track per file, so the selection has to name one language, and a run that
+did not produce exactly one MP4 says so and adds nothing.
 .TP
 .B \-\-sub\-langs \fILANGS\fR
 Which caption languages to write: \fBall\fR (the default), an exact code such
@@ -94,7 +135,8 @@ as \fBen\fR or \fBpt\-BR\fR, or a language ending in \fB*\fR such as
 \fBen*\fR for \fBen\fR and its variants \fBen\-US\fR and \fBen\-GB\fR \-
 but not \fBeng\fR, which is another language. A list selects the union and ignores case. A
 selection that matches no track is a refusal naming the languages the page does
-have; using this flag without \fB\-\-write\-subs\fR is a usage error.
+have; using this flag without \fB\-\-write\-subs\fR or \fB\-\-embed\-subs\fR
+is a usage error, and so is asking for both writers at once.
 .SS Selection
 .TP
 .B \-Q, \-\-quality \fIQUALITY\fR
@@ -130,11 +172,42 @@ deadline.
 .B \-j, \-\-jobs \fIN\fR
 How many URLs to work on at once (default 1; \fB0\fR means four).
 .TP
+.B \-\-concurrent\-fragments \fIN\fR
+How many segments of one HLS list to fetch at once, \fB1\fR to \fB16\fR
+(default 1, which fetches them one after another). The segments are written in
+playlist order whatever order they arrive in, and the first failure stops the
+ones still queued. It applies to a segment list only; on any other selection it
+prints a note and changes nothing.
+.TP
+.B \-\-limit\-rate \fIRATE\fR
+Cap a transfer at
+.I RATE
+bytes per second, written with an optional
+.BR K ,
+.B M
+or
+.B G
+suffix in powers of 1024 (500K, 2M, 1.5M). One budget is shared by every body
+and every segment in flight, so
+.B \-\-concurrent\-fragments
+divides the rate rather than multiplying it. Below 1K the run is refused rather
+than clamped; metadata requests are not charged. The default is no limit.
+.TP
 .B \-\-cookies \fIFILE\fR
 Send the cookies in a Netscape cookie file, in the format curl writes and every
 browser exports. The file is read once at startup, sent only to the hosts its
 domains match, never written back and never logged. It is the only credential
 this program accepts, and it stores nothing between runs.
+.TP
+.B \-\-extractor\-args \fISITE:KEY=VALUE\fR
+Narrow one extractor's route by hand, for the day a site reorders the document
+the extractor reads. The vocabulary is closed and checked before the first
+request: \fByoutube:client=\fR (\fBandroid_vr\fR, \fBios\fR, \fBandroid\fR,
+\fBtv_embedded\fR, \fBweb\fR) pins one InnerTube client and drops the others
+from the chain, and \fBtiktok:route=\fR (\fBweb\fR, \fBapp\fR) drops one of
+TikTok's two routes. Repeat the flag once per site; naming the same key twice is
+a usage error, not a silent last\-one\-wins, and a key or value this build does
+not know is refused with the accepted spellings in the message.
 .TP
 .B \-\-playlist\-items \fIITEMS\fR
 Take only these entries of a list: \fB3\fR, \fB1\-5\fR, \fB2\-\fR or any
@@ -229,11 +302,21 @@ describes has been renamed into place.
 The poster frame, written only with \fB\-\-write\-thumbnail\fR.
 .TP
 .I <target stem>.<language>.vtt, <target stem>.<language>.auto.vtt
-WebVTT captions, written only with \fB\-\-write\-subs\fR.
+WebVTT captions, written only with \fB\-\-write\-subs\fR. The same cues can go
+inside the file instead, with \fB\-\-embed\-subs\fR.
+.TP
+.I <target>.part.segments, <target>.part.journal
+The segments of an HLS list fetched so far, kept beside the part so an
+interrupted run asks only for what is missing. Deleted when the file is
+renamed into place, and by \fB\-\-no\-resume\fR.
+.PP
+On Windows a path past 260 characters is written in its verbatim form (a
+prefix in front of it), which lifts the limit and lets a deep output
+directory work; nothing about this is visible elsewhere.
 .SH SEE ALSO
 .BR curl (1),
 .BR ffmpeg (1)
 .SH BUGS
-Signature-protected YouTube formats and fMP4 HLS playlists are refused rather
-than worked around; \fIdocs/extractors.md\fR states exactly what is and is not
-supported. Report bugs at https://github.com/RUdolf1517/tafas/issues.
+Signature-protected YouTube formats, HEVC and AC-3 in a fragment, and
+\fBSAMPLE-AES\fR are refused rather than worked around; \fIdocs/extractors.md\fR
+and \fIdocs/hls.md\fR state exactly what is and is not supported. Report bugs at https://github.com/RUdolf1517/tafas/issues.

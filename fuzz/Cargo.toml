@@ -1,0 +1,44 @@
+[package]
+name = "tafas-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+# Its own package, its own lockfile: the shipped binary never links any of this.
+[workspace]
+members = ["."]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+tafas = { path = ".." }
+
+[[bin]]
+name = "mp4_read"
+path = "fuzz_targets/mp4_read.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "webvtt"
+path = "fuzz_targets/webvtt.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "json_after"
+path = "fuzz_targets/json_after.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "mux_file"
+path = "fuzz_targets/mux_file.rs"
+test = false
+doc = false
+bench = false

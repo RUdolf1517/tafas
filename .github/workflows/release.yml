@@ -64,6 +64,24 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      # Nothing about the machine goes into the binary: not the clock, not the
+      # directory, not the cargo home. `SOURCE_DATE_EPOCH` is the commit's own
+      # time, which is the one value two builds of one commit agree on.
+      - name: Reproducible settings
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
+          echo "CARGO_INCREMENTAL=0" >> "$GITHUB_ENV"
+          {
+            echo 'RUSTFLAGS<<__TAFAS_RUSTFLAGS__'
+            # `GITHUB_WORKSPACE` rather than `pwd`: on the Windows runner the shell
+            # spells the checkout `/d/a/...` while rustc is handed `D:\a\...`.
+            echo "--remap-path-prefix=${GITHUB_WORKSPACE:-$(pwd)}=/build"
+            echo "--remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo"
+            echo '__TAFAS_RUSTFLAGS__'
+          } >> "$GITHUB_ENV"
+
       - name: Install musl tooling
         if: matrix.target == 'x86_64-unknown-linux-musl'
         run: sudo apt-get update && sudo apt-get install -y musl-tools
@@ -85,6 +103,9 @@ jobs:
           else
             cargo build --release --locked --target "${{ matrix.target }}"
           fi
+
+      # What is in the archive, from the lock file the build used. Written
+      # before packaging so the archive carries it.
 
       - name: Smoke-test the binary
         shell: bash
@@ -122,6 +143,10 @@ jobs:
           if [ -f "${bin}.exe" ]; then
             cp "${bin}.exe" dist/tafas.exe
             cp LICENSE dist/
+            # Two entries, as `install.ps1` and the winget generator require: the
+            # Windows ZIP does not grow a manual page or an SBOM. The SBOM is
+            # published beside the archives instead, and every artifact carries
+            # its own signature.
             (cd dist && 7z a "../${name}.zip" tafas.exe LICENSE > /dev/null)
             echo "ASSET=${name}.zip" >> "$GITHUB_ENV"
           else
@@ -150,6 +175,9 @@ jobs:
     name: publish
     needs: build
     runs-on: ubuntu-latest
+    env:
+      # A step-level `if` cannot read `secrets`, but it can read `env`.
+      MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
     steps:
       - uses: actions/checkout@v4
 
@@ -193,6 +221,19 @@ jobs:
           rm -rf artifacts/winget
           ls -l artifacts/install.ps1 artifacts/tafas-winget-local-manifests-*.zip
 
+      # The SBOM is built once, in publish, from the lock file the build used:
+      # `tafas-release-<version>.spdx.json`, beside the archives and the
+      # checksums, rather than inside each of the five.
+      - name: SBOM
+        shell: bash
+        env:
+          TAG: ${{ inputs.tag || github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          python3 packaging/sbom.py --version "$version" \
+            --output "artifacts/tafas-release-${version}.spdx.json"
+
       - name: Checksums
         run: |
           set -euo pipefail
@@ -200,6 +241,26 @@ jobs:
           ls -l
           sha256sum ./* > SHA256SUMS
           cat SHA256SUMS
+
+      # A checksum proves the file matches the release; a signature proves the
+      # release is ours. The key is a secret, so the step is skipped when it is
+      # absent — and when it is present, a release without a published public key
+      # to verify against is a failure rather than a signature nobody can check.
+      - name: Sign the artifacts
+        if: env.MINISIGN_SECRET_KEY != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -f packaging/minisign.pub ]; then
+            echo "packaging/minisign.pub is missing: publish the public key this secret belongs to" >&2
+            exit 1
+          fi
+          sudo apt-get update && sudo apt-get install -y minisign
+          printf '%s\n' "$MINISIGN_SECRET_KEY" > /tmp/minisign.key
+          chmod 600 /tmp/minisign.key
+          trap 'rm -f /tmp/minisign.key' EXIT
+          sh packaging/sign.sh artifacts /tmp/minisign.key packaging/minisign.pub
+          ls -l artifacts/*.minisig artifacts/minisign.pub
 
       - name: Attach to the release
         env:

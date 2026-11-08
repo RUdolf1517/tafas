@@ -11,7 +11,7 @@
 [![rust](https://img.shields.io/badge/rust-1.82%2B-dea584?style=flat-square)](https://www.rust-lang.org/)
 [![license](https://img.shields.io/badge/license-MIT-0b3d91?style=flat-square)](LICENSE)
 
-[Install](#install) · [Usage](#usage) · [Sites](#sites) · [Why tafas](#why-tafas) · [Docs](#documentation) · [Contact](#contact)
+[Install](#install) · [Usage](#usage) · [Sites](#sites) · [Why tafas](#why-tafas) · [Roadmap](#roadmap) · [Docs](#documentation)
 
 </div>
 
@@ -57,7 +57,13 @@ cargo install --git https://github.com/RUdolf1517/tafas --tag v0.1.0            
 
 Linux (x86_64 and ARM64), macOS (Apple silicon and Intel), Windows x64. The
 install script checks the archive against the release's `SHA256SUMS` and refuses
-anything that does not match.
+anything that does not match. Each release also publishes an SPDX SBOM
+(`tafas-release-X.Y.Z.spdx.json`) and, when the signing key is set, a minisign
+signature beside every file — `minisign -Vm <file> -p minisign.pub -x
+<file>.minisig`. The build itself is reproducible: `SOURCE_DATE_EPOCH` is the
+commit's time and the compiler sees no directory from the machine that built it,
+so two builds of one commit are one file. See
+[docs/releases.md](docs/releases.md#reproducibility-signatures-and-the-sbom).
 
 <details>
 <summary>Debian, Fedora, Windows</summary>
@@ -117,8 +123,12 @@ tafas https://youtu.be/aqz-KE-bpKQ -o - | mpv -     # bytes on stdout
 tafas https://x.com/user/status/123 --cookies ~/cookies.txt  # a session, if you have one
 tafas https://youtu.be/aqz-KE-bpKQ --write-info-json # a sidecar describing the choice
 tafas https://x.com/user/status/123 --playlist-items 1-5  # part of an HLS list
+tafas https://x.com/user/status/123 --concurrent-fragments 4  # four segments at once
+tafas https://vimeo.com/76979871 --limit-rate 2M  # leave the line usable for others
+tafas https://youtu.be/dQw4w9WgXcQ --extractor-args youtube:client=ios  # one client only
 tafas https://youtu.be/aqz-KE-bpKQ --write-thumbnail  # the poster, beside the file
 tafas https://youtu.be/aqz-KE-bpKQ --write-subs --sub-langs en,ru  # WebVTT captions
+tafas https://youtu.be/aqz-KE-bpKQ --embed-subs --sub-langs en  # the same cues, inside the MP4
 ```
 
 | Exit | Meaning |
@@ -147,10 +157,14 @@ stream, which is what a phone on a train wants.
 | **YouTube** | `watch?v=`, `youtu.be/`, `/shorts/`, `/embed/`, `/live/`, `music.youtube.com` | the watch page's inlined player response, then InnerTube with a fixed client chain (`android_vr` → `ios` → `android` → embedded TV → `web`) | MP4; separate DASH streams are remuxed into one file |
 | **TikTok** | `/@user/video/`, `/@user/photo/`, `vm.tiktok.com`, `vt.tiktok.com` | the page's rehydration document, then the mobile feed | MP4, watermark-free version preferred; photo posts give images |
 | **X** | `/<user>/status/`, `i/web/status/`, `t.co` | the syndication endpoint the embedded widget uses | MP4 (video, or an animated GIF's MP4), the post's photos as JPEG, or — when a post offers nothing else — its HLS playlist assembled into an MP4 |
+| **Vimeo** | `vimeo.com/<id>`, channel URLs, unlisted `<id>/<hash>`, `player.vimeo.com/video/<id>` | the player's own configuration endpoint; one request, no HTML | MP4 from the progressive files; a video that offers only an HLS playlist is assembled into an MP4; the poster and duration come from the same document |
+| **Reddit** | `/r/<sub>/comments/<id>/`, `redd.it`, `v.redd.it/<hash>` | the post's own JSON (`/comments/<id>.json`), or the fixed playlist path for a bare media URL | MP4 assembled from the HLS playlist; the progressive `DASH_<height>.mp4` files carry no audio and are refused by name |
+| **SoundCloud** | `<artist>/<track>`, `on.soundcloud.com` | the page's hydration document, then the transcoding document it names | **MP3**, copied byte for byte — sound only, no container rebuilt; sets, Go+ tracks and opus-only renditions are refused by name |
+| **Twitch** | `/videos/<id>` | one batched GraphQL request: the playback token, plus the title, length and poster | MP4 assembled from the usher playlist; a live channel, a clip and a subscriber-only recording are refused by name |
 
 A site is listed only because its reader exists and its refusals are written
 down. What each one can and cannot reach — age gates, PO tokens, signature
-ciphers, fMP4 playlists — is one table away in
+ciphers, HEVC fragments — is one table away in
 [docs/extractors.md](docs/extractors.md).
 
 ## Why tafas
@@ -159,10 +173,41 @@ ciphers, fMP4 playlists — is one table away in
 | --- | --- |
 | **It never re-encodes** | Picture and sound are copied as sample tables; the muxer rewrites chunk offsets, track ids and durations in `moov`, and leaves `avcC`, `av1C`, `vpcC` and `esds` byte for byte. Quality is whatever the site served. |
 | **It joins streams itself** | YouTube's 1080p is two files. `tafas` builds the single MP4 in Rust — there is no `ffmpeg` to install, and no subprocess to fail in a way that looks like a network error. |
-| **It refuses instead of guessing** | Cipher-protected formats, fMP4 playlists, age-gated pages and posts that need an account each exit with a named reason and a link to the paragraph that explains it. |
+| **It refuses instead of guessing** | Cipher-protected formats, `SAMPLE-AES` segments, HEVC fragments, age-gated pages and posts that need an account each exit with a named reason and a link to the paragraph that explains it. |
 | **Nothing half-written survives** | Every file lands through `<target>.part` and is renamed only after its byte count matches — and, for a remux, after the result has been re-read from disk and every chunk offset checked against the file it points into. |
-| **Resume is not an afterthought** | `--resume` (the default) continues a `.part` with a range request, notices a server that ignores `Range`, and starts over rather than writing the beginning twice. |
+| **Resume is not an afterthought** | `--resume` (the default) continues a `.part` with a range request, notices a server that ignores `Range`, and starts over rather than writing the beginning twice. A segment list is resumed per segment: the segments already fetched are cached beside the part with a journal of their lengths, and a rerun asks only for what is missing. |
 | **The terminal is the interface** | No config file, no daemon, no environment variables of its own, no state on disk between runs. Every decision is an argument, so the command you ran yesterday is the command that runs today. |
+
+## Roadmap
+
+**No version is tagged until the whole roadmap is done.** The first release will
+carry v0.2 through v0.5 in one archive, so until then `main` is the freshest thing
+there is and `cargo install --git https://github.com/RUdolf1517/tafas` is how to
+get it. The rows below say what is *in the tree*, not what is downloadable —
+[roadmap](docs/roadmap.md) has the reasoning.
+
+**Where this is now: v0.4 is in the tree and v0.5 has not started.** v0.2 and
+v0.3 are complete in `main` except the playlist/channel *pages* and four
+packaging channels listed below; v0.4 finished with per-segment resume,
+reproducible and signed releases, the SBOM, budgets, the MSRV job and Windows
+long paths. What is left before a tag is v0.5 — a stable `Extractor` trait,
+feature-per-site builds and one documentation page per site — plus the v0.2
+items that name a URL.
+
+| Where it goes | State | What it is |
+| --- | --- | --- |
+| [v0.1.0](docs/roadmap.md#1-v010--shipped) | **shipped** | Three sites, DASH remuxing verified by a second reader, atomic `.part` commit, resume, `--json`, the manual page, completions, `--capabilities`. |
+| [v0.2](docs/roadmap.md#2-v02--the-shapes-users-actually-hit) | **in progress** | **In:** HLS → MP4, AES-128 keys, `--cookies`, `--write-info-json`, `--write-thumbnail`, `--write-subs`/`--sub-langs`, `--playlist-items` over HLS segment lists, an independent test demuxer, `.deb`/`.rpm`, Homebrew, `install.sh`, the per-user Windows installer and the local winget manifests. **Open:** playlist and channel pages; AUR, `.apk`, Scoop, a flake. |
+| [v0.3](docs/roadmap.md#3-v03--reach-and-the-parts-that-are-not-a-url) | **in progress** | **In:** `--concurrent-fragments`; `--extractor-args`; fragmented MP4 (`EXT-X-MAP`/`moof`); a sample-table reader for a progressive MP4 (`mp4read::plain`); `--embed-subs`, one `wvtt` caption track inside the file; `cargo fuzz` targets, run weekly; Vimeo; Reddit; SoundCloud as MP3; Twitch VODs. **Open:** nothing from the site list. |
+| [v0.4](docs/roadmap.md#4-v04--speed-platforms-trust--done-not-yet-released) | **in the tree** | `--limit-rate` and per-segment resume; reproducible builds, an SPDX SBOM and signed checksums; size and startup budgets in CI; an MSRV job; Windows long paths. |
+| [v0.5](docs/roadmap.md#5-v05--extensibility-without-a-fork) | planned — **the last item before a tag** | A stable `Extractor` trait; feature-per-site builds; one documentation page per site. |
+
+A version is a plan, not a promise. The promise is
+[§7 of the roadmap](docs/roadmap.md#7-what-will-not-happen) — the list of things
+this project will not do — together with the rule that an item moves up only when
+someone can name the URL that fails without it. Whatever stays unsupported gets a
+refusal text in [extractors](docs/extractors.md), because "not yet" is a feature
+only if it says so.
 
 ## Documentation
 
@@ -170,6 +215,7 @@ ciphers, fMP4 playlists — is one table away in
 | --- | --- |
 | [cli](docs/cli.md) | Flags, exit codes, JSON schema, colour and progress, stdout discipline |
 | [extractors](docs/extractors.md) | Per-site routes, the exact refusals, and why each one is a refusal |
+| [hls](docs/hls.md) | Playlists, the two segment containers, the MP4 writer, and what the pipeline refuses |
 | [safety](docs/safety.md) | Atomic commit, resume, path handling, TLS, redirects, limits |
 | [dependencies](docs/dependencies.md) | Every dependency, why it exists, its licence, and where the C code is |
 | [releases](docs/releases.md) · [roadmap](docs/roadmap.md) | Versioning policy, artifacts, channels · what is planned and what is not |
@@ -185,35 +231,6 @@ open. The word carries no promise about the file's future: what tafas checks
 before it renames a file, and where that check is weaker than it looks, is
 written down in [docs/guarantees.md](docs/guarantees.md) rather than implied by
 a slogan.
-
-## Contact
-
-A bug, a refusal that names the wrong thing, a site that changed its pages:
-[open an issue](https://github.com/RUdolf1517/tafas/issues) with the URL and the
-message you got. The refusal tables in [docs/extractors.md](docs/extractors.md)
-exist so that a report can point at one line instead of describing a mood.
-
-Anything that should not be public goes to the repository's
-[Security tab](https://github.com/RUdolf1517/tafas/security), or to
-[rudolfzinovev@protonmail.com](mailto:rudolfzinovev@protonmail.com).
-[SECURITY.md](SECURITY.md) says what counts as a vulnerability here and what does
-not: a page that changed shape and now produces a wrong refusal is a
-compatibility issue with a patch release behind it, not a CVE.
-
-## Written by AI
-
-The code, the documentation, the tests and the commit messages are drafted by an
-AI assistant. The direction is [RUdolf1517](https://github.com/RUdolf1517)'s, and
-so is the decision about what ships.
-
-That is worth writing down only because the repository makes it checkable rather
-than asking to be trusted: every refusal has a name and a paragraph that explains
-it, every flag in `--help` is compared against the manual page by
-[`tests/packaging.rs`](tests/packaging.rs), formatting is committed by CI instead
-of demanded from contributors, and where a check is weaker than it looks — a
-container verified structurally but not decoded, a site route that cannot reach a
-signed format — [docs/guarantees.md](docs/guarantees.md) says so before the code
-does. A change that cannot be verified this way is not one this project ships.
 
 Written by AI. Directed by [RUdolf1517](https://github.com/RUdolf1517) ·
 [rudolfzinovev@protonmail.com](mailto:rudolfzinovev@protonmail.com)

@@ -53,6 +53,9 @@ impl Demuxed {
 pub enum TrackKind {
     Video,
     Audio,
+    /// Timed text. Nothing in a transport stream produces one; it is what
+    /// `--embed-subs` adds to a file the writer already made.
+    Subtitle,
 }
 
 #[derive(Debug, Clone)]
@@ -61,6 +64,8 @@ pub enum Codec {
     Avc { avcc: Vec<u8> },
     /// `AudioSpecificConfig`, the record an `esds`/`mp4a` sample entry carries.
     Aac(AacConfig),
+    /// WebVTT in ISO-BMFF: a `wvtt` sample entry, one `vttc` box per sample.
+    Wvtt,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -91,6 +96,10 @@ pub struct Sample {
     /// no reordering.
     pub dts: Option<u64>,
     pub keyframe: bool,
+    /// How long the sample lasts, in the track's timescale, when it is not
+    /// simply the distance to the next decode time. A subtitle cue is exactly
+    /// that case: cues have gaps between them, and a gap is not a duration.
+    pub duration: Option<u32>,
 }
 
 // ---------------------------------------------------------------------------
@@ -424,6 +433,7 @@ fn avc_track(mut stream: Pending) -> Result<Option<Track>> {
             continue;
         }
         samples.push(Sample {
+            duration: None,
             data: out,
             pts: raw.pts,
             dts: raw.dts,
@@ -486,6 +496,7 @@ fn aac_track(mut stream: Pending) -> Result<Option<Track>> {
                 stream.aac = Some(aac_config(profile, frequency, channels)?);
             }
             samples.push(Sample {
+                duration: None,
                 data: raw.payload[at + header_length..at + length].to_vec(),
                 // Only the first frame of a PES carries a timestamp; the rest
                 // follow at a fixed frame length, which the writer derives from
@@ -517,8 +528,17 @@ const SAMPLE_RATES: [u32; 13] = [
     7_350,
 ];
 
+/// The sampling frequency a four-bit index names.
+///
+/// Shared with the fragmented-MP4 reader, which meets the same table through an
+/// `AudioSpecificConfig` instead of an ADTS header: the thirteen rates are a
+/// property of AAC, not of the transport.
+pub fn sample_rate(frequency_index: u8) -> Option<u32> {
+    SAMPLE_RATES.get(frequency_index as usize).copied()
+}
+
 fn aac_config(profile: u8, frequency_index: u8, channels: u8) -> Result<AacConfig> {
-    let sample_rate = *SAMPLE_RATES.get(frequency_index as usize).ok_or_else(|| {
+    let sample_rate = sample_rate(frequency_index).ok_or_else(|| {
         Error::Parse(format!(
             "ADTS sampling frequency index {frequency_index} is not one of the thirteen rates"
         ))
