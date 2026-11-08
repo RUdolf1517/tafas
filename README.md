@@ -57,7 +57,13 @@ cargo install --git https://github.com/RUdolf1517/tafas --tag v0.1.0            
 
 Linux (x86_64 and ARM64), macOS (Apple silicon and Intel), Windows x64. The
 install script checks the archive against the release's `SHA256SUMS` and refuses
-anything that does not match.
+anything that does not match. Each release also publishes an SPDX SBOM
+(`tafas-release-X.Y.Z.spdx.json`) and, when the signing key is set, a minisign
+signature beside every file — `minisign -Vm <file> -p minisign.pub -x
+<file>.minisig`. The build itself is reproducible: `SOURCE_DATE_EPOCH` is the
+commit's time and the compiler sees no directory from the machine that built it,
+so two builds of one commit are one file. See
+[docs/releases.md](docs/releases.md#reproducibility-signatures-and-the-sbom).
 
 <details>
 <summary>Debian, Fedora, Windows</summary>
