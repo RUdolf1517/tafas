@@ -163,7 +163,10 @@ fn viewer_jwt(http: &Http, raw: &str) -> Result<String> {
 /// itself calls with the slug.
 fn resolve_slug(http: &Http, slug: &str, raw: &str) -> Result<String> {
     let endpoint = format!("https://vimeo.com/showcase/{}/auth", path_segment(slug));
-    let headers = [("accept", "application/json"), ("x-requested-with", "XMLHttpRequest")];
+    let headers = [
+        ("accept", "application/json"),
+        ("x-requested-with", "XMLHttpRequest"),
+    ];
     let answer = http.get_json_opt("vimeo-album-auth", &endpoint, &headers)?;
     let Some(answer) = answer else {
         return Err(Error::Refused(format!(
@@ -186,7 +189,10 @@ fn album_document(http: &Http, album_id: &str, jwt: &str, raw: &str) -> Result<V
         "https://api.vimeo.com/albums/{album_id}?fields=name,description,privacy,user.name"
     );
     let authorization = format!("jwt {jwt}");
-    let headers = [("accept", "application/json"), ("authorization", authorization.as_str())];
+    let headers = [
+        ("accept", "application/json"),
+        ("authorization", authorization.as_str()),
+    ];
     match http.get_json_opt("vimeo-album", &endpoint, &headers)? {
         Some(album) => Ok(album),
         None => Err(Error::Refused(format!(
@@ -201,7 +207,10 @@ fn videos_page(http: &Http, album_id: &str, jwt: &str, page: u32, raw: &str) -> 
         "https://api.vimeo.com/albums/{album_id}/videos?fields=link,uri,name,duration&per_page={PER_PAGE}&page={page}"
     );
     let authorization = format!("jwt {jwt}");
-    let headers = [("accept", "application/json"), ("authorization", authorization.as_str())];
+    let headers = [
+        ("accept", "application/json"),
+        ("authorization", authorization.as_str()),
+    ];
     match http.get_json_opt("vimeo-album-videos", &endpoint, &headers)? {
         Some(document) => Ok(document),
         None => Err(Error::Refused(format!(
@@ -252,11 +261,15 @@ fn entry_from(item: &Value) -> Option<Entry> {
 /// exist is an error rather than an empty list.
 fn has_more(document: &Value, read: usize) -> bool {
     let paging = document.get("paging");
-    let page = paging.and_then(|paging| paging.get("page")).and_then(Value::as_u64);
+    let page = paging
+        .and_then(|paging| paging.get("page"))
+        .and_then(Value::as_u64);
     let per_page = paging
         .and_then(|paging| paging.get("per_page"))
         .and_then(Value::as_u64);
-    let total = paging.and_then(|paging| paging.get("total")).and_then(Value::as_u64);
+    let total = paging
+        .and_then(|paging| paging.get("total"))
+        .and_then(Value::as_u64);
     match (page, per_page, total) {
         (Some(page), Some(per_page), Some(total)) => page * per_page < total,
         _ => read >= PER_PAGE as usize,
@@ -369,7 +382,10 @@ mod tests {
     #[test]
     fn a_slug_cannot_add_a_path_segment() {
         assert_eq!(path_segment("../etc/passwd"), "..etcpasswd");
-        assert_eq!(path_segment("BethelTally-Homegoing"), "BethelTally-Homegoing");
+        assert_eq!(
+            path_segment("BethelTally-Homegoing"),
+            "BethelTally-Homegoing"
+        );
         assert!(looks_numeric("2632481"));
         assert!(!looks_numeric("BethelTally"));
         assert!(!looks_numeric(""));
@@ -377,7 +393,8 @@ mod tests {
 
     #[test]
     fn the_album_takes_its_name_from_the_api() {
-        let album = json!({ "name": "Staff Favorites: November 2013", "privacy": { "view": "anybody" } });
+        let album =
+            json!({ "name": "Staff Favorites: November 2013", "privacy": { "view": "anybody" } });
         assert_eq!(
             text(&album, &["name"]).as_deref(),
             Some("Staff Favorites: November 2013")

@@ -75,7 +75,12 @@ pub fn extract(http: &Http, url: &Url, kind: &Kind, raw: &str) -> Result<Listing
         "extensions": { "persistedQuery": { "version": 1, "sha256Hash": COLLECTION_HASH } }
     }]);
     let headers = [("client-id", super::twitch::PUBLIC_WEB_CLIENT_ID)];
-    let answer = http.post_json("twitch-collection", "https://gql.twitch.tv/gql", &headers, &body)?;
+    let answer = http.post_json(
+        "twitch-collection",
+        "https://gql.twitch.tv/gql",
+        &headers,
+        &body,
+    )?;
     let mut listing = Listing::new(
         Site::Twitch,
         id.clone(),
@@ -256,7 +261,8 @@ mod tests {
 
     #[test]
     fn an_empty_collection_is_a_refusal_rather_than_an_empty_list() {
-        let answer = json!([{ "data": { "collection": { "title": "Empty", "items": { "edges": [] } } } }]);
+        let answer =
+            json!([{ "data": { "collection": { "title": "Empty", "items": { "edges": [] } } } }]);
         let mut entries = Vec::new();
         let error = parse(&answer, "empty", &mut entries).expect_err("nothing listed");
         assert!(error.to_string().contains("lists no recordings"), "{error}");
@@ -267,6 +273,9 @@ mod tests {
         let answer = json!([{ "errors": [{ "message": "PersistedQueryNotFound" }] }]);
         let mut entries = Vec::new();
         let error = parse(&answer, "1", &mut entries).expect_err("the hash is stale");
-        assert!(error.to_string().contains("PersistedQueryNotFound"), "{error}");
+        assert!(
+            error.to_string().contains("PersistedQueryNotFound"),
+            "{error}"
+        );
     }
 }
