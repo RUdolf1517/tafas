@@ -333,7 +333,9 @@ fn no_release_is_cut_before_the_roadmap_is_done() {
     for file in ["README.md", "docs/roadmap.md", "docs/releases.md"] {
         let text = read(file);
         assert!(
-            text.contains("until the whole") && text.contains("roadmap") && text.contains("is done"),
+            text.contains("until the whole")
+                && text.contains("roadmap")
+                && text.contains("is done"),
             "{file} no longer says that nothing is tagged before the roadmap is done"
         );
     }
