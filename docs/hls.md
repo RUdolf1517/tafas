@@ -114,7 +114,39 @@ the sample tables of an MP4 written at the end need every sample's size and
 time. `--concurrent-fragments N` therefore multiplies memory as well as
 throughput, which is why `N` is bounded and documented rather than unbounded.
 
-## 6. What is verified
+## 6. What is resumed
+
+An HLS download cannot be resumed from its staging file: `<target>.part` is an
+MP4, written once at the end, and a half-written one has no offset worth
+continuing from. What is resumable is the *segment stream*, so the segments are
+cached beside it:
+
+| File | What is in it |
+| --- | --- |
+| `<target>.part.segments` | the decrypted segments, concatenated in playlist order |
+| `<target>.part.journal` | a header line, then one length per segment, in order |
+| `<target>.part.audio.segments`, `.audio.journal` | the same for a separate audio rendition |
+
+The header names the build's cache format, the number of segments in the
+selection and an FNV-1a fingerprint of the segment URIs. A different playlist, a
+different `--playlist-items`, or a cache written by another build is a *different
+download*: the header does not match, and the cache is dropped rather than
+spliced into a file it does not describe. Nothing is guessed from a timestamp.
+
+Writing is ordered so that the journal can only ever claim bytes that landed: the
+payload is written and synced **first**, and the length is appended after. A run
+that dies in between leaves bytes the journal does not claim; recovery cuts the
+payload back to the last whole segment, because those bytes belong to a segment
+that will be fetched again. A torn length line ends the same way. Segments are
+charged in playlist order — a segment that arrives early from a parallel worker
+waits for the gap before it — so the cache is always a prefix.
+
+On success the MP4 is written, verified, renamed into place, and *then* the
+sidecars are deleted. On failure they are kept: that is the whole point.
+`--no-resume` deletes them before the first request, so a cache is never spliced
+into a run that did not ask for one.
+
+## 7. What is verified
 
 `tests/hls.rs` runs the whole path over a socket: a playlist, its segments, a
 byte range and an AES-128 key, assembled into an MP4 that `mux::verify` accepts.

@@ -64,6 +64,8 @@ survived the remux and are findable in the output.
 | `--concurrent-fragments 4` over four segments the server holds for 80 ms | the server saw more than one request at once, and the file is still the four segments in playlist order |
 | the same fixtures with the default `1` | the server never saw two requests at once |
 | a 404 on the first segment of a parallel run | the queued segments are never requested, and nothing is written |
+| an HLS list whose third segment fails once, then the same run again | the second run reports `resumed_segments: 2`, the server sees each of the first two segments **once**, the segment that failed is fetched again, and the file verifies |
+| the same list again after `hlsfetch::forget`, which is what `--no-resume` calls | nothing is resumed, and every segment is fetched again |
 | an `EXT-X-MAP` playlist with two fragments | one request for the header, two for the segments, and the written file verifies |
 | the same playlist with a header that changes half way | refused, naming the segment and both headers, and nothing is written |
 | an `EXT-X-MAP` body that is not ISO-BMFF | refused with the box that failed, not with a panic |

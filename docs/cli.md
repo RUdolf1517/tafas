@@ -153,7 +153,7 @@ by name rather than converted.
 
 | Flag | Meaning |
 | --- | --- |
-| `--no-resume` | do not continue a `.part`; start the transfer over |
+| `--no-resume` | do not continue a `.part` (or a segment cache) beside the target; start the transfer over |
 | `--retries N` | retries for one request (default 3) |
 | `--timeout SECS` | deadline for one metadata request (default 60) |
 | `-j, --jobs N` | how many URLs to work on at once (default 1; `0` means four) |
@@ -175,6 +175,16 @@ cookie is sent only where it applies — domain (with or without subdomains), pa
 prefix, `Secure` and expiry are all checked per request — and a `cookie` header
 the extractor itself sets (YouTube's consent pair) is kept, with the jar's
 cookies appended rather than replacing it.
+
+`--resume` (the default) applies to both shapes of download. A progressive file
+continues from its `.part` with a `Range` request; a segment list cannot, because
+its `.part` is an MP4 written at the end, so segments are cached beside it
+instead (`<target>.part.segments` and a journal of their lengths, [hls §6](hls.md#6-what-is-resumed)).
+A rerun replays the cache and asks the server only for the segments that are
+missing, and says how many came from the previous run. The cache is dropped when
+it describes a different selection — another playlist, another
+`--playlist-items`, another build — rather than being spliced into a file it does
+not describe. `--no-resume` deletes it before the first request.
 
 `--playlist-items ITEMS` is parsed before the first request, so a typo is a
 usage error (2) rather than a half-written file. Entries are 1-based and

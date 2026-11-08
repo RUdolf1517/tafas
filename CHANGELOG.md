@@ -13,6 +13,18 @@ version; adding a site, a flag or a container is minor. The policy is in
 
 ### Added
 
+- **Per-segment resume.** An interrupted HLS download no longer starts over. The
+  segments that landed are cached beside the staging file
+  (`<target>.part.segments`, one length per line in `<target>.part.journal`,
+  separately for a split audio rendition), and a rerun replays them and asks the
+  server only for what is missing — and says how many it replayed. The journal
+  starts with a fingerprint of the selection, so another playlist, another
+  `--playlist-items` or another build drops the cache instead of splicing it into
+  a file it does not describe; the payload is written and synced before its
+  length is recorded, so a torn tail is cut back to the last whole segment.
+  `--no-resume` deletes the cache before the first request. Documented in
+  [docs/hls.md](docs/hls.md#6-what-is-resumed).
+
 - **`--limit-rate RATE`.** One budget for the bytes coming off the wire: a
   progressive body and every segment of an HLS list are charged against the same
   clock, so `--concurrent-fragments 4` divides the rate rather than multiplying

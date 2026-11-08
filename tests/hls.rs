@@ -654,6 +654,103 @@ fn one_worker_fetches_one_segment_at_a_time() {
     assert_eq!(verified.sample_total(), 4 * count as u64);
 }
 
+/// The playlist of `count` segments, four of them, with the third failing once.
+fn interrupted_routes(count: usize, segment: &[u8]) -> Vec<Route> {
+    let mut routes = vec![Route::ok("/media.m3u8", playlist_of(count).as_bytes())];
+    for index in 1..=count {
+        let path = format!("/seg{index}.ts");
+        if index == 3 {
+            routes.push(Route::failing(&path, segment, 1));
+        } else {
+            routes.push(Route::ok(&path, segment));
+        }
+    }
+    routes
+}
+
+/// What an interrupted list leaves behind is what the next run starts from.
+#[test]
+fn a_failed_list_is_resumed_from_the_segments_it_kept() {
+    let count = 4;
+    let segment = ts_segment();
+    let server = TestServer::start(interrupted_routes(count, &segment));
+    let dir = temp_dir("hls-resume");
+    let out = dir.join("clip.mp4");
+    let part = dir.join("clip.mp4.part");
+    let url = Url::parse(&server.url("/media.m3u8")).unwrap();
+
+    let first = Segments {
+        resume: Some(part.as_path()),
+        ..Segments::default()
+    };
+    let error = hlsfetch::fetch(&client(), &url, &[], Quality::Best, first, &out, &mut |_| {})
+        .expect_err("the third segment fails once");
+    assert!(error.to_string().contains("seg3.ts"), "{error}");
+    assert!(!out.exists(), "a failed walk leaves no MP4");
+    assert_eq!(server.hits("/seg1.ts"), 1);
+    assert_eq!(server.hits("/seg2.ts"), 1);
+
+    let second = Segments {
+        resume: Some(part.as_path()),
+        ..Segments::default()
+    };
+    let report = hlsfetch::fetch(&client(), &url, &[], Quality::Best, second, &out, &mut |_| {})
+        .expect("the second run finishes what the first started");
+    assert_eq!(report.resumed_segments, 2, "the first two segments were kept");
+    assert_eq!(
+        server.hits("/seg1.ts"),
+        1,
+        "a cached segment is not asked for twice"
+    );
+    assert_eq!(server.hits("/seg2.ts"), 1);
+    assert_eq!(
+        server.hits("/seg3.ts"),
+        2,
+        "the segment that failed is fetched again"
+    );
+    assert_eq!(server.hits("/seg4.ts"), 1);
+    assert_eq!(report.video_samples, 2 * count as u64);
+    hlsfetch::forget(&part);
+    let _ = std::fs::remove_file(&out);
+}
+
+/// `forget` is what `--no-resume` calls before the first request: the cache is
+/// gone, so the next run asks for everything.
+#[test]
+fn a_forgotten_cache_starts_the_list_over() {
+    let count = 3;
+    let segment = ts_segment();
+    let server = TestServer::start(interrupted_routes(count, &segment));
+    let dir = temp_dir("hls-forget");
+    let out = dir.join("clip.mp4");
+    let part = dir.join("clip.mp4.part");
+    let url = Url::parse(&server.url("/media.m3u8")).unwrap();
+
+    let first = Segments {
+        resume: Some(part.as_path()),
+        ..Segments::default()
+    };
+    let _ = hlsfetch::fetch(&client(), &url, &[], Quality::Best, first, &out, &mut |_| {})
+        .expect_err("segment three fails");
+
+    hlsfetch::forget(&part);
+
+    let second = Segments {
+        resume: Some(part.as_path()),
+        ..Segments::default()
+    };
+    let report = hlsfetch::fetch(&client(), &url, &[], Quality::Best, second, &out, &mut |_| {})
+        .expect("the second run finishes");
+    assert_eq!(report.resumed_segments, 0, "nothing was left to resume");
+    assert_eq!(
+        server.hits("/seg1.ts"),
+        2,
+        "a forgotten cache is a list fetched again"
+    );
+    hlsfetch::forget(&part);
+    let _ = std::fs::remove_file(&out);
+}
+
 /// A failing segment stops the walk rather than fetching the rest of a
 /// playlist whose output would be thrown away.
 #[test]

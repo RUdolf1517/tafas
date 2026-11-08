@@ -54,6 +54,7 @@ same instruction neighbourhood as the rename.
 | `.part` present, server answers `206` | bytes appended, offsets verified by the byte count |
 | `.part` present, server answers `200` | body restarted: the file is truncated first, so the beginning cannot appear twice |
 | `.part` present, server answers `416` | treated as "already complete or stale": the transfer restarts from zero |
+| `.part.segments` + `.part.journal` beside an HLS part | the segments already fetched are replayed, the rest is requested ([hls §6](../docs/hls.md#6-what-is-resumed)); deleted with the part, never renamed |
 | `--no-resume` | `.part` is truncated and the transfer starts over |
 
 A `.part` file is never renamed on its own. Stale parts are the user's to

@@ -852,9 +852,12 @@ fn fetch_plan(
 /// Fetches an HLS stream: playlist, segments, demux, MP4.
 ///
 /// The staging file is `<target>.part` like every other fetch, so an
-/// interrupted HLS download leaves the same debris — and `--resume` does not
-/// apply, because a segment list is fetched as a whole and a half-written MP4
-/// has no meaningful offset to resume from.
+/// interrupted HLS download leaves the same debris. What is resumed is not the
+/// MP4 — a half-written one has no offset worth continuing from — but the
+/// segment stream beside it: `<target>.part.segments` with a journal of lengths,
+/// both deleted the moment the MP4 is committed. `--no-resume` removes them
+/// before the first request, so a cache is never spliced into a run that did not
+/// ask for one.
 fn fetch_hls(
     http: &Http,
     format: &Format,
@@ -875,6 +878,10 @@ fn fetch_hls(
         }
     }
 
+    if !options.resume {
+        hlsfetch::forget(&part);
+    }
+
     let mut progress = printer.progress(format!("{} hls", format.label()), None);
     let result = hlsfetch::fetch(
         http,
@@ -884,6 +891,7 @@ fn fetch_hls(
         hlsfetch::Segments {
             items: options.playlist_items.as_ref(),
             concurrent: options.concurrent_fragments,
+            resume: options.resume.then_some(part.as_path()),
         },
         &part,
         &mut |bytes| progress.add(bytes),
@@ -908,8 +916,16 @@ fn fetch_hls(
     }
 
     commit(&part, target, options.overwrite)?;
+    // The MP4 is the file that was asked for; the cache beside it is debris now.
+    hlsfetch::forget(&part);
     for warning in &report.warnings {
         printer.warn(&format!("warning: {warning}"));
+    }
+    if report.resumed_segments > 0 && !options.json {
+        printer.note(&format!(
+            "hls: {} of {} segments came from the previous run",
+            report.resumed_segments, report.segments
+        ));
     }
     if !options.json {
         printer.note(&format!(
