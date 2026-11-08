@@ -262,3 +262,61 @@ fn the_winget_templates_match_the_generator() {
         );
     }
 }
+
+/// The parts of a release that make it checkable have to stay wired together:
+/// the SBOM is built by a script that exists, from the lock file that ships, and
+/// the signature step signs what the checksum step wrote and verifies it against
+/// a key a reader has. Each of these is one line in a workflow, which is exactly
+/// the kind of thing that rots without a test.
+#[test]
+fn the_release_builds_an_sbom_and_signs_what_it_publishes() {
+    let release = read(".github/workflows/release.yml");
+    let docs = read("docs/releases.md");
+
+    for required in [
+        "packaging/sbom.py",
+        "packaging/sign.sh",
+        "--version \"$version\"",
+        "SOURCE_DATE_EPOCH",
+        "--remap-path-prefix",
+        "CARGO_INCREMENTAL=0",
+    ] {
+        assert!(release.contains(required), "release.yml lost {required:?}");
+    }
+    assert!(
+        manifest_dir().join("packaging/sbom.py").is_file(),
+        "packaging/sbom.py is named by the release job and does not exist"
+    );
+    // The signature covers the checksum file and is verified before an upload:
+    // signing what was not verified publishes a promise nobody checked.
+    let sign = read("packaging/sign.sh");
+    assert!(sign.contains("SHA256SUMS.minisig"), "sign.sh must sign SHA256SUMS");
+    assert!(
+        sign.contains("minisign -Vm"),
+        "sign.sh must verify what it wrote"
+    );
+    // A key that is committed is the public half; the secret is a secret.
+    assert!(
+        release.contains("packaging/minisign.pub"),
+        "release.yml must check against the published public key"
+    );
+    assert!(
+        docs.contains("minisign.pub") && docs.contains("spdx.json"),
+        "docs/releases.md must tell a reader what to verify and how"
+    );
+    // The Windows ZIP keeps its two entries: the installer and the manifest
+    // generator both refuse anything else, so an extra file here is a broken
+    // release rather than a richer one.
+    let zip_line = release
+        .lines()
+        .find(|line| line.contains("7z a"))
+        .expect("the release job builds the Windows ZIP");
+    assert!(
+        zip_line.contains("tafas.exe LICENSE"),
+        "the Windows ZIP must still carry the binary and the licence: {zip_line}"
+    );
+    assert!(
+        !zip_line.contains(" man") && !zip_line.contains("spdx"),
+        "the Windows ZIP must hold exactly two entries: {zip_line}"
+    );
+}

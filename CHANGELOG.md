@@ -11,18 +11,23 @@ version; adding a site, a flag or a container is minor. The policy is in
 
 ## [Unreleased]
 
+Every item of [v0.4](docs/roadmap.md#4-v04--speed-platforms-trust--shipped) is
+below. The one exception is the signing key, which is a secret rather than a
+change: the job that signs is in, and it stays dormant until the key exists.
+
 ### Added
 
 - **Reproducible releases, a signature and an SBOM.** The release build no longer
   carries its own clock, directory or cargo home: `SOURCE_DATE_EPOCH` is the
   commit's time, `--remap-path-prefix` folds the runner's paths into `/build` and
-  `/cargo`, and `CARGO_INCREMENTAL` is off. Every archive ships
-  `tafas.spdx.json`, an SPDX 2.3 document built from `Cargo.lock` by
-  `packaging/sbom.py` — 154 packages, sorted, no network. When the
-  `MINISIGN_SECRET_KEY` secret exists the publish job signs `SHA256SUMS` into
-  `SHA256SUMS.minisig` and verifies it against `packaging/minisign.pub`; without
-  a published public key it refuses to sign rather than publish a signature
-  nobody can check. Documented in [docs/releases.md](docs/releases.md).
+  `/cargo`, and `CARGO_INCREMENTAL` is off. The release publishes
+  `tafas-release-X.Y.Z.spdx.json`, an SPDX 2.3 document built from `Cargo.lock` by
+  `packaging/sbom.py` — 154 packages, sorted, reproducible, no network. When the
+  `MINISIGN_SECRET_KEY` secret exists, `packaging/sign.sh` signs every artifact
+  and `SHA256SUMS`, publishes `minisign.pub` beside them and verifies all of it
+  against that key before uploading; without a published key it refuses to sign
+  rather than publish a signature nobody can check. Documented in
+  [docs/releases.md](docs/releases.md).
 - **An `msrv` job.** `rust-version = "1.82"` was a line in the release procedure
   and is now a job: `cargo build --locked --all-targets` at the declared floor,
   with the failure published to the pull request. A dependency that raises the

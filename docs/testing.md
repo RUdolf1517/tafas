@@ -28,7 +28,7 @@ this repository opens and closes itself.
 | HLS | `tests/hls.rs` | a playlist, segments, byte ranges and AES-128 segments on a socket, assembled into an MP4 that `mux::verify` accepts; the same for a fragmented-MP4 playlist, whose header is fetched once; a swapped header, a header that is not ISO-BMFF, short keys and ignored ranges refused before a file exists |
 | independent reader | `tests/common/mp4.rs`, `tests/mp4.rs` | a second box walker, sharing no code with `mux` or `mp4write`, that reads the written file and checks every sample offset against `mdat`; tested against a file it builds itself byte by byte |
 | captions | `tests/subs.rs`, `src/subtitles.rs` | a WebVTT body becomes cues and one `wvtt` track; a written MP4 is read back, given that track and written again, and the independent reader finds three tracks, `wvtt`, one sample per cue, every caption sample inside `mdat`; a body with no cues, a backwards cue and a TTML track refused by name |
-| packaging | `tests/packaging.rs` | every option in `--help` appears in `man/tafas.1`; no `Command::new` in `src/`; the capability document is valid JSON |
+| packaging | `tests/packaging.rs` | every option in `--help` appears in `man/tafas.1`; no `Command::new` in `src/`; the capability document is valid JSON; the release still builds its SBOM, signs what it publishes and keeps the Windows ZIP at two entries |
 
 Fixtures are **built by code**, never committed. A reviewer can read what a test
 feeds the binary, and adding a case is writing a constructor rather than adding a
@@ -147,7 +147,7 @@ regression fails in `cargo test` rather than only under a fuzzer.
 | --- | --- | --- |
 | `ci.yml` | `test (ubuntu, macos, windows)` | `cargo clippy --all-targets -D warnings`, `cargo test --all-targets`, `cargo build --release` |
 | `format.yml` | `format` | `cargo fmt` plus `cargo generate-lockfile`, committed back to the branch |
-| `release.yml` | `build (five targets)` | `cargo build --release --locked`, archives, `SHA256SUMS`, packages |
+| `release.yml` | `build (five targets)` | `cargo build --release --locked` under `SOURCE_DATE_EPOCH` and `--remap-path-prefix`, archives, the SBOM, `SHA256SUMS`, the signature when the key exists, packages |
 | `windows-installer.yml` | `installer` (windows-latest) | `packaging/windows/tests/Install.Integration.ps1`: install, upgrade, refusal, rollback and uninstall against locally built release fixtures |
 | `ci.yml` | `msrv (1.82)` | `cargo build --locked --all-targets` at the declared floor, publishing what broke |
 | `ci.yml` | `budgets` (ubuntu-latest) | `cargo build --release --locked`, then `packaging/tests/budgets.py`: the size of the binary and the median of seven `--version` starts, compared against `packaging/budgets.json` |

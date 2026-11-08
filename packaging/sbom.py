@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """An SPDX document for what is in the archive.
 
-    python3 packaging/sbom.py --output dist/tafas.spdx.json
+    python3 packaging/sbom.py --version 0.4.0 --output dist/tafas-release-0.4.0.spdx.json
+
+`--version` is the release tag without its `v`: the SBOM describes the release,
+which is the thing a reader downloaded, and `Cargo.toml` may still say the last
+released version while a release is being cut.
 
 The archive answers "what is this"; the SBOM answers "what is in it", which is
 the question a scanner, a packager or a licence review actually asks. It is built
@@ -107,11 +111,15 @@ def document(packages: list[dict[str, str]], version: str) -> dict:
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--version",
+        help="the release this document describes; defaults to the crate version in the lock file",
+    )
     parser.add_argument("--lock", type=Path, default=ROOT / "Cargo.lock")
     args = parser.parse_args(argv)
 
     packages = read_packages(args.lock.read_text())
-    version = next(p["version"] for p in packages if p["name"] == "tafas")
+    version = args.version or next(p["version"] for p in packages if p["name"] == "tafas")
     document_text = json.dumps(document(packages, version), indent=2) + "\n"
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(document_text)
