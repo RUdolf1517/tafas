@@ -216,6 +216,10 @@ jobs:
       # hash of a file that exists. They are published with the release rather
       # than left in the repository: `flake.nix` is meant to be copied, and the
       # AUR package is a human's push (see docs/releases.md §6).
+      # Runs before `Checksums`, because the channels tarball it writes is one of
+      # the artifacts that file has to cover; `channels.py` hashes the assets in
+      # place when `SHA256SUMS` does not exist yet rather than needing an order
+      # in which one artifact is missing from the checksums.
       - name: AUR, Scoop and flake
         shell: bash
         env:

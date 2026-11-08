@@ -64,10 +64,26 @@ DEPENDS = [
 
 
 def read_sums(artifacts: Path) -> dict[str, str]:
-    """`SHA256SUMS` as a name → hash mapping."""
+    """`SHA256SUMS` as a name → hash mapping, or the assets hashed directly.
+
+    The release renders these files *before* it writes `SHA256SUMS`, because the
+    channels tarball is one of the artifacts that file has to cover. So when the
+    checksum file is not there yet, the assets are hashed in place — the digest
+    is the same either way, and hashing them twice is cheaper than an ordering
+    in which one artifact is not in the checksums.
+    """
     sums = artifacts / "SHA256SUMS"
     if not sums.is_file():
-        raise SystemExit(f"channels: {sums} is missing; the release writes it before this runs")
+        present = {name: sha256_file(artifacts / name) for name in DEPENDS if (artifacts / name).is_file()}
+        if not present:
+            raise SystemExit(
+                f"channels: neither {sums} nor any of the {len(DEPENDS)} release assets is in {artifacts}"
+            )
+        print(
+            f"channels: {sums} is not written yet; hashing the {len(present)} assets in place",
+            file=sys.stderr,
+        )
+        return present
     out: dict[str, str] = {}
     for line in sums.read_text().splitlines():
         line = line.strip()
