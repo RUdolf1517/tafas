@@ -21,13 +21,13 @@ What counts as breaking here is not the command line but the *contract*:
 `tafas --version` prints the crate version. The binary has no self-update
 mechanism, checks for nothing and downloads nothing except the URL you gave it.
 
-**Nothing is tagged until the whole [roadmap](roadmap.md) is done.** The first
-release carries v0.2 through v0.5 in one archive; until then `main` is the
-freshest thing there is, and `cargo install --git
-https://github.com/RUdolf1517/tafas` is how a reader gets it. This is deliberate:
-a tag is a promise about an archive that cannot be edited afterwards, and a
-roadmap item that is still being built is not a promise yet. When the tag is
-cut, this section and the table in [§4](#4-how-a-release-is-cut) describe it.
+**Nothing is tagged until the whole roadmap is done.** The first release
+carries v0.2 through v0.5 in one archive; until then `main` is the freshest thing
+there is, and `cargo install --git https://github.com/RUdolf1517/tafas` is how a
+reader gets it. This is deliberate: a tag is a promise about an archive that
+cannot be edited afterwards, and an item in the [roadmap](roadmap.md) that is
+still being built is not a promise yet. When the tag is cut, this page and §4
+describe the archive it produces.
 
 ## 2. What a release contains
 

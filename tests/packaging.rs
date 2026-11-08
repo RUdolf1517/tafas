@@ -331,11 +331,11 @@ fn the_release_builds_an_sbom_and_signs_what_it_publishes() {
 #[test]
 fn no_release_is_cut_before_the_roadmap_is_done() {
     for file in ["README.md", "docs/roadmap.md", "docs/releases.md"] {
-        let text = read(file);
+        // Prose wraps: the sentence is checked the way a reader reads it, with
+        // line breaks folded into spaces.
+        let text = read(file).split_whitespace().collect::<Vec<_>>().join(" ");
         assert!(
-            text.contains("until the whole")
-                && text.contains("roadmap")
-                && text.contains("is done"),
+            text.contains("until the whole roadmap is done"),
             "{file} no longer says that nothing is tagged before the roadmap is done"
         );
     }
