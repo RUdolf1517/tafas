@@ -119,8 +119,11 @@ jobs:
           fi
           gh pr comment "$number" --body-file failure.md || true
 
+      # `failure()` is true when any *previous* step failed, which is the whole
+      # point of this step: the per-step conditions above were written one at a
+      # time and did not survive a step being added beside them.
       - name: Fail the job
-        if: steps.channels.outcome == 'failure' || steps.clippy.outcome == 'failure' || steps.test.outcome == 'failure' || steps.build.outcome == 'failure'
+        if: failure()
         shell: bash
         run: exit 1
 
