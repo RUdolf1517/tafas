@@ -71,13 +71,15 @@ pub fn kind(url: &Url) -> Option<Kind> {
             handle: handle.to_string(),
             id: String::new(),
         }),
-        Some("channel") => segments
-            .get(1)
-            .filter(|id| id.starts_with("UC"))
-            .map(|id| Kind::Channel {
-                handle: String::new(),
-                id: (*id).to_string(),
-            }),
+        Some("channel") => {
+            segments
+                .get(1)
+                .filter(|id| id.starts_with("UC"))
+                .map(|id| Kind::Channel {
+                    handle: String::new(),
+                    id: (*id).to_string(),
+                })
+        }
         Some("c") | Some("user") => segments.get(1).map(|name| Kind::Channel {
             handle: (*name).to_string(),
             id: String::new(),
@@ -106,14 +108,17 @@ fn playlist(http: &Http, list: &str, raw: &str) -> Result<Listing> {
         list.to_string(),
         format!("https://www.youtube.com/playlist?list={list}"),
     );
-    listing.title = text(&document, &["header", "playlistHeaderRenderer", "title", "simpleText"])
-        .or_else(|| {
-            text(
-                &document,
-                &["header", "playlistHeaderRenderer", "title", "runs"],
-            )
-        })
-        .unwrap_or_else(|| list.to_string());
+    listing.title = text(
+        &document,
+        &["header", "playlistHeaderRenderer", "title", "simpleText"],
+    )
+    .or_else(|| {
+        text(
+            &document,
+            &["header", "playlistHeaderRenderer", "title", "runs"],
+        )
+    })
+    .unwrap_or_else(|| list.to_string());
 
     let mut entries = Vec::new();
     let mut token = collect(&document, &mut entries);
@@ -153,16 +158,22 @@ fn channel(http: &Http, url: &Url, handle: &str, id: &str, raw: &str) -> Result<
     // The first browse answers with the channel's tabs; the videos tab is a
     // second browse with its own id, and reading the wrong one is how a channel
     // looks empty.
-    let tabs = at(&document, &["contents", "twoColumnBrowseResultsRenderer", "tabs"])
-        .and_then(|tabs| tabs.as_array())
-        .cloned()
-        .unwrap_or_default();
+    let tabs = at(
+        &document,
+        &["contents", "twoColumnBrowseResultsRenderer", "tabs"],
+    )
+    .and_then(|tabs| tabs.as_array())
+    .cloned()
+    .unwrap_or_default();
     let videos_id = tabs
         .iter()
-        .find(|tab| {
-            at(tab, &["tabRenderer", "title"]).and_then(|t| t.as_str()) == Some("Videos")
+        .find(|tab| at(tab, &["tabRenderer", "title"]).and_then(|t| t.as_str()) == Some("Videos"))
+        .and_then(|tab| {
+            at(
+                tab,
+                &["tabRenderer", "endpoint", "browseEndpoint", "browseId"],
+            )
         })
-        .and_then(|tab| at(tab, &["tabRenderer", "endpoint", "browseEndpoint", "browseId"]))
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
         .unwrap_or(channel_id);
@@ -211,16 +222,15 @@ fn resolve_handle(http: &Http, url: &Url, handle: &str, _key: &str, raw: &str) -
     let page = http
         .get_text(&url.to_string(), &HEADERS)
         .map_err(|error| Error::Refused(format!("youtube: {raw}: {error}")))?;
-    for marker in [
-        "ytInitialData = ",
-        "\"channelId\":\"",
-        "\"externalId\":\"",
-    ] {
+    for marker in ["ytInitialData = ", "\"channelId\":\"", "\"externalId\":\""] {
         if marker.starts_with("ytInitialData") {
             if let Some(document) = json_after(&page, marker) {
                 if let Ok(value) = serde_json::from_str::<Value>(document) {
-                    if let Some(id) = at(&value, &["metadata", "channelMetadataRenderer", "externalId"])
-                        .and_then(|v| v.as_str())
+                    if let Some(id) = at(
+                        &value,
+                        &["metadata", "channelMetadataRenderer", "externalId"],
+                    )
+                    .and_then(|v| v.as_str())
                     {
                         return Ok(id.to_string());
                     }
@@ -249,10 +259,7 @@ fn resolve_handle(http: &Http, url: &Url, handle: &str, _key: &str, raw: &str) -
 /// from the documented web client when it cannot.
 fn context(http: &Http, raw: &str) -> (String, Value) {
     let page = http
-        .get_text(
-            "https://www.youtube.com/playlist?list=WL&hl=en",
-            &HEADERS,
-        )
+        .get_text("https://www.youtube.com/playlist?list=WL&hl=en", &HEADERS)
         .unwrap_or_default();
     let key = super::youtube::inline_api_key(&page)
         .unwrap_or_else(|| super::youtube::PUBLIC_WEB_API_KEY.to_string());
@@ -430,7 +437,10 @@ mod tests {
         ));
         // A video inside a playlist is a video: the user named the video.
         assert!(
-            kind(&url("https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=PL123")).is_none(),
+            kind(&url(
+                "https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=PL123"
+            ))
+            .is_none(),
             "a watch page with a list stays a video"
         );
         // A generated mix is not a page anybody can read later.

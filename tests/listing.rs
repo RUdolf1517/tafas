@@ -44,7 +44,10 @@ fn a_selection_keeps_the_numbers_the_page_shows() {
     let items = Items::parse("2-3").expect("a list");
     let chosen = listing::choose(&listing(4), Some(&items)).expect("two entries");
     assert_eq!(
-        chosen.iter().map(|(position, _)| *position).collect::<Vec<_>>(),
+        chosen
+            .iter()
+            .map(|(position, _)| *position)
+            .collect::<Vec<_>>(),
         vec![2, 3],
         "--playlist-items 2-3 writes 02 and 03, which is what the user counted"
     );
@@ -70,7 +73,10 @@ fn a_selection_that_matches_nothing_names_the_count_it_could_have_had() {
 
 #[test]
 fn a_list_is_written_into_a_directory_and_never_into_one_file() {
-    assert_eq!(listing::directory(None, &listing(2)).unwrap(), Path::new("."));
+    assert_eq!(
+        listing::directory(None, &listing(2)).unwrap(),
+        Path::new(".")
+    );
     assert_eq!(
         listing::directory(Some(Path::new("videos")), &listing(2)).unwrap(),
         Path::new("videos")
@@ -79,7 +85,10 @@ fn a_list_is_written_into_a_directory_and_never_into_one_file() {
         .expect_err("one file cannot hold two videos");
     let text = error.to_string();
     assert!(text.contains("pass a directory"), "{text}");
-    assert!(text.contains('2'), "the message says how many there are: {text}");
+    assert!(
+        text.contains('2'),
+        "the message says how many there are: {text}"
+    );
 }
 
 #[test]
@@ -89,5 +98,8 @@ fn the_listing_line_says_which_of_how_many() {
     let chosen = listing::choose(&listing, Some(&items)).expect("two");
     let text = listing::describe(&listing, &chosen);
     assert!(text.contains("2 of 4 entries"), "{text}");
-    assert!(text.contains("title: 2") && text.contains("title: 3"), "{text}");
+    assert!(
+        text.contains("title: 2") && text.contains("title: 3"),
+        "{text}"
+    );
 }

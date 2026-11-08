@@ -159,7 +159,10 @@ mod tests {
         let items = Items::parse("3-4").expect("a list");
         let chosen = choose(&listing(5), Some(&items)).expect("two entries");
         assert_eq!(
-            chosen.iter().map(|(position, _)| *position).collect::<Vec<_>>(),
+            chosen
+                .iter()
+                .map(|(position, _)| *position)
+                .collect::<Vec<_>>(),
             vec![3, 4],
             "the number on disk matches what the user counted"
         );
@@ -171,7 +174,10 @@ mod tests {
         let error = choose(&listing(5), Some(&items)).expect_err("out of range");
         let text = error.to_string();
         assert!(text.contains("selects nothing"), "{text}");
-        assert!(text.contains('5'), "the message says how many there are: {text}");
+        assert!(
+            text.contains('5'),
+            "the message says how many there are: {text}"
+        );
     }
 
     #[test]
@@ -230,7 +236,10 @@ mod tests {
         let chosen = choose(&listing, Some(&items)).expect("two");
         let text = describe(&listing, &chosen);
         assert!(text.contains("2 of 4 entries"), "{text}");
-        assert!(text.contains("Video 2") && text.contains("Video 3"), "{text}");
+        assert!(
+            text.contains("Video 2") && text.contains("Video 3"),
+            "{text}"
+        );
         assert!(!text.contains("Video 1"), "{text}");
     }
 }
