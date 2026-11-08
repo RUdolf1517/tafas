@@ -11,9 +11,12 @@ version; adding a site, a flag or a container is minor. The policy is in
 
 ## [Unreleased]
 
-Every item of [v0.4](docs/roadmap.md#4-v04--speed-platforms-trust--shipped) is
-below. The one exception is the signing key, which is a secret rather than a
-change: the job that signs is in, and it stays dormant until the key exists.
+Every item of
+[v0.4](docs/roadmap.md#4-v04--speed-platforms-trust--done-not-yet-released) is
+below, and nothing here has been released yet: the next tag carries v0.2, v0.3
+and v0.4 together. The one exception is the signing key, which is a secret
+rather than a change — the job that signs is in and stays dormant until the key
+exists.
 
 ### Added
 

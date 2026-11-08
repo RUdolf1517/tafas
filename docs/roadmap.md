@@ -47,10 +47,14 @@ thumbnails, live streams, more than four sites.
 | **`cargo fuzz` targets** — *done: `mp4read::plain`, `mp4read::dimensions`, `subtitles::cues` and `sites::json_after`, in a `fuzz/` package the binary never links, run weekly by `fuzz.yml` and never on a pull request* | The parsers that read bytes from someone else are the ones that deserve a corpus; `mux::verify`/`remux` came last because they take a path — their target owns a temporary file, which makes it the slow one. |
 | **`--extractor-args SITE:key=value`** — *done: a closed vocabulary (`youtube:client`, `tiktok:route`), checked before the first request and published by `--capabilities`* | An escape hatch so a site change does not need a release. Deliberately ugly, deliberately documented as one table in [extractors §11](extractors.md#11-the-escape-hatch---extractor-args): it is a pressure valve, not an interface. It only narrows — every value is a route the build already tries. |
 
-## 4. v0.4 — speed, platforms, trust — shipped
+## 4. v0.4 — speed, platforms, trust — done, not yet released
 
-Everything below is in. One sub-item is left open by its nature rather than by
-work: the release signature needs a key, and a key is a secret this repository
+Everything below is in the tree and green in CI. It is not *released*: the crate
+is still `0.1.0` and the next tag carries v0.2, v0.3 and v0.4 together, because a
+version number is a promise about a published archive and none of these has one
+yet. The section says "done" about the work, not about a download.
+
+One sub-item is left open by its nature rather than by work: the release signature needs a key, and a key is a secret this repository
 does not hold. Until `packaging/minisign.pub` exists the publish job refuses to
 sign, which is the honest state — a signature nobody can verify is not a
 signature. See [releases](releases.md#reproducibility-signatures-and-the-sbom).
