@@ -143,7 +143,7 @@ pub struct Args {
     #[arg(long, value_name = "RATE", value_parser = parse_limit_rate)]
     pub limit_rate: Option<u64>,
 
-    /// Take only these segments of an HLS list: 3, 1-5, 2- (1-based)
+    /// Take only these entries of a list — HLS segments, a playlist, a channel: 3, 1-5, 2- (1-based)
     #[arg(long, value_name = "ITEMS", value_parser = parse_items)]
     pub playlist_items: Option<crate::items::Items>,
 

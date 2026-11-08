@@ -140,6 +140,47 @@ manifest is a rolling list of fragments. This build does not stitch fragments,
 so a live URL fails with `unsupported`. A finished stream that the site has
 already published normally works.
 
+### 2.7 Playlists and channels
+
+A playlist or a channel page is not a video: it carries no player response, so
+the watch-page route cannot read it. It is read by its own route, and what comes
+back is a **list of entries** rather than a stream.
+
+| URL | Read as |
+| --- | --- |
+| `youtube.com/playlist?list=PL…` | InnerTube `browse` with `browseId: VL<id>` |
+| `youtube.com/@handle`, `/c/<name>`, `/user/<name>` | the page for its channel id, then `browse` of the channel's videos tab |
+| `youtube.com/channel/UC…` | `browse` of that channel, then its videos tab |
+
+What the run then does with the list:
+
+- **Each entry is captured on its own**, into a directory, under
+  `<position> - <title> [<id>].mp4`. The position is the position on the page, so
+  `--playlist-items 3-5` writes `03`, `04`, `05` and `ls` sorts the way the
+  browser does.
+- **One dead entry does not stop the others.** Each failure is reported where it
+  happens, the rest are still captured, and the run exits `1` — the same rule a
+  URL list already followed.
+- **`--playlist-items` selects**, with the grammar it uses for HLS segments; a
+  selection that matches nothing is a refusal naming how many entries there are.
+- **One level only.** A channel of playlists is refused rather than walked, and
+  the message says which list it found.
+
+Refused, by name, because each is a page this build cannot read honestly:
+
+| Situation | Refusal |
+| --- | --- |
+| the page lists nothing (private, empty, members-only) | `lists no videos` |
+| the list is longer than two browse pages | the count it did read, and where it stopped |
+| a `lockupViewModel` entry (the newer shape) | not read yet: the entry is skipped, and a page of nothing but those is the "lists no videos" refusal above |
+| a watch URL that also names a list (`watch?v=…&list=…`) | not a list: the video is what was named |
+| a generated mix (`list=RD…`) | not a page anybody can read later |
+
+Paging stops at two `browse` pages, about 200 entries. That is a chosen bound
+rather than a technical one: a channel with ten thousand videos is not a capture
+anybody wants to start by accident, and a refusal that says how many it read is
+more useful than a download that runs for an hour.
+
 ## 3. TikTok
 
 ### 3.1 Routes

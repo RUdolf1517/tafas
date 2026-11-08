@@ -154,6 +154,12 @@ fn capabilities() -> String {
             "youtube:client": tafas::extractor_args::YOUTUBE_CLIENTS,
             "tiktok:route": tafas::extractor_args::TIKTOK_ROUTES
         },
+        "listings": {
+            "pages": ["youtube playlist", "youtube channel"],
+            "selection": "--playlist-items, 1-based; one dead entry does not stop the others",
+            "nav": "youtube playlist and channel pages carry no player response",
+            "depth": 1
+        },
         "containers": ["mp4", "m4a", "mp3"],
         "subtitles": {
             "sidecar": "webvtt, one .vtt per selected track",

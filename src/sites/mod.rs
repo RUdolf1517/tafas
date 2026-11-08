@@ -21,41 +21,39 @@ use serde_json::Value;
 use crate::error::{Error, Result};
 use crate::extractor_args::ExtractorArgs;
 use crate::http::Http;
-use crate::model::{Media, Site};
+use crate::model::{Listing, Media, Site};
 use crate::url::Url;
+
+/// What a URL names: one video, or a page that lists videos.
+///
+/// The distinction exists because `--playlist-items` means the same thing in
+/// both cases (which entries of a list to take) and because a list is the one
+/// URL a user can hand a downloader expecting it to work. It is an enum rather
+/// than an error because "this page lists twelve videos" is an answer.
+pub enum Target {
+    Video(Box<Media>),
+    List(Listing),
+}
 
 /// Reads `raw_url` with the extractor for its host.
 ///
 /// `args` is `--extractor-args`, already checked against the closed vocabulary
 /// in [`crate::extractor_args`], so an extractor may read it without having to
 /// defend against a value it has never seen.
-pub fn extract(http: &Http, raw_url: &str, args: &ExtractorArgs) -> Result<Media> {
+pub fn extract(http: &Http, raw_url: &str, args: &ExtractorArgs) -> Result<Target> {
     let url = Url::parse(raw_url)?;
     let site = Site::from_url(&url).ok_or_else(|| {
         Error::Unsupported(format!(
             "no extractor for {raw_url}: this build reads youtube, tiktok, x, vimeo, reddit, soundcloud and twitch"
         ))
     })?;
-    // A list page is not a video: the watch-page reader would report "not a
-    // YouTube video URL", which is true and unhelpful. The list reader answers
-    // first, for the URLs that are unambiguously a list.
-    if site == Site::YouTube {
-        if let Some(kind) = youtube_list::kind(&url) {
-            let listing = youtube_list::extract(http, &url, &kind, raw_url)?;
-            return Err(Error::Usage(format!(
-                "{raw_url} is a {}: {}{} — one entry at a time is what this build does, so \
-                 name a video URL, or use --playlist-items on a video page",
-                listing_what(&kind),
-                listing.title,
-                if listing.title.is_empty() {
-                    String::new()
-                } else {
-                    format!(" ({} videos)", listing.entries.len())
-                }
-            )));
-        }
+    // A list page is not a video: the watch-page reader would answer "not a
+    // YouTube video URL", which is true and useless. The list readers answer
+    // first, and only for URLs that are unambiguously a list.
+    if let Some(listing) = listing(http, &url, raw_url)? {
+        return Ok(Target::List(listing));
     }
-    match site {
+    let media = match site {
         Site::YouTube => youtube::extract(http, &url, raw_url, args),
         Site::TikTok => tiktok::extract(http, &url, raw_url, args),
         Site::X => x::extract(http, &url, raw_url),
@@ -63,15 +61,18 @@ pub fn extract(http: &Http, raw_url: &str, args: &ExtractorArgs) -> Result<Media
         Site::Reddit => reddit::extract(http, &url, raw_url),
         Site::SoundCloud => soundcloud::extract(http, &url, raw_url),
         Site::Twitch => twitch::extract(http, &url, raw_url),
-    }
+    }?;
+    Ok(Target::Video(Box::new(media)))
 }
 
-/// What to call a list page in a message: the word the user's own URL uses.
-fn listing_what(kind: &youtube_list::Kind) -> &'static str {
-    match kind {
-        youtube_list::Kind::Playlist(_) => "playlist",
-        youtube_list::Kind::Channel { .. } => "channel",
+/// The list readers, in the order they are asked. `None` means "not a list
+/// page", and the caller falls through to the video extractor.
+fn listing(http: &Http, url: &Url, raw_url: &str) -> Result<Option<Listing>> {
+    if let Some(kind) = youtube_list::kind(url) {
+        let listing = youtube_list::extract(http, url, &kind, raw_url)?;
+        return Ok(Some(listing));
     }
+    Ok(None)
 }
 
 /// The site names this build reads, for `--capabilities` and for the error
