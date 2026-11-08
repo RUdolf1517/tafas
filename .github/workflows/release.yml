@@ -106,14 +106,6 @@ jobs:
 
       # What is in the archive, from the lock file the build used. Written
       # before packaging so the archive carries it.
-      - name: SBOM
-        shell: bash
-        env:
-          TAG: ${{ inputs.tag || github.event.release.tag_name }}
-        run: |
-          set -euo pipefail
-          mkdir -p dist
-          python3 packaging/sbom.py --version "${TAG#v}" --output dist/tafas.spdx.json
 
       - name: Smoke-test the binary
         shell: bash
@@ -168,9 +160,6 @@ jobs:
             dist/tafas --completions bash > dist/completions/tafas.bash
             dist/tafas --completions zsh > dist/completions/_tafas
             dist/tafas --completions fish > dist/completions/tafas.fish
-            # The SBOM is named for the release, not for the archive, so one copy
-            # is published with the release rather than five copies of the same
-            # document inside five archives.
             (cd dist && tar czf "../${name}.tar.gz" tafas LICENSE man completions)
             echo "ASSET=${name}.tar.gz" >> "$GITHUB_ENV"
           fi
