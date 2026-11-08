@@ -13,6 +13,29 @@ version; adding a site, a flag or a container is minor. The policy is in
 
 ### Added
 
+- **Reproducible releases, a signature and an SBOM.** The release build no longer
+  carries its own clock, directory or cargo home: `SOURCE_DATE_EPOCH` is the
+  commit's time, `--remap-path-prefix` folds the runner's paths into `/build` and
+  `/cargo`, and `CARGO_INCREMENTAL` is off. Every archive ships
+  `tafas.spdx.json`, an SPDX 2.3 document built from `Cargo.lock` by
+  `packaging/sbom.py` — 154 packages, sorted, no network. When the
+  `MINISIGN_SECRET_KEY` secret exists the publish job signs `SHA256SUMS` into
+  `SHA256SUMS.minisig` and verifies it against `packaging/minisign.pub`; without
+  a published public key it refuses to sign rather than publish a signature
+  nobody can check. Documented in [docs/releases.md](docs/releases.md).
+- **An `msrv` job.** `rust-version = "1.82"` was a line in the release procedure
+  and is now a job: `cargo build --locked --all-targets` at the declared floor,
+  with the failure published to the pull request. A dependency that raises the
+  floor fails here instead of in a release.
+- **Windows long paths.** `paths::verbatim` puts `\\?\` (or `\\?\UNC\`) in
+  front of the paths tafas writes — the `.part`, the rename into place, a deep
+  output directory and the HLS cache sidecars — which is what makes a target past
+  260 characters work. A path where prefixing could change the meaning (relative,
+  already verbatim, `.`/`..`, forward slashes) is left exactly as it was.
+- **A progress line that fits.** The bar is drawn as wide as the terminal says
+  (`COLUMNS`) and gives up its width before the numbers do; below 24 columns it
+  is left alone rather than guessed at.
+
 - **Per-segment resume.** An interrupted HLS download no longer starts over. The
   segments that landed are cached beside the staging file
   (`<target>.part.segments`, one length per line in `<target>.part.journal`,

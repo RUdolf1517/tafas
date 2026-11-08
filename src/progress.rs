@@ -13,6 +13,12 @@ use std::io::{IsTerminal, Write};
 use std::time::{Duration, Instant};
 
 const BAR_WIDTH: usize = 24;
+
+/// A bar narrower than this says nothing a percentage does not already say.
+const MIN_BAR_WIDTH: usize = 4;
+
+/// Below this the terminal is not a terminal; `COLUMNS` that small is noise.
+const MIN_TERMINAL: usize = 24;
 /// Redraw rate. Ten frames a second is smooth to the eye and costs one `write`
 /// per frame, which is nothing next to a 64 KiB read.
 const FRAME: Duration = Duration::from_millis(100);
@@ -66,7 +72,7 @@ impl Progress {
             return;
         }
         let mut stderr = std::io::stderr();
-        let width = line_width(&self.render());
+        let width = line_width(&self.render(BAR_WIDTH));
         let _ = write!(stderr, "\r{}\r", " ".repeat(width));
         let _ = stderr.flush();
         self.drawn = false;
@@ -92,14 +98,27 @@ impl Progress {
         }
         self.last_draw = Some(now);
 
-        let line = self.render();
+        let line = self.fitted();
         let mut stderr = std::io::stderr();
         let _ = write!(stderr, "\r{line}");
         let _ = stderr.flush();
         self.drawn = true;
     }
 
-    fn render(&self) -> String {
+    /// The line, narrowed to the terminal when the terminal said how wide it
+    /// is. The bar gives up its width first: the numbers are what a narrow
+    /// window cannot do without.
+    fn fitted(&self) -> String {
+        let width = terminal_width();
+        let full = self.render(BAR_WIDTH);
+        if line_width(&full) <= width {
+            return full;
+        }
+        let over = line_width(&full) - width;
+        cut(self.render(bar_width_for(over)), width)
+    }
+
+    fn render(&self, bar_width: usize) -> String {
         let rate = {
             let seconds = self.started.elapsed().as_secs_f64();
             if seconds > 0.2 {
@@ -111,8 +130,8 @@ impl Progress {
         match self.total {
             Some(total) if total > 0 => {
                 let ratio = (self.done as f64 / total as f64).clamp(0.0, 1.0);
-                let filled = (ratio * BAR_WIDTH as f64).round() as usize;
-                let bar: String = "█".repeat(filled) + &"░".repeat(BAR_WIDTH - filled);
+                let filled = (ratio * bar_width as f64).round() as usize;
+                let bar: String = "█".repeat(filled) + &"░".repeat(bar_width - filled);
                 let left = match rate {
                     r if r > 1.0 => {
                         let remaining = (total.saturating_sub(self.done)) as f64 / r;
@@ -144,6 +163,32 @@ impl Progress {
 fn spinner(elapsed: Duration) -> &'static str {
     const FRAMES: [&str; 4] = ["◐", "◓", "◑", "◒"];
     FRAMES[(elapsed.as_millis() / 120) as usize % FRAMES.len()]
+}
+
+/// How much of the bar survives a line this much too long.
+fn bar_width_for(over: usize) -> usize {
+    BAR_WIDTH.saturating_sub(over).max(MIN_BAR_WIDTH)
+}
+
+/// The line, cut to a character count. Every glyph here is one cell wide, so
+/// the count is the width.
+fn cut(line: String, width: usize) -> String {
+    if line_width(&line) <= width {
+        line
+    } else {
+        line.chars().take(width).collect()
+    }
+}
+
+/// How many columns the terminal claims, when it says. `COLUMNS` is the one
+/// source a program with nothing but `std` can read, and an unset one means
+/// "as wide as the line needs".
+fn terminal_width() -> usize {
+    std::env::var("COLUMNS")
+        .ok()
+        .and_then(|value| value.trim().parse::<usize>().ok())
+        .filter(|width| *width >= MIN_TERMINAL)
+        .unwrap_or(usize::MAX)
 }
 
 fn line_width(text: &str) -> usize {
@@ -234,4 +279,25 @@ mod tests {
         assert_eq!(rate_text(0.5), "");
         assert_eq!(rate_text(2048.0), "2.0 KiB/s");
     }
+}
+
+#[cfg(test)]
+mod fit_tests {
+    use super::*;
+
+    #[test]
+    fn a_line_that_fits_is_left_alone() {
+        assert_eq!(cut("abc".to_string(), 10), "abc");
+        assert_eq!(cut("abcdef".to_string(), 3), "abc");
+        assert_eq!(cut("abcdef".to_string(), 0), "");
+    }
+
+    #[test]
+    fn the_bar_gives_up_its_width_before_the_numbers_do() {
+        assert_eq!(bar_width_for(0), BAR_WIDTH);
+        assert_eq!(bar_width_for(4), BAR_WIDTH - 4);
+        assert_eq!(bar_width_for(BAR_WIDTH), MIN_BAR_WIDTH);
+        assert_eq!(bar_width_for(1000), MIN_BAR_WIDTH);
+    }
+
 }

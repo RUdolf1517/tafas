@@ -27,6 +27,7 @@ use crate::model::{Container, Format, Image, Media, Subtitle};
 use crate::mp4read;
 use crate::mp4write;
 use crate::mux;
+use crate::paths;
 use crate::names;
 use crate::progress::{human_bytes, Progress};
 use crate::report::{self, Item, Status, Totals};
@@ -1107,9 +1108,12 @@ fn fetch_stream_to(
 fn open_part(path: &Path, append: bool) -> Result<File> {
     if let Some(parent) = path.parent() {
         if !parent.as_os_str().is_empty() {
-            fs::create_dir_all(parent)?;
+            fs::create_dir_all(paths::verbatim(parent))?;
         }
     }
+    // `paths::verbatim` is the identity everywhere but Windows, where it is what
+    // lets a deep output directory hold a file at all.
+    let path = paths::verbatim(path);
     if append {
         OpenOptions::new()
             .append(true)
@@ -1129,7 +1133,7 @@ fn commit(part: &Path, target: &Path, overwrite: bool) -> Result<()> {
             target.display()
         )));
     }
-    fs::rename(part, target).map_err(|e| {
+    fs::rename(paths::verbatim(part), paths::verbatim(target)).map_err(|e| {
         Error::Io(io::Error::new(
             e.kind(),
             format!(

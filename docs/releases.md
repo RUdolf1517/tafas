@@ -146,3 +146,39 @@ Security reports are investigated against the latest release and `main`; see
 A site changing its pages is a *defect*, not a vulnerability — it gets a patch
 release, and the refusal it produces already names itself, which is what makes
 the report actionable.
+
+## Reproducibility, signatures and the SBOM
+
+The release build is a function of the commit and nothing else:
+
+| What | How |
+| --- | --- |
+| the clock | `SOURCE_DATE_EPOCH` is the commit's own time (`git log -1 --format=%ct`), and `Cargo.toml` carries a fixed `version` |
+| the directories | `RUSTFLAGS=--remap-path-prefix=<runner>=/build --remap-path-prefix=<cargo home>=/cargo`, so a panic message names `/build/src/main.rs` on every machine |
+| the build cache | `CARGO_INCREMENTAL=0`; every artifact is built from scratch |
+| the dependencies | `--locked`, so the release is the `Cargo.lock` in the tag |
+
+What a reader does with that:
+
+```sh
+sha256sum --check SHA256SUMS                       # the file matches the release
+minisign -Vm SHA256SUMS -p minisign.pub -x SHA256SUMS.minisig   # the release is ours
+python3 -m json.tool tafas.spdx.json > /dev/null   # and here is what is in it
+```
+
+`SHA256SUMS.minisig` exists when the `MINISIGN_SECRET_KEY` secret is set. The key
+is created without a passphrase — minisign cannot read one from a pipe — and kept
+in the secret store; the public half belongs in `packaging/minisign.pub`. The
+publish job refuses to sign when that file is missing, because a signature whose
+key nobody has is a document, not a proof.
+
+`tafas.spdx.json` is SPDX 2.3, built from `Cargo.lock` by `packaging/sbom.py`:
+one package per crate with its version, its SHA-256 from the lock file and a
+`pkg:cargo/` purl. It is inside every archive, next to the binary and the manual
+page, because the archive is what someone unpacks. Two builds of one commit
+produce the same document, byte for byte.
+
+The declared floor, `rust-version = "1.82"`, is a job of its own in
+[`ci.yml`](../.github/workflows/ci.yml): `cargo build --locked --all-targets` at
+that exact version, on every push. A dependency that raises the floor fails the
+build there, which is the only place it can fail quietly otherwise.

@@ -567,7 +567,7 @@ impl Cache {
 fn sidecar(path: &Path, suffix: &str) -> PathBuf {
     let mut name = path.as_os_str().to_os_string();
     name.push(suffix);
-    PathBuf::from(name)
+    crate::paths::verbatim(&PathBuf::from(name))
 }
 
 /// Deletes the caches beside a staging file: the download either finished (the

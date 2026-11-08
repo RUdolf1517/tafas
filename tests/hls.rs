@@ -654,13 +654,24 @@ fn one_worker_fetches_one_segment_at_a_time() {
     assert_eq!(verified.sample_total(), 4 * count as u64);
 }
 
-/// The playlist of `count` segments, four of them, with the third failing once.
-fn interrupted_routes(count: usize, segment: &[u8]) -> Vec<Route> {
+/// The playlist of `count` segments, with the third answering `truncated_by`
+/// bytes short of what it declared.
+///
+/// A short body is the interruption a test can time: the first run reads two
+/// whole segments and then stops on the third, because `http.get_bytes` checks
+/// the length it was promised before it hands the bytes back. A 5xx would not
+/// do — that is the case the client retries, so whether the first run fails
+/// would depend on `--retries`, and a cache that is only correct when retries
+/// are off is not correct.
+fn interrupted_routes(count: usize, segment: &[u8], truncated_by: usize) -> Vec<Route> {
     let mut routes = vec![Route::ok("/media.m3u8", playlist_of(count).as_bytes())];
     for index in 1..=count {
         let path = format!("/seg{index}.ts");
         if index == 3 {
-            routes.push(Route::failing(&path, segment, 1));
+            routes.push(Route {
+                truncate_by: truncated_by,
+                ..Route::ok(&path, segment)
+            });
         } else {
             routes.push(Route::ok(&path, segment));
         }
@@ -673,7 +684,8 @@ fn interrupted_routes(count: usize, segment: &[u8]) -> Vec<Route> {
 fn a_failed_list_is_resumed_from_the_segments_it_kept() {
     let count = 4;
     let segment = ts_segment();
-    let server = TestServer::start(interrupted_routes(count, &segment));
+    // Half a segment short: whole enough to parse, short of what was declared.
+    let server = TestServer::start(interrupted_routes(count, &segment, segment.len() / 2));
     let dir = temp_dir("hls-resume");
     let out = dir.join("clip.mp4");
     let part = dir.join("clip.mp4.part");
@@ -692,7 +704,7 @@ fn a_failed_list_is_resumed_from_the_segments_it_kept() {
         &out,
         &mut |_| {},
     )
-    .expect_err("the third segment fails once");
+    .expect_err("the third segment is short of the bytes it promised");
     assert!(error.to_string().contains("seg3.ts"), "{error}");
     assert!(!out.exists(), "a failed walk leaves no MP4");
     assert_eq!(server.hits("/seg1.ts"), 1);
@@ -702,9 +714,13 @@ fn a_failed_list_is_resumed_from_the_segments_it_kept() {
         resume: Some(part.as_path()),
         ..Segments::default()
     };
+    // A healthy server: the third segment answers in full this time, which is
+    // what a rerun after an interruption is.
+    let whole = TestServer::start(interrupted_routes(count, &segment, 0));
+    let replay = Url::parse(&whole.url("/media.m3u8")).unwrap();
     let report = hlsfetch::fetch(
         &client(),
-        &url,
+        &replay,
         &[],
         Quality::Best,
         second,
@@ -728,7 +744,8 @@ fn a_failed_list_is_resumed_from_the_segments_it_kept() {
         "the segment that failed is fetched again"
     );
     assert_eq!(server.hits("/seg4.ts"), 1);
-    assert_eq!(report.video_samples, 2 * count as u64);
+    // Four segments this time: two from the cache and two from the server.
+    assert_eq!(report.video_samples, count as u64);
     hlsfetch::forget(&part);
     let _ = std::fs::remove_file(&out);
 }
@@ -739,7 +756,7 @@ fn a_failed_list_is_resumed_from_the_segments_it_kept() {
 fn a_forgotten_cache_starts_the_list_over() {
     let count = 3;
     let segment = ts_segment();
-    let server = TestServer::start(interrupted_routes(count, &segment));
+    let server = TestServer::start(interrupted_routes(count, &segment, segment.len() / 2));
     let dir = temp_dir("hls-forget");
     let out = dir.join("clip.mp4");
     let part = dir.join("clip.mp4.part");
@@ -758,15 +775,30 @@ fn a_forgotten_cache_starts_the_list_over() {
         &out,
         &mut |_| {},
     )
-    .expect_err("segment three fails");
+    .expect_err("segment three is short of the bytes it promised");
+
+    let payload = format!("{}.segments", part.display());
+    let journal = format!("{}.journal", part.display());
+    assert!(
+        std::path::Path::new(&payload).exists() && std::path::Path::new(&journal).exists(),
+        "an interrupted run leaves the cache it has so far"
+    );
 
     hlsfetch::forget(&part);
+
+    assert!(
+        !std::path::Path::new(&payload).exists() && !std::path::Path::new(&journal).exists(),
+        "--no-resume removes the cache before the first request"
+    );
 
     let second = Segments {
         resume: Some(part.as_path()),
         ..Segments::default()
     };
-    let report = hlsfetch::fetch(
+    // The short segment is still short; the run does not need it to finish to
+    // show what a forgotten cache does, and the error it ends with is the same
+    // one the first run ended with.
+    let _ = hlsfetch::fetch(
         &client(),
         &url,
         &[],
@@ -775,13 +807,13 @@ fn a_forgotten_cache_starts_the_list_over() {
         &out,
         &mut |_| {},
     )
-    .expect("the second run finishes");
-    assert_eq!(report.resumed_segments, 0, "nothing was left to resume");
+    .expect_err("the third segment is still short");
     assert_eq!(
         server.hits("/seg1.ts"),
         2,
         "a forgotten cache is a list fetched again"
     );
+    assert_eq!(server.hits("/seg2.ts"), 2);
     hlsfetch::forget(&part);
     let _ = std::fs::remove_file(&out);
 }

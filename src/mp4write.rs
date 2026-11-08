@@ -106,7 +106,7 @@ pub fn write(tracks: &[Track], dimensions: (u32, u32), out: &Path) -> Result<Wri
         ));
     }
 
-    let file = File::create(out)?;
+    let file = File::create(crate::paths::verbatim(out))?;
     let mut writer = BufWriter::with_capacity(1 << 20, file);
     writer.write_all(&ftyp)?;
     // `build_moov` returns the payload; the box's own size counts its header.

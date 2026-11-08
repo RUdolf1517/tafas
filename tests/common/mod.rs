@@ -36,6 +36,11 @@ pub struct Route {
     /// parallel needs the requests to overlap on the server, and a delay is a
     /// larger signal than a wall-clock assertion on a loaded runner.
     pub delay_ms: u64,
+    /// How many of this route's requests have already been answered with a
+    /// 5xx. Per route rather than per process: a counter shared by every test
+    /// in one binary is spent by whichever test reaches it first, which makes
+    /// `fail_first: 1` mean "fails once, somewhere" instead of "fails once".
+    pub failed: AtomicUsize,
 }
 
 impl Route {
@@ -48,6 +53,7 @@ impl Route {
             truncate_by: 0,
             requires_header: None,
             delay_ms: 0,
+            failed: AtomicUsize::new(0),
         }
     }
 
@@ -251,9 +257,6 @@ fn handle_connection(
         None => return write_response(&mut stream, 404, "Not Found", b"no route", None),
     };
 
-    // Failures are counted per process, not per route, which is enough for a
-    // retry test: the second request finds the counter exhausted.
-    static FAILURES: AtomicUsize = AtomicUsize::new(0);
     // `truncate_by` keeps the declared length honest and cuts the bytes sent,
     // which is what a connection dropped mid-transfer actually looks like.
     let body = route.body.clone();
@@ -280,9 +283,11 @@ fn handle_connection(
         live.fetch_sub(1, Ordering::SeqCst);
     }
 
-    let already = FAILURES.load(Ordering::SeqCst);
+    // Counted on the route, so a second request to *this* path finds the
+    // counter exhausted and no other test can spend this one's failure.
+    let already = route.failed.load(Ordering::SeqCst);
     if already < route.fail_first {
-        FAILURES.store(already + 1, Ordering::SeqCst);
+        route.failed.store(already + 1, Ordering::SeqCst);
         return write_response(
             &mut stream,
             500,
