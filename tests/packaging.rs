@@ -374,6 +374,28 @@ fn every_site_has_a_documentation_page() {
             text.split_whitespace().count() > 100,
             "docs/sites/{site}.md is a stub, not a page"
         );
+        // Every markdown link in the page has to resolve: the pages were split
+        // out of one file, and a link written when they lived in `docs/` is one
+        // directory too shallow once the page is in `docs/sites/`.
+        for (at, _) in text.match_indices("](") {
+            let rest = &text[at + 2..];
+            let Some(close) = rest.find(')') else {
+                continue;
+            };
+            let link = &rest[..close];
+            if link.starts_with("http") || link.starts_with('#') {
+                continue;
+            }
+            let file = link.split('#').next().unwrap_or(link);
+            if !file.ends_with(".md") {
+                continue;
+            }
+            let path = page.parent().join(file);
+            assert!(
+                path.is_file(),
+                "docs/sites/{site}.md links {link}, which does not exist next to it"
+            );
+        }
     }
 }
 

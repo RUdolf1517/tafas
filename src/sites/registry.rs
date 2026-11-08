@@ -21,8 +21,6 @@ use crate::http::Http;
 use crate::model::{Listing, Media};
 use crate::url::Url;
 
-use super::youtube_list;
-
 /// What a URL names: one video, or a page that lists videos.
 ///
 /// It is an enum rather than an error because "this page lists twelve videos"
@@ -42,9 +40,12 @@ pub struct Reader {
     pub hosts: &'static [&'static str],
     /// Whether `--extractor-args` has anything to say to this reader.
     pub args: bool,
-    /// `Some` when a URL can be a *list* page, which the reader then answers
-    /// with entries instead of a stream. YouTube is the only one today.
-    pub listing: Option<fn(&Url) -> Option<youtube_list::Kind>>,
+    /// `Some` when the site has *list* pages — a playlist, a channel, an album,
+    /// a collection — which the reader answers with entries instead of a
+    /// stream. The function decides from the URL alone whether this is one
+    /// (`None` means "not a list page, ask the video reader"), so a plain video
+    /// URL never costs a request to find that out.
+    pub listing: Option<fn(&Http, &Url, &str) -> Option<Result<Listing>>>,
     /// The video reader.
     pub video: fn(&Http, &Url, &str, &ExtractorArgs) -> Result<Media>,
 }
@@ -62,10 +63,9 @@ impl Reader {
         raw_url: &str,
         args: &ExtractorArgs,
     ) -> Result<Target> {
-        if let Some(kind_of) = self.listing {
-            if let Some(kind) = kind_of(url) {
-                let listing = youtube_list::extract(http, url, &kind, raw_url)?;
-                return Ok(Target::List(listing));
+        if let Some(list_pages) = self.listing {
+            if let Some(listing) = list_pages(http, url, raw_url) {
+                return listing.map(Target::List);
             }
         }
         (self.video)(http, url, raw_url, args).map(|media| Target::Video(Box::new(media)))
@@ -95,7 +95,7 @@ pub const READERS: &[Reader] = &[
             "youtube-nocookie.com",
         ],
         args: true,
-        listing: Some(youtube_list::kind),
+        listing: Some(super::youtube_list::listing),
         video: super::youtube::extract,
     },
     #[cfg(feature = "tiktok")]
@@ -124,7 +124,7 @@ pub const READERS: &[Reader] = &[
         name: "vimeo",
         hosts: &["vimeo.com", "player.vimeo.com"],
         args: false,
-        listing: None,
+        listing: Some(super::vimeo_album::listing),
         video: super::vimeo::extract,
     },
     #[cfg(feature = "reddit")]
@@ -148,7 +148,7 @@ pub const READERS: &[Reader] = &[
         name: "twitch",
         hosts: &["twitch.tv"],
         args: false,
-        listing: None,
+        listing: Some(super::twitch_collection::listing),
         video: super::twitch::extract,
     },
 ];

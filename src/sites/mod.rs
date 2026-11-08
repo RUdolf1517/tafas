@@ -18,8 +18,12 @@ pub mod soundcloud;
 pub mod tiktok;
 #[cfg(feature = "twitch")]
 pub mod twitch;
+#[cfg(feature = "twitch")]
+pub mod twitch_collection;
 #[cfg(feature = "vimeo")]
 pub mod vimeo;
+#[cfg(feature = "vimeo")]
+pub mod vimeo_album;
 #[cfg(feature = "x")]
 pub mod x;
 #[cfg(feature = "youtube")]

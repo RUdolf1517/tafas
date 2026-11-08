@@ -22,8 +22,8 @@ like when it happens, what happens when a site changes, and the
    The page's `INNERTUBE_API_KEY` is what route 2 authenticates with. When the
    page cannot be read at all, the key in the source (`PUBLIC_WEB_API_KEY`) is
    used: it is YouTube's own web-client key, public, in every page, and a
-   secret scanner will call it a leak. [SECURITY.md § Credentials in the
-   source](../SECURITY.md#credentials-in-the-source-and-what-to-do-when-a-scanner-flags-one)
+   secret scanner will call it a leak. [SECURITY.md — credentials in the
+   source](../../SECURITY.md#credentials-in-the-source-and-what-to-do-when-a-scanner-flags-one)
    explains why it stays.
 2. **InnerTube**, `POST /youtubei/v1/player`, with the clients below in this
    order. Each is a different `context.client`, because YouTube serves different
@@ -85,7 +85,7 @@ stateless command into something that can act as a logged-in account. v0.2 adds
 one with that cost stated: the file is read **once**, sent only to the hosts its
 domains match, never written back, and never logged. tafas still has no sign-in
 flow and stores nothing between runs — the file is the user's, and using it is
-the user's decision. Details in [safety §5](safety.md#5-network).
+the user's decision. Details in [safety §5](../safety.md#5-network).
 
 ## 5. Captions, and the languages a video does not have
 

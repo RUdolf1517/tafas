@@ -123,7 +123,11 @@ challenges.
   temporaries.
 - It never modifies the file it is replacing until the rename.
 - It never follows a URL scheme other than `http(s)`.
-- It never stores anything between runs. There is no cache, no config, no state.
+- It never stores anything between runs, with one deliberate exception: the
+  per-segment cache of an unfinished list (`<target>.part.segments` and its
+  journal, [hls §6](hls.md#6-what-is-resumed)) sits beside the `.part` it
+  belongs to and is dropped when the selection changes. There is no cache of
+  anything else, no config file, and no state in a home directory.
 
 ## 7. Failure modes and what a user sees
 

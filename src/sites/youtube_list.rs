@@ -13,10 +13,15 @@
 //! Two things are deliberately not done here. A **lockup** (the newer
 //! `lockupViewModel` shape) is not read yet: the pages this reads serve
 //! `playlistVideoRenderer` and the `videoRenderer` a `richItemRenderer` wraps,
-//! and a shape this build cannot
-//! read is a refusal that names it rather than an empty list. And **paging is
-//! bounded at one continuation per page**, so a channel with ten thousand videos
-//! is refused with the number it did read rather than followed forever.
+//! and a shape this build cannot read is a refusal that names it rather than an
+//! empty list. And **paging is bounded at one continuation per page**, so a
+//! channel with ten thousand videos is refused with the number it did read
+//! rather than followed forever.
+//!
+//! The list route is shared with the other readers through
+//! `sites::registry`: a reader whose site has a list page names a `kind`
+//! function, and this module's `extract` takes the [`Kind`] it returns. Only
+//! YouTube has one today.
 
 use serde_json::{json, Value};
 
@@ -84,6 +89,15 @@ pub fn kind(url: &Url) -> Option<Kind> {
         }),
         _ => None,
     }
+}
+
+/// The list page this URL names, or `None` — the shape the reader table calls.
+///
+/// It matches `super::registry::Reader::listing`, so the table does not need to
+/// know what a [`Kind`] is, and a site without list pages is a `None` in its
+/// row rather than a branch in the dispatcher.
+pub fn listing(http: &Http, url: &Url, raw: &str) -> Option<Result<Listing>> {
+    kind(url).map(|kind| extract(http, url, &kind, raw))
 }
 
 /// Reads a playlist or channel into a [`Listing`].

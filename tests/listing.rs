@@ -1,11 +1,11 @@
-//! A playlist or a channel page, in the parts that do not need the internet.
+//! A page that names other videos, in the parts that do not need the internet.
 //!
-//! The page itself is read by `sites::youtube_list`, whose own tests cover the
-//! documents: URL shapes, `playlistVideoRenderer` and `richItemRenderer`
-//! entries, continuation tokens, and the refusals. What is left for an
-//! integration test is the arithmetic a user sees — which entries are chosen,
-//! what they are called, and where they go — because that is the part `ls`
-//! agrees or disagrees with.
+//! The pages themselves are read by `sites::youtube_list`,
+//! `sites::vimeo_album` and `sites::twitch_collection`, whose own tests cover
+//! the documents: URL shapes, entries, paging and the refusals. What is left
+//! for an integration test is the arithmetic a user sees — which entries are
+//! chosen, what they are called, and where they go — because that is the part
+//! `ls` agrees or disagrees with, and it is the same for all three sites.
 
 use std::path::Path;
 
@@ -102,4 +102,65 @@ fn the_listing_line_says_which_of_how_many() {
         text.contains("title: 2") && text.contains("title: 3"),
         "{text}"
     );
+}
+
+/// The three sites with list pages are the ones the reader table says have
+/// them, and the table is what `--capabilities` prints. A site whose list
+/// reader was added without a row would be a page nothing dispatches to.
+#[test]
+fn every_site_with_list_pages_states_them_in_capabilities() {
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_tafas"))
+        .arg("--capabilities")
+        .output()
+        .expect("the binary runs");
+    let value: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("capabilities is JSON");
+    let pages: Vec<&str> = value["listings"]["pages"]
+        .as_array()
+        .expect("pages")
+        .iter()
+        .map(|page| page.as_str().unwrap_or(""))
+        .collect();
+    for site in ["youtube", "vimeo", "twitch"] {
+        assert!(
+            pages.iter().any(|page| page.starts_with(site)),
+            "--capabilities does not name a {site} list page: {pages:?}"
+        );
+    }
+    assert_eq!(value["listings"]["depth"], 1, "one level, as documented");
+}
+
+/// A list of a site that only has videos, built the way the download layer
+/// builds one, still numbers and names its entries: the rule lives in
+/// `listing`, not in any one site's reader.
+#[test]
+fn the_naming_and_selection_rules_do_not_belong_to_one_site() {
+    let mut album = Listing::new(
+        Site::Vimeo,
+        "2632481".into(),
+        "https://vimeo.com/showcase/2632481".into(),
+    );
+    album.title = "Staff Favorites".into();
+    album.entries = (1..=3)
+        .map(|index| Entry {
+            id: format!("7697987{index}"),
+            url: format!("https://vimeo.com/7697987{index}"),
+            title: format!("Video {index}"),
+            duration: Some(60),
+        })
+        .collect();
+    let chosen = listing::choose(&album, Some(&Items::parse("2-").expect("a list")));
+    let chosen = chosen.expect("from the second to the end");
+    assert_eq!(chosen.len(), 2);
+    assert_eq!(
+        chosen[0].0, 2,
+        "the number on disk is the number in the browser"
+    );
+    assert_eq!(
+        listing::stem(chosen[0].0, &chosen[0].1),
+        "02 - Video 2 [76979872]"
+    );
+    let text = listing::describe(&album, &chosen);
+    assert!(text.contains("vimeo 2632481"), "{text}");
+    assert!(text.contains("2 of 3 entries"), "{text}");
 }

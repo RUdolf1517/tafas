@@ -198,13 +198,15 @@ There are two kinds of list, and the flag means the same thing for both:
   served. A selection that matches no segment is a refusal (1); one that does
   not start on a keyframe is written, with a warning that the first frames will
   not decode;
-- **a playlist or a channel page** ([extractors §3.7](extractors.md#37-playlists-and-channels)),
-  where the item is a video: every chosen entry is captured on its own, into a
-  directory, as `03 - Title [id].mp4`, so the number on disk is the number the
-  user counted in the browser. A dead entry is reported and the rest are still
-  captured; the run exits `1` if any of them failed, which is what a URL list
-  already does. One level is followed: a channel of playlists is refused rather
-  than walked.
+- **a page that names other videos** — a YouTube playlist or channel
+  ([sites/youtube §7](sites/youtube.md#7-playlists-and-channels)), a Vimeo album
+  or showcase ([sites/vimeo §3](sites/vimeo.md#3-albums-and-showcases)), a Twitch
+  collection ([sites/twitch §2](sites/twitch.md#2-collections)) — where the item
+  is a video: every chosen entry is captured on its own, into a directory, as
+  `03 - Title [id].mp4`, so the number on disk is the number the user counted in
+  the browser. A dead entry is reported and the rest are still captured; the run
+  exits `1` if any of them failed, which is what a URL list already does. One
+  level is followed: a channel of playlists is refused rather than walked.
 
 A list of videos is written into a **directory**, because there is no rule that
 turns one filename into N predictable filenames. `-o` naming a file for a list is

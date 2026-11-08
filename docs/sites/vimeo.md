@@ -37,7 +37,38 @@ playlist states no size, so selection prefers a progressive MP4 by itself, and
 `--format vimeo-hls` can still ask for the playlist when that is what the user
 wants.
 
-## 3. Refused
+## 3. Albums and showcases
+
+An album (`/album/<id>`) and a showcase (`/showcase/<id>` or
+`/showcase/<slug>`) are pages that name other videos, so they are read as a
+**list**, not as a stream: each entry is then captured on its own, exactly as a
+YouTube playlist entry is ([cli §3](../cli.md#3-selection)).
+
+| Step | Request |
+| --- | --- |
+| 1 | `https://vimeo.com/_next/viewer` — the web player's short-lived `jwt`; nothing logs in |
+| 2 | `https://api.vimeo.com/albums/<id>?fields=name,description,privacy,user.name` — the title, and whether the album is public |
+| 3 | `https://api.vimeo.com/albums/<id>/videos?fields=link,uri,name,duration&per_page=100&page=N` |
+
+A non-numeric showcase address is resolved to its id first, through
+`https://vimeo.com/showcase/<slug>/auth` — the endpoint the page itself calls.
+The `jwt` is asked for rather than replaced by a client secret: no credential is
+embedded in this binary (see [§4](#4-refused)).
+
+An entry's URL comes from its `uri` (`/videos/76979871` → `https://vimeo.com/76979871`)
+and not from its `link`, because an album may hold a video under a custom
+address that the video reader would have to guess about.
+
+| Situation | Result |
+| --- | --- |
+| the album is protected by a password | refusal (1) naming the album and saying the videos can still be read one at a time if their own URLs are public |
+| `_next/viewer` answers no `jwt` | refusal: the album cannot be read without a session |
+| the album answers `404` | refusal: gone, private, or an account `--cookies FILE` might reach |
+| the album lists no videos | refusal naming the album, as an empty list is never a success |
+| more than two pages of entries (about 200) | refusal stating the count it read, where it stopped |
+| a page that brings no new entries | the walk ends there, so a stale `paging` block cannot loop |
+
+## 4. Refused
 
 | Situation | Result |
 | --- | --- |

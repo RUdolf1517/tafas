@@ -27,7 +27,35 @@ string; `signature` is a signature over it and is sent as it arrived. `hlsfetch`
 then assembles the playlist like any other — the renditions are MPEG-TS, and the
 audio-only variant is offered by the same master list.
 
-## 2. Refused
+## 2. Collections
+
+A collection (`/collections/<id>`) is a group of recordings a channel picked by
+hand. It has no playback token of its own: it is a **list**, and each item is a
+VOD that this page's first route reads later, on its own
+([cli §3](../cli.md#3-selection)).
+
+One request, against the same GraphQL endpoint:
+
+| Body | Answer |
+| --- | --- |
+| `[{"operationName": "CollectionSideBar", "variables": {"collectionID": "<id>"}}]` by persisted-query hash | `data.collection.title`, and `items.edges[].node` — each node a video with `id`, `title`, `lengthSeconds` |
+
+The public web client id goes in a header, as it does for a VOD. An item's URL
+is built from its numeric id, so a clip that a collection happens to hold is
+skipped rather than turned into a request to the wrong thing.
+
+A channel's collections *tab* (`/<name>/videos?filter=collections`) is
+deliberately not read: its entries are collections, and `--playlist-items` on a
+list of lists is the nested-list refusal one level up. The URL of a collection
+is what this build takes.
+
+| Situation | Result |
+| --- | --- |
+| the API answers no collection | refusal: deleted, or a page Twitch has retired — the channel's current videos are given as the alternative |
+| the collection lists no recordings | refusal naming it, as an empty list is never a success |
+| the API quotes an error (a stale persisted-query hash) | refusal quoting the message |
+
+## 3. Refused
 
 | Situation | Result |
 | --- | --- |

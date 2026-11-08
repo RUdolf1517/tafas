@@ -35,8 +35,12 @@ YouTube: the comparison is on the whole host, which is why a lookalike is a
 
 Every site is a row in one table — `src/sites/registry.rs` — rather than a
 `match` arm, a name in a list and a host in an enum. A row is a name, the hosts
-it answers for, whether `--extractor-args` has anything to say to it, and its
-readers. Everything downstream is derived from that table: which URL goes to
+it answers for, whether `--extractor-args` has anything to say to it, whether it
+has *list* pages, and its readers. A row with list pages names one function of
+shape `(Http, &Url, &str) -> Option<Result<Listing>>`: `None` means "not a list
+page, ask the video reader", so an ordinary video URL never costs a request to
+find that out, and a site without lists is a `None` in its row rather than a
+branch in the dispatcher. Everything downstream is derived from that table: which URL goes to
 which reader, what `--capabilities` prints under `sites`, and the sentence a
 stranger host is refused with ("this build reads youtube, …"). Those three used
 to be kept in step by hand, and a `packaging` test existed to notice when they
@@ -60,6 +64,13 @@ the ones a user can see:
 | a URL for a site it does not have | `no extractor for …: this build reads youtube`, exit 1 |
 | `--extractor-args` | only the keys of sites it has are accepted |
 | the binary | smaller: the `features` job measures both and fails if the difference is not there |
+
+Three of the seven rows have list pages, and each site's own page lists the
+shapes: YouTube playlists and channels ([sites/youtube.md](sites/youtube.md)),
+Vimeo albums and showcases ([sites/vimeo.md](sites/vimeo.md)), and Twitch
+collections ([sites/twitch.md](sites/twitch.md)). A list is read into the same
+`Listing` whatever the site, so `--playlist-items`, the directory rule, the
+`03 - Title [id]` names and the per-entry independence are written once.
 
 Nothing about this is a promise about a *release*: the published archives are
 built with all seven, and a one-site binary is something a user builds for

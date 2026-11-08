@@ -126,7 +126,7 @@ fn capabilities() -> String {
                 "cookies": "user-supplied (--cookies FILE)"
             },
             "vimeo": {
-                "routes": ["player config (progressive MP4, HLS)"],
+                "routes": ["player config (progressive MP4, HLS)", "album/showcase api (lists)"],
                 "hls": true,
                 "dash": false,
                 "cookies": "user-supplied (--cookies FILE)"
@@ -144,7 +144,10 @@ fn capabilities() -> String {
                 "cookies": "user-supplied (--cookies FILE)"
             },
             "twitch": {
-                "routes": ["gql playback token, then the usher playlist"],
+                "routes": [
+                    "gql playback token, then the usher playlist",
+                    "gql collection sidebar (lists)"
+                ],
                 "hls": true,
                 "live": false,
                 "cookies": "user-supplied (--cookies FILE)"
@@ -155,10 +158,13 @@ fn capabilities() -> String {
             "tiktok:route": tafas::extractor_args::TIKTOK_ROUTES
         },
         "listings": {
-            "pages": ["youtube playlist", "youtube channel"],
+            "pages": [
+                "youtube playlist", "youtube channel", "vimeo album", "vimeo showcase",
+                "twitch collection"
+            ],
             "selection": "--playlist-items, 1-based; one dead entry does not stop the others",
-            "nav": "youtube playlist and channel pages carry no player response",
-            "depth": 1
+            "depth": 1,
+            "paging": "two pages per list, then a refusal naming the count"
         },
         "containers": ["mp4", "m4a", "mp3"],
         "subtitles": {
