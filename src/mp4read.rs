@@ -45,6 +45,18 @@ impl<'a> Reader<'a> {
         self.data.len() - self.at
     }
 
+    /// The number of entries this reader can still hold, given that each one
+    /// costs at least `per_entry` bytes.
+    ///
+    /// A count in an MP4 box is a `u32` the file chooses, so `with_capacity` on
+    /// it is an allocation the input asks for: `entries = 0xFFFFFFFF` in a
+    /// 24-byte `stss` is a 16 GiB request that no 5-second fuzz run survives.
+    /// The count is still read and still reported when the box is short — this
+    /// only refuses to *reserve* for entries that cannot be there.
+    fn capacity_for(&self, per_entry: usize) -> usize {
+        self.remaining() / per_entry.max(1)
+    }
+
     fn bytes(&mut self, count: usize) -> Result<&'a [u8]> {
         let end = self
             .at
@@ -753,7 +765,7 @@ fn sync_samples(data: &[u8], stss: &Bx) -> Result<Vec<u32>> {
     let mut reader = Reader::new(&data[stss.body_start..stss.end]);
     reader.skip(4)?;
     let entries = reader.u32()?;
-    let mut numbers = Vec::with_capacity(entries as usize);
+    let mut numbers = Vec::with_capacity(reader.capacity_for(4));
     for _ in 0..entries {
         numbers.push(reader.u32()?);
     }
@@ -764,7 +776,7 @@ fn chunk_offsets(data: &[u8], stco: &Bx) -> Result<Vec<u64>> {
     let mut reader = Reader::new(&data[stco.body_start..stco.end]);
     reader.skip(4)?;
     let entries = reader.u32()?;
-    let mut offsets = Vec::with_capacity(entries as usize);
+    let mut offsets = Vec::with_capacity(reader.capacity_for(4));
     for _ in 0..entries {
         offsets.push(u64::from(reader.u32()?));
     }
@@ -775,7 +787,7 @@ fn chunk_offsets_64(data: &[u8], co64: &Bx) -> Result<Vec<u64>> {
     let mut reader = Reader::new(&data[co64.body_start..co64.end]);
     reader.skip(4)?;
     let entries = reader.u32()?;
-    let mut offsets = Vec::with_capacity(entries as usize);
+    let mut offsets = Vec::with_capacity(reader.capacity_for(8));
     for _ in 0..entries {
         offsets.push(reader.u64()?);
     }
@@ -787,7 +799,7 @@ fn samples_per_chunk(data: &[u8], stsc: &Bx) -> Result<Vec<(u32, u32, u32)>> {
     let mut reader = Reader::new(&data[stsc.body_start..stsc.end]);
     reader.skip(4)?;
     let entries = reader.u32()?;
-    let mut table = Vec::with_capacity(entries as usize);
+    let mut table = Vec::with_capacity(reader.capacity_for(12));
     for _ in 0..entries {
         let first = reader.u32()?;
         let per = reader.u32()?;
@@ -1266,6 +1278,31 @@ mod tests {
         let tracks = read(&init, &media).unwrap();
         let times: Vec<Option<u64>> = tracks[0].samples.iter().map(|sample| sample.dts).collect();
         assert_eq!(times, vec![Some(0), Some(3_000)]);
+    }
+
+    #[test]
+    fn a_trun_that_claims_more_samples_than_it_holds_is_refused() {
+        // A `trun` count is a `u32` the file chooses, and the samples used to
+        // be reserved for before the first one was read: 4 million of them is
+        // a 64 MiB allocation asked for by a 24-byte box. Found by the
+        // `mp4_read` fuzz target. The box is intact and simply stops early, so
+        // the answer is a parse error and not an allocation.
+        let init = moov(1, 90_000, avc1(&[0x01, 0x64, 0x00, 0x1f]), 3_000);
+        let mut trun_body = 4_000_000u32.to_be_bytes().to_vec(); // count
+        trun_body.extend_from_slice(&0i32.to_be_bytes()); // data offset
+        trun_body.extend_from_slice(&4u32.to_be_bytes()); // one sample, then nothing
+        trun_body.extend_from_slice(&0x0200_0000u32.to_be_bytes());
+        let tfhd = full(b"tfhd", 0, 0x020000, &1u32.to_be_bytes());
+        let trun = full(b"trun", 0, 0x000201, &trun_body);
+        let traf = bx(b"traf", &concat(&[tfhd, trun]));
+        let media = bx(b"moof", &concat(&[full(b"mfhd", 0, 0, &1u32.to_be_bytes()), traf]));
+
+        let error = read(&init, &media).unwrap_err();
+        let message = error.to_string();
+        assert!(
+            message.contains("bytes") || message.contains("sample"),
+            "a short trun is a parse error, not an allocation: {message}"
+        );
     }
 
     #[test]

@@ -338,7 +338,24 @@ fn timestamp(text: &str) -> Result<u64> {
             )));
         }
     }
-    Ok(((hours * 60 + minutes) * 60 + seconds) * 1000 + millis)
+    // Every field is a number the body chose, so the total is computed with
+    // checked arithmetic: a body that says `18446744073709551615:00:00.000` is
+    // 5.8e23 milliseconds, which is not a time and must be a refusal rather
+    // than an overflow. Without this it is a panic under a fuzzer (a debug
+    // build turns overflow into one) and a silently wrapped time in release.
+    hours
+        .checked_mul(60)
+        .and_then(|minutes_total| minutes_total.checked_add(minutes))
+        .and_then(|minutes_total| minutes_total.checked_mul(60))
+        .and_then(|seconds_total| seconds_total.checked_add(seconds))
+        .and_then(|seconds_total| seconds_total.checked_mul(1000))
+        .and_then(|millis_total| millis_total.checked_add(millis))
+        .ok_or_else(|| {
+            Error::Parse(format!(
+                "{text:?} is longer than the {} milliseconds a cue can state",
+                u64::MAX
+            ))
+        })
 }
 
 /// The cues as one subtitle track, ready for the writer.
@@ -573,6 +590,27 @@ mod tests {
             "sixty-one seconds in a clock"
         );
         assert!(timestamp("soon").is_err());
+    }
+
+    #[test]
+    fn a_timestamp_too_long_to_count_is_refused_not_wrapped() {
+        // Found by the `webvtt` fuzz target on its first real run: the fields
+        // are multiplied, and a body that states a 20-digit hour wrapped in
+        // release and panicked under the fuzzer's debug assertions.
+        let error = timestamp("18446744073709551615:00:00.000").unwrap_err();
+        assert!(
+            error.to_string().contains("longer than"),
+            "an hour that big is a refusal, not a number: {error}"
+        );
+        assert!(timestamp("99999999999999999999:00:00.000").is_err());
+        // The edge is the `u64` and not a guess: 5124095576030 hours is
+        // 18446744073708000000 ms, which fits, and one hour more does not.
+        assert_eq!(
+            timestamp("5124095576030:00:00.000").unwrap(),
+            18_446_744_073_708_000_000,
+            "the largest whole hour a u64 can hold"
+        );
+        assert!(timestamp("5124095576031:00:00.000").is_err());
     }
 
     #[test]
