@@ -124,11 +124,14 @@ cargo +nightly fuzz run mux_file
 ```
 
 `.github/workflows/fuzz.yml` runs each target for five minutes, weekly, on
-demand and whenever `fuzz/` changes, because a fuzz target that stopped
-compiling is a green badge over nothing. Nothing about it runs on a pull
-request, except that last case, because a fuzzer that gates every merge is a
-fuzzer people learn to ignore. A crash arrives as an artifact under
-`fuzz/artifacts/`; that file is committed with the fix and replayed with
+demand and on any push touching `fuzz/` or `src/`. The two push triggers are
+there because of what the first two runs cost: a target that had stopped
+compiling was a green badge over nothing, and a parser bug that `cargo test`
+was happy with was found only by the fuzzer, so the fix for it has to be run
+under the fuzzer to be believed. Nothing about it gates a pull request, though,
+because a fuzzer that blocks every merge is a fuzzer people learn to ignore.
+A crash arrives as an artifact under `fuzz/artifacts/`; that file is committed
+with the fix and replayed with
 `cargo fuzz run <target> fuzz/artifacts/<target>/<file>`.
 
 The workflow sets `RUSTUP_TOOLCHAIN=nightly` for the whole job. That is not

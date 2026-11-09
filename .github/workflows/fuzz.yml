@@ -11,9 +11,18 @@ on:
   push:
     # `arena/**` for the same reason `ci.yml` listens to it: a change to the
     # fuzzer should be run before it is merged, not a week after.
+    #
+    # `src/**` is here because the last two bugs this workflow found — an
+    # overflowing timestamp, a sample count trusted for a `with_capacity` —
+    # were in parsers that `cargo test` was happy with, and a fix for either
+    # of them is only proved by running the fuzzer again. Four jobs of about
+    # seven minutes buy that proof. It still does not gate a pull request: the
+    # run is for a commit already on a branch, and a red one is read by the
+    # person who pushed rather than blocking anyone else.
     branches: [main, "arena/**"]
     paths:
       - "fuzz/**"
+      - "src/**"
       - ".github/workflows/fuzz.yml"
 
 permissions:
