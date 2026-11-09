@@ -1,18 +1,35 @@
 name: fuzz
 
 # Out of band on purpose: a fuzzer that gates a merge is a fuzzer people learn to
-# ignore. Weekly, and on demand. A crash arrives as an artifact under
-# `fuzz/artifacts/`, which is committed with the fix and replayed by hand.
+# ignore. Weekly, on demand, and when the fuzzer itself changes — the last of
+# those because a fuzz target that no longer compiles is a green badge over
+# nothing, and that is exactly what this workflow was for its first run.
 on:
   schedule:
     - cron: "0 4 * * 1"
   workflow_dispatch:
+  push:
+    # `arena/**` for the same reason `ci.yml` listens to it: a change to the
+    # fuzzer should be run before it is merged, not a week after.
+    branches: [main, "arena/**"]
+    paths:
+      - "fuzz/**"
+      - ".github/workflows/fuzz.yml"
 
 permissions:
   contents: read
 
 env:
   CARGO_TERM_COLOR: never
+  # `rust-toolchain.toml` in this repository pins `stable`, and a directory
+  # override beats `rustup default`, which is all `dtolnay/rust-toolchain` sets.
+  # So on the first run of this workflow `cargo fuzz` invoked a *stable* rustc,
+  # which rejects the `-Zsanitizer=address` that cargo-fuzz always passes: four
+  # jobs failed in zero seconds, before compiling anything, and the empty
+  # artifact directory said nothing about why. `RUSTUP_TOOLCHAIN` outranks the
+  # override file, and — unlike `cargo +nightly` — it is also inherited by the
+  # `cargo` that cargo-fuzz spawns for the real build.
+  RUSTUP_TOOLCHAIN: nightly
 
 jobs:
   fuzz:
@@ -29,11 +46,32 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: fuzz
+      # A toolchain mistake used to surface as "exit code 1" and nothing else.
+      # One line here, asserted before twenty minutes of work, is cheaper than
+      # guessing from an empty artifact directory.
+      - name: nightly is what runs
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustc -vV | tee rustc-vv.txt
+          rustc -vV | grep -q '^release: .*-nightly' || {
+            echo "::error::this job needs a nightly rustc; got: $(rustc -V)"
+            exit 1
+          }
       # `cargo-fuzz` is built from a cache keyed on its own version, and built
       # once: four matrix jobs installing the same binary four times is most of
       # what the run spent its twenty minutes on.
       - name: cargo-fuzz
         run: cargo install cargo-fuzz --locked
+      # Building is a separate step from fuzzing because the two failures read
+      # nothing alike and used to be indistinguishable in the run summary: a
+      # target that does not compile is a broken workflow, a target that panics
+      # is a bug in the parser with an input attached.
+      - name: build
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo fuzz build ${{ matrix.target }} 2>&1 | tee "fuzz/build-${{ matrix.target }}.log"
       # The log is teed because a libFuzzer crash prints its input *after* the
       # artifact upload step has already been considered: when the artifact is
       # empty, the log is the only record of what happened, and reading it from
@@ -50,5 +88,6 @@ jobs:
           name: artifacts-${{ matrix.target }}
           path: |
             fuzz/artifacts/
-            fuzz/fuzz-${{ matrix.target }}.log
+            fuzz/*.log
+            rustc-vv.txt
           if-no-files-found: warn

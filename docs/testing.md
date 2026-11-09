@@ -123,11 +123,24 @@ cargo +nightly fuzz run json_after
 cargo +nightly fuzz run mux_file
 ```
 
-`.github/workflows/fuzz.yml` runs each target for five minutes, weekly and on
-demand. Nothing about it runs on a pull request, because a fuzzer that gates a
-merge is a fuzzer people learn to ignore. A crash arrives as an artifact under
+`.github/workflows/fuzz.yml` runs each target for five minutes, weekly, on
+demand and whenever `fuzz/` changes, because a fuzz target that stopped
+compiling is a green badge over nothing. Nothing about it runs on a pull
+request, except that last case, because a fuzzer that gates every merge is a
+fuzzer people learn to ignore. A crash arrives as an artifact under
 `fuzz/artifacts/`; that file is committed with the fix and replayed with
 `cargo fuzz run <target> fuzz/artifacts/<target>/<file>`.
+
+The workflow sets `RUSTUP_TOOLCHAIN=nightly` for the whole job. That is not
+decoration: this repository's `rust-toolchain.toml` pins `stable`, `rustup`
+prefers it over the default toolchain that `dtolnay/rust-toolchain` selects, and
+`cargo-fuzz` always passes `-Zsanitizer=address` — which a stable `cargo` rejects
+before it compiles a single line. That is a failure of nothing, reported as four
+red jobs in zero seconds; `+nightly` on the outer command is not enough either,
+because cargo-fuzz spawns its own `cargo`, and only the environment variable is
+inherited. The job also prints `rustc -vV` and refuses to go on if the release is
+not a nightly, so the next time it happens the run says so in its first ten
+seconds.
 
 `mux::verify` and `mux::remux` are reached through a fourth target, `mux_file`,
 which writes the input to a temporary file first: both take a path, because the
