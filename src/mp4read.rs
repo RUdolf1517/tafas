@@ -1295,7 +1295,10 @@ mod tests {
         let tfhd = full(b"tfhd", 0, 0x020000, &1u32.to_be_bytes());
         let trun = full(b"trun", 0, 0x000201, &trun_body);
         let traf = bx(b"traf", &concat(&[tfhd, trun]));
-        let media = bx(b"moof", &concat(&[full(b"mfhd", 0, 0, &1u32.to_be_bytes()), traf]));
+        let media = bx(
+            b"moof",
+            &concat(&[full(b"mfhd", 0, 0, &1u32.to_be_bytes()), traf]),
+        );
 
         let error = read(&init, &media).unwrap_err();
         let message = error.to_string();
