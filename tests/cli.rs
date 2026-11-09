@@ -82,7 +82,10 @@ fn json_failures_are_one_object_on_stdout() {
     // One object, not one per place that noticed the failure. `fail` used to
     // write the object and `announce` wrote it again, so a broken URL produced
     // two identical lines and a script counting them counted two failures.
-    let lines: Vec<&str> = text.lines().filter(|line| !line.trim().is_empty()).collect();
+    let lines: Vec<&str> = text
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .collect();
     assert_eq!(lines.len(), 1, "one object per item, got {lines:#?}");
     let value: serde_json::Value = serde_json::from_str(lines[0]).expect("valid JSON");
     assert_eq!(value["schema"], 1);

@@ -169,7 +169,11 @@ pub fn write(http: &Http, subtitle: &Subtitle, target: &Path) -> Result<PathBuf>
         )));
     }
 
-    fs::rename(crate::paths::verbatim(&temporary), crate::paths::verbatim(&path)).map_err(|error| {
+    fs::rename(
+        crate::paths::verbatim(&temporary),
+        crate::paths::verbatim(&path),
+    )
+    .map_err(|error| {
         let _ = fs::remove_file(crate::paths::verbatim(&temporary));
         Error::Io(io::Error::new(
             error.kind(),
