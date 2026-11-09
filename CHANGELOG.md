@@ -9,6 +9,23 @@ changing a default, an exit code's meaning or a JSON field's meaning is a major
 version; adding a site, a flag or a container is minor. The policy is in
 [docs/releases.md](docs/releases.md).
 
+## [Unreleased]
+
+### Fixed
+
+- **A caption body can no longer make the parser overflow.** A WebVTT cue
+  whose hour field was large enough (`18446744073709551615:00:00.000`) wrapped
+  the millisecond total in a release build, where it became a plausible-looking
+  time, and panicked in a debug one. The arithmetic is checked now and the body
+  is refused with a sentence that says the time does not fit. Found by the
+  `webvtt` fuzz target.
+- **A box that says it holds four billion entries no longer allocates for
+  them.** `stss`, `stco`, `co64` and `stsc` sized their `Vec` from a count the
+  file chooses, before reading a single entry, so a 24-byte box could ask for
+  gigabytes. The reservation is now bounded by the bytes actually left in the
+  box; the count itself is still read and still reported when it does not
+  match. Found by the `mp4_read` fuzz target.
+
 ## [0.2.0] - 2026-11-08
 
 The first release since 0.1.0, and the one that carries all four planned
