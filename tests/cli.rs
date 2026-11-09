@@ -79,12 +79,43 @@ fn json_failures_are_one_object_on_stdout() {
     let output = tafas(&["--json", "https://example.invalid/video"]);
     assert_eq!(code(&output), 1);
     let text = stdout(&output);
-    let line = text.lines().next().expect("one JSON line");
-    let value: serde_json::Value = serde_json::from_str(line).expect("valid JSON");
+    // One object, not one per place that noticed the failure. `fail` used to
+    // write the object and `announce` wrote it again, so a broken URL produced
+    // two identical lines and a script counting them counted two failures.
+    let lines: Vec<&str> = text.lines().filter(|line| !line.trim().is_empty()).collect();
+    assert_eq!(lines.len(), 1, "one object per item, got {lines:#?}");
+    let value: serde_json::Value = serde_json::from_str(lines[0]).expect("valid JSON");
     assert_eq!(value["schema"], 1);
     assert_eq!(value["status"], "failed");
     assert_eq!(value["reason"], "unsupported");
     assert_eq!(value["path"], serde_json::Value::Null);
+}
+
+/// Two URLs, two objects — the count follows the input, once each, and the
+/// parallel path (which announces after collecting) is held to the same rule.
+#[test]
+fn json_writes_one_object_per_url_and_no_duplicates() {
+    for extra in [&[][..], &["-j", "2"][..]] {
+        let mut args = vec!["--json"];
+        args.extend_from_slice(extra);
+        args.extend_from_slice(&["https://example.invalid/one", "https://example.invalid/two"]);
+        let output = tafas(&args);
+        assert_eq!(code(&output), 1, "{extra:?}");
+
+        let lines: Vec<String> = stdout(&output)
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(str::to_string)
+            .collect();
+        assert_eq!(lines.len(), 2, "{extra:?}: {lines:#?}");
+        for line in &lines {
+            let value: serde_json::Value = serde_json::from_str(line).expect("valid JSON");
+            assert_eq!(value["status"], "failed");
+        }
+        // The URLs stay in the order they were typed, however they were run.
+        assert!(lines[0].contains("/one"), "{extra:?}: {lines:#?}");
+        assert!(lines[1].contains("/two"), "{extra:?}: {lines:#?}");
+    }
 }
 
 #[test]

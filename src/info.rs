@@ -81,10 +81,13 @@ pub fn write(target: &Path, document: &Value) -> Result<PathBuf> {
     let written = (|| -> io::Result<()> {
         if let Some(parent) = temporary.parent() {
             if !parent.as_os_str().is_empty() {
-                fs::create_dir_all(parent)?;
+                fs::create_dir_all(crate::paths::verbatim(parent))?;
             }
         }
-        let mut file = fs::File::create(&temporary)?;
+        // A sidecar lives beside the media, so it inherits the media's depth:
+        // without the verbatim form the `.part` file, not the download, is what
+        // fails at 260 characters on Windows.
+        let mut file = fs::File::create(crate::paths::verbatim(&temporary))?;
         file.write_all(text.as_bytes())?;
         file.write_all(b"\n")?;
         file.sync_all()
@@ -96,8 +99,11 @@ pub fn write(target: &Path, document: &Value) -> Result<PathBuf> {
             format!("could not write {}: {error}", path.display()),
         )));
     }
-    if let Err(error) = fs::rename(&temporary, &path) {
-        let _ = fs::remove_file(&temporary);
+    if let Err(error) = fs::rename(
+        crate::paths::verbatim(&temporary),
+        crate::paths::verbatim(&path),
+    ) {
+        let _ = fs::remove_file(crate::paths::verbatim(&temporary));
         return Err(Error::Io(io::Error::new(
             error.kind(),
             format!("could not write {}: {error}", path.display()),

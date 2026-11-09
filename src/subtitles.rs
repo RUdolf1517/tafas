@@ -154,10 +154,10 @@ pub fn write(http: &Http, subtitle: &Subtitle, target: &Path) -> Result<PathBuf>
     let written = (|| -> io::Result<()> {
         if let Some(parent) = temporary.parent() {
             if !parent.as_os_str().is_empty() {
-                fs::create_dir_all(parent)?;
+                fs::create_dir_all(crate::paths::verbatim(parent))?;
             }
         }
-        let mut file = fs::File::create(&temporary)?;
+        let mut file = fs::File::create(crate::paths::verbatim(&temporary))?;
         file.write_all(&bytes)?;
         file.sync_all()
     })();
@@ -169,8 +169,8 @@ pub fn write(http: &Http, subtitle: &Subtitle, target: &Path) -> Result<PathBuf>
         )));
     }
 
-    fs::rename(&temporary, &path).map_err(|error| {
-        let _ = fs::remove_file(&temporary);
+    fs::rename(crate::paths::verbatim(&temporary), crate::paths::verbatim(&path)).map_err(|error| {
+        let _ = fs::remove_file(crate::paths::verbatim(&temporary));
         Error::Io(io::Error::new(
             error.kind(),
             format!("could not put {} in place: {error}", path.display()),

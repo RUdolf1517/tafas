@@ -209,12 +209,24 @@ pub fn run(urls: &[String], options: &Options) -> u8 {
     let http = http.with_limit_rate(options.limit_rate);
     let printer = Printer::new(options);
 
-    let mut items: Vec<Item> = if options.jobs <= 1 || urls.len() <= 1 {
+    // With one worker the item is announced as soon as it is done, which is what
+    // makes a long run readable. With several, the workers would interleave on
+    // stdout, so nothing is printed inside them and the results are announced
+    // here, in the order the user typed the URLs.
+    // `--list-formats` answers with a table on stdout, and two tables written by
+    // two workers are one unusable table; it is also a read-only mode with
+    // nothing to gain from concurrency.
+    let serial = options.jobs <= 1 || urls.len() <= 1 || options.list_formats;
+    let mut items: Vec<Item> = if serial {
         urls.iter()
-            .flat_map(|url| process(&http, url, options, &printer))
+            .flat_map(|url| process(&http, url, options, &printer, true))
             .collect()
     } else {
-        process_parallel(&http, urls, options, &printer)
+        let items = process_parallel(&http, urls, options, &printer);
+        for item in &items {
+            announce(item, options);
+        }
+        items
     };
 
     items.retain(|item| item.status != Status::Failed || !item.message.is_empty());
@@ -254,7 +266,7 @@ fn process_parallel(
                 };
                 // A list expands into several items; they keep the position of
                 // the URL they came from, which is the order the user typed.
-                for (offset, item) in process(http, &urls[index], options, printer)
+                for (offset, item) in process(http, &urls[index], options, printer, false)
                     .into_iter()
                     .enumerate()
                 {
@@ -276,12 +288,20 @@ fn process_parallel(
 /// entries are separate items with their own line on stdout, their own failure
 /// and their own report line, because that is what "one dead video must not
 /// stop the other nine" means in the output and not only in the exit code.
-fn process(http: &Http, url: &str, options: &Options, printer: &Printer) -> Vec<Item> {
+fn process(
+    http: &Http,
+    url: &str,
+    options: &Options,
+    printer: &Printer,
+    announce_now: bool,
+) -> Vec<Item> {
     let started = Instant::now();
     let mut item = Item::new(url);
 
     match sites::extract(http, url, &options.extractor_args) {
-        Ok(sites::Target::List(listing)) => return process_list(http, listing, options, printer),
+        Ok(sites::Target::List(listing)) => {
+            return process_list(http, listing, options, printer, announce_now)
+        }
         Ok(sites::Target::Video(media)) => {
             match handle(http, *media, options, printer, &mut item) {
                 Ok(status) => item.status = status,
@@ -292,7 +312,7 @@ fn process(http: &Http, url: &str, options: &Options, printer: &Printer) -> Vec<
     }
 
     item.elapsed_ms = started.elapsed().as_millis() as u64;
-    if options.jobs <= 1 {
+    if announce_now {
         announce(&item, options);
     }
     vec![item]
@@ -309,13 +329,17 @@ fn process_list(
     listing: crate::model::Listing,
     options: &Options,
     printer: &Printer,
+    announce_now: bool,
 ) -> Vec<Item> {
+    // The item is returned rather than announced here: whoever is in charge of
+    // stdout — `process` in serial mode, `run` in parallel mode — announces it
+    // once, like any other item. Announcing it here as well is exactly how one
+    // failure became two JSON objects.
     let fail_page = |url: &str, error: &Error| {
         let mut item = Item::new(url);
         item.site = listing.site.as_str().to_string();
         fail(&mut item, error, options, printer);
         item.elapsed_ms = 0;
-        announce(&item, options);
         item
     };
 
@@ -334,9 +358,13 @@ fn process_list(
         item.id = listing.id.clone();
         item.title = listing.title.clone();
         item.status = Status::Listed;
-        println!("{}", listing::describe(&listing, &chosen));
-        if options.json {
-            println!("{}", item.to_json());
+        // The description is the answer for this URL, so it is the result and
+        // goes to stdout — the same stream `print_formats` uses. It used to be
+        // followed by a JSON object when `--json` was also given, which put a
+        // table and an object on one stream; the table is the answer, and
+        // `announce` knows not to add the object to it.
+        if !write_stdout(&format!("{}\n", listing::describe(&listing, &chosen))) {
+            return vec![item];
         }
         return vec![item];
     }
@@ -368,28 +396,39 @@ fn process_list(
         entry_options.name = Some(listing::stem(position, &entry));
         entry_options.multiple = true;
         entry_options.playlist_items = None;
+        // `--format` and `--name` describe *one* file; a list renames each entry
+        // after its position and id. Dropping `format` but not `name` left the
+        // stem computed from `--name` and then thrown away by `target_path`,
+        // which worked and read as a bug — `docs/cli.md` §6 says both are
+        // dropped, so both are dropped here, where it can be seen.
         entry_options.format = None;
+        entry_options.name = None;
 
         match load(http, &entry.url, &entry_options, printer, &mut item) {
             Ok(status) => item.status = status,
             Err(error) => fail(&mut item, &error, options, printer),
         }
         item.elapsed_ms = started.elapsed().as_millis() as u64;
-        announce(&item, options);
+        if announce_now {
+            announce(&item, options);
+        }
         items.push(item);
     }
     items
 }
 
 /// Records a failure on an item and says it once, on stderr.
+///
+/// The failure is *not* written to stdout here. Every item — failed or not — is
+/// announced by the caller that owns it, once, and `--json` means one object per
+/// item (`docs/cli.md` §7). Printing here as well put two objects on stdout for
+/// one broken URL, which a reader piping into `jq` sees as a duplicate and a
+/// script counting lines sees as two failures.
 fn fail(item: &mut Item, error: &Error, options: &Options, printer: &Printer) {
     item.status = Status::Failed;
     item.reason = Some(error.kind().to_string());
     item.message = error.to_string();
     printer.error(&format!("tafas: {}", error));
-    if options.json {
-        println!("{}", item.to_json());
-    }
 }
 
 /// One entry's video, read and written. A list inside a list is a refusal: a
@@ -415,6 +454,12 @@ fn load(
 /// Writes what this item produced: the path on stdout (or the JSON object),
 /// and one human line on stderr.
 fn announce(item: &Item, options: &Options) {
+    // `--json` and `--list-formats` both answer on stdout, and the answer is one
+    // object per item: the stream table is `print_formats`, which writes it, and
+    // this must not put the object in the middle of it.
+    if options.list_formats {
+        return;
+    }
     if options.json {
         println!("{}", item.to_json());
         return;
@@ -510,9 +555,8 @@ fn handle(
                 }
             );
         }
-        if options.json {
-            println!("{}", item.to_json());
-        }
+        // No JSON here: `announce` writes the object for this item when the
+        // caller that owns it is done, and one item is one object.
         return Ok(Status::Planned);
     }
 
@@ -725,7 +769,7 @@ fn embed_subtitles(
 
     let temporary = part_path(target);
     let report = mp4write::write(&tracks, dimensions, &temporary)?;
-    std::fs::rename(&temporary, target).map_err(|error| {
+    std::fs::rename(paths::verbatim(&temporary), paths::verbatim(target)).map_err(|error| {
         let _ = std::fs::remove_file(&temporary);
         Error::Io(io::Error::new(
             error.kind(),
@@ -849,24 +893,34 @@ fn target_path(options: &Options, media: &Media, plan: &Plan) -> Result<PathBuf>
         }
     }
 
-    let stem = names::stem(media, options.name.as_deref());
-    let filename = format!("{stem}.{}", plan.extension());
-
+    // The stem is only meaningful where a file is named after the media: no `-o`
+    // at all, or `-o` naming a directory. When `-o` names the file, the name is
+    // the user's. Computed inside those branches rather than above them, so it
+    // cannot be discarded silently — which is what it was doing for every list
+    // entry, whose stem `process_list` had already decided.
     match &options.output {
-        None => Ok(PathBuf::from(filename)),
+        None => Ok(PathBuf::from(format!(
+            "{}.{}",
+            names::stem(media, options.name.as_deref()),
+            plan.extension()
+        ))),
         Some(output) => {
             let looks_like_dir = options.multiple
                 || output.is_dir()
                 || output.to_string_lossy().ends_with('/')
                 || output.to_string_lossy().ends_with('\\');
             if looks_like_dir {
-                fs::create_dir_all(output).map_err(|e| {
+                fs::create_dir_all(paths::verbatim(output)).map_err(|e| {
                     Error::Io(io::Error::new(
                         e.kind(),
                         format!("could not create {}: {e}", output.display()),
                     ))
                 })?;
-                Ok(output.join(filename))
+                Ok(output.join(format!(
+                    "{}.{}",
+                    names::stem(media, options.name.as_deref()),
+                    plan.extension()
+                )))
             } else {
                 Ok(output.clone())
             }
@@ -993,7 +1047,7 @@ fn fetch_hls(
 
     if let Some(parent) = part.parent() {
         if !parent.as_os_str().is_empty() {
-            fs::create_dir_all(parent)?;
+            fs::create_dir_all(paths::verbatim(parent))?;
         }
     }
 

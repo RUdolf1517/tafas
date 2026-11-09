@@ -64,7 +64,10 @@ player opens beats a smaller file half of them refuse.
 
 A height is a **ceiling**. If no stream is at or below it, the smallest stream
 above it is used — the run does not fail on a request the user cannot act on.
-`--list-formats` shows the numbers the decision was made from.
+`--list-formats` shows the numbers the decision was made from. The table is the
+stdout answer for that URL — for a video, its streams; for a playlist or channel,
+the entries it contains — and it is written once: `--json` does not add an object
+beside it.
 
 Video and audio are joined only when both are ISO-BMFF (`mp4`/`m4a`). A webm
 audio stream is downloaded separately and the terminal says why:
@@ -208,6 +211,10 @@ There are two kinds of list, and the flag means the same thing for both:
   exits `1` if any of them failed, which is what a URL list already does. One
   level is followed: a channel of playlists is refused rather than walked.
 
+A URL's `#fragment` is ignored rather than refused: the part after `#` is never
+sent to a server and no supported site keeps an id there, and the URL a player
+copies usually carries one (`…/123#t=1m30s`).
+
 A list of videos is written into a **directory**, because there is no rule that
 turns one filename into N predictable filenames. `-o` naming a file for a list is
 a usage error (2), before any request. `--format` and `--name` describe one file
@@ -218,10 +225,14 @@ already several downloads.
 
 Long paths on Windows are handled rather than refused: every path tafas writes —
 the staging file, the rename into place, a deep output directory, the HLS cache
-sidecars — is opened in its `\\?\` form when the platform needs it, which lifts
-the 260-character limit. A relative path, a path already in that form, one
-carrying `.`/`..` or forward slashes is passed through untouched, and a UNC path
-becomes `\\?\UNC\`. Nothing about this is visible on Linux or macOS.
+sidecars, and the three that sit beside the media (`--write-info-json`,
+`--write-subs`, `--write-thumbnail`) — is opened in its `\\?\` form when the
+platform needs it, which lifts the 260-character limit. A relative path, a path
+already in that form, one carrying `.`/`..` or forward slashes is passed through
+untouched, and a UNC path becomes `\\?\UNC\`. Nothing about this is visible on
+Linux or macOS. The sidecars are the part that was wrong first: they inherit the
+media's depth, so a deep path downloaded fine and then failed on its own
+`.info.json`.
 
 `--limit-rate RATE` caps the media bytes this run pulls: a progressive body and
 every segment of a list are charged against one budget, so `--concurrent-fragments
@@ -293,7 +304,9 @@ answers and exit 0.
 
 ## 6. JSON
 
-`--json` writes one object per item to stdout, one per line, and nothing else.
+`--json` writes one object per item to stdout, one per line, and nothing else —
+including on failure: a broken URL is one object with `"status": "failed"`, not
+one from the reporter and another from the announcer.
 Schema version 1:
 
 ```json

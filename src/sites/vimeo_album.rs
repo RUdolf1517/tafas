@@ -112,8 +112,9 @@ pub fn extract(http: &Http, url: &Url, kind: &Kind, raw: &str) -> Result<Listing
     loop {
         if pages >= MAX_PAGES {
             return Err(Error::Refused(format!(
-                "vimeo: album {album_id}: more than {} videos; this build reads the first {} \
-                 and stops rather than walking the whole showcase",
+                "vimeo: album {album_id} has more than {} videos and this build reads at most \
+                 {} of them; pass --playlist-items to choose from the first {}",
+                entries.len(),
                 entries.len(),
                 entries.len()
             )));

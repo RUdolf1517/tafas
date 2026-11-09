@@ -10,6 +10,12 @@ use crate::error::{Error, Result};
 /// `[A-Za-z0-9_-]{11}` and never encoded). Keeping it small keeps the one
 /// property that matters: a URL that does not parse is rejected before any
 /// request leaves the machine.
+///
+/// A **fragment is dropped**, not carried: `https://vimeo.com/123#t=1m30s` and
+/// `https://vimeo.com/123` are the same video, and the `#` part never leaves the
+/// browser — it is not sent to a server and no site's id lives there. This
+/// matters because the URL a user copies out of a player usually has one, and
+/// the alternative is refusing a link that works in the address bar.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Url {
     pub scheme: String,

@@ -164,3 +164,65 @@ fn the_naming_and_selection_rules_do_not_belong_to_one_site() {
     assert!(text.contains("vimeo 2632481"), "{text}");
     assert!(text.contains("2 of 3 entries"), "{text}");
 }
+
+/// `--name` and `--format` describe one file, and a list is several. The docs
+/// say both are dropped inside a list; the code dropped `format` and left
+/// `name` set, where `target_path` computed a stem from it and threw it away.
+/// That worked, and it read as a bug — so the drop is asserted here, together
+/// with the rule it protects: an entry is named for its position and id.
+#[test]
+fn a_list_drops_the_flags_that_describe_one_file() {
+    let source = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/download.rs"),
+    )
+    .expect("download.rs is in the tree");
+
+    let start = source
+        .find("entry_options.multiple = true;")
+        .expect("the list builds per-entry options");
+    let window = &source[start..start + 900];
+    for cleared in [
+        "entry_options.format = None;",
+        "entry_options.name = None;",
+        "entry_options.playlist_items = None;",
+    ] {
+        assert!(
+            window.contains(cleared),
+            "a list entry keeps a flag that describes one file: {cleared} is missing"
+        );
+    }
+}
+
+/// Every writer of a path goes through `paths::verbatim`, because a sidecar sits
+/// beside the media and inherits its depth: on Windows a `.info.json`, `.vtt` or
+/// thumbnail at a deep path failed at 260 characters while the download it
+/// described had succeeded. Checked as source, since the failure is only
+/// reachable on one platform — which is exactly why it went unnoticed.
+#[test]
+fn every_file_written_beside_the_media_can_reach_it() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    for file in ["src/info.rs", "src/subtitles.rs", "src/thumbnails.rs"] {
+        let text = std::fs::read_to_string(root.join(file)).expect("a writer is in the tree");
+        let writes = text.matches("File::create(").count();
+        assert!(writes > 0, "{file} writes a file");
+        assert!(
+            !text.contains("File::create(&temporary)"),
+            "{file} creates its temporary without paths::verbatim"
+        );
+        assert!(
+            text.contains("paths::verbatim(&temporary)"),
+            "{file} must open its temporary in the verbatim form"
+        );
+        // rustfmt breaks the call across lines in one of the three, so the
+        // rename is checked by its two arguments rather than as one line.
+        let renamed = text
+            .split("fs::rename(")
+            .nth(1)
+            .expect("a writer renames its temporary into place");
+        assert!(
+            renamed.contains("crate::paths::verbatim(&temporary)")
+                && renamed.contains("crate::paths::verbatim(&path)"),
+            "{file} must rename into place in the verbatim form"
+        );
+    }
+}

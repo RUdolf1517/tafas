@@ -70,9 +70,16 @@ publishing something nobody can check.
   floor fails here instead of in a release.
 - **Windows long paths.** `paths::verbatim` puts `\\?\` (or `\\?\UNC\`) in
   front of the paths tafas writes — the `.part`, the rename into place, a deep
-  output directory and the HLS cache sidecars — which is what makes a target past
-  260 characters work. A path where prefixing could change the meaning (relative,
-  already verbatim, `.`/`..`, forward slashes) is left exactly as it was.
+  output directory, the HLS cache sidecars, and the three sidecars written beside
+  the media (`--write-info-json`, `--write-subs`, `--write-thumbnail`), which
+  inherit the media's depth and were the ones that failed at 260 characters. A
+  path where prefixing could change the meaning (relative, already verbatim,
+  `.`/`..`, forward slashes) is left exactly as it was.
+- **`--json` writes exactly one object per item.** A failure used to be printed
+  by the code that recorded it *and* by the code that announced the item, so one
+  broken URL produced two identical lines and `--list-formats` produced a table
+  followed by an object. One item is one object now, whether it failed or not,
+  and whether the run was serial or `-j`.
 - **A progress line that fits.** The bar is drawn as wide as the terminal says
   (`COLUMNS`) and gives up its width before the numbers do; below 24 columns it
   is left alone rather than guessed at.

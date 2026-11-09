@@ -137,9 +137,15 @@ fn playlist(http: &Http, list: &str, raw: &str) -> Result<Listing> {
     let mut pages = 1;
     while let Some(next) = token.take() {
         if pages >= MAX_PAGES {
+            // "More than N … reads the first N" is honest and says which N: it
+            // is what was read, not a count this build cannot know. The advice
+            // is `--playlist-items` on *this* URL, which is the only thing that
+            // helps — the flag does nothing on a video URL, and the previous
+            // message sent the reader there.
             return Err(Error::Refused(format!(
-                "youtube: playlist {list}: more than {} entries; this build reads the first {} \
-                 (pass a shorter list or use --playlist-items on a video URL)",
+                "youtube: playlist {list} has more than {} entries and this build reads at most \
+                 {} of them; pass --playlist-items to choose from the first {}",
+                entries.len(),
                 entries.len(),
                 entries.len()
             )));
@@ -213,8 +219,9 @@ fn channel(http: &Http, url: &Url, handle: &str, id: &str, raw: &str) -> Result<
     while let Some(next) = token.take() {
         if pages >= MAX_PAGES {
             return Err(Error::Refused(format!(
-                "youtube: channel {handle}: more than {} videos; this build reads the first {}, \
-                 then stops rather than walking the whole channel",
+                "youtube: channel {handle} has more than {} videos and this build reads at most \
+                 {} of them; pass --playlist-items to choose from the first {}",
+                entries.len(),
                 entries.len(),
                 entries.len()
             )));
