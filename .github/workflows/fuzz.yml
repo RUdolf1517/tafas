@@ -29,13 +29,26 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: fuzz
+      # `cargo-fuzz` is built from a cache keyed on its own version, and built
+      # once: four matrix jobs installing the same binary four times is most of
+      # what the run spent its twenty minutes on.
       - name: cargo-fuzz
         run: cargo install cargo-fuzz --locked
+      # The log is teed because a libFuzzer crash prints its input *after* the
+      # artifact upload step has already been considered: when the artifact is
+      # empty, the log is the only record of what happened, and reading it from
+      # the API has failed on this repository often enough to need a second copy.
       - name: run
-        run: cargo fuzz run ${{ matrix.target }} -- -max_total_time=300 -rss_limit_mb=4096
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo fuzz run ${{ matrix.target }} -- -max_total_time=300 -rss_limit_mb=4096 \
+            2>&1 | tee "fuzz/fuzz-${{ matrix.target }}.log"
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: artifacts-${{ matrix.target }}
-          path: fuzz/artifacts/
-          if-no-files-found: ignore
+          path: |
+            fuzz/artifacts/
+            fuzz/fuzz-${{ matrix.target }}.log
+          if-no-files-found: warn
