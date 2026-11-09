@@ -62,11 +62,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # One `rustc -vV`, written to a file, and a `grep` over the file. The
+          # obvious version of this step — `rustc -vV | grep -q '^release: .*-nightly'`
+          # — failed three jobs out of four on a nightly toolchain and reported
+          # "got: rustc 1.102.0-nightly": `grep -q` exits at the first match,
+          # `rustc` takes SIGPIPE on its next write, and `pipefail` turns that
+          # into 141. It is a race, which is why the same guard passed on the
+          # run before. A guard against a silent failure has no business having
+          # one of its own.
           rustc -vV | tee rustc-vv.txt
-          rustc -vV | grep -q '^release: .*-nightly' || {
+          if ! grep -q '^release: .*-nightly$' rustc-vv.txt; then
             echo "::error::this job needs a nightly rustc; got: $(rustc -V)"
             exit 1
-          }
+          fi
       # `cargo-fuzz` is built from a cache keyed on its own version, and built
       # once: four matrix jobs installing the same binary four times is most of
       # what the run spent its twenty minutes on.
