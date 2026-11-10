@@ -71,7 +71,7 @@ concurrency is "four URLs at once".
 client), `http`, `url`, `icu_*` (through `idna`) and `tower`. It is by far the
 largest thing in the tree, and it is the one dependency an owner might reasonably
 want gone. Two of its optional features are off for size and are named where
-they are declared in `Cargo.toml`: `http2` (`h2`, 325 KB) and `charset`
+they are declared in `Cargo.toml`: `http2` (`h2`, 325 KB in an `opt-level = 3` build) and `charset`
 (`encoding_rs` plus `mime`, 31 KB, for a `.text()` this crate never calls).
 
 *The alternative:* `rustls` plus a hand-written HTTP/1.1 client — about 900 lines
