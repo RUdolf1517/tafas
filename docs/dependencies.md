@@ -34,7 +34,7 @@ and a badge turning red at 03:00 is not a test.
 | --- | --- | --- | --- |
 | `clap` | 4.5 | MIT OR Apache-2.0 | argument parsing, GNU-style errors, `--help`, suggestions, `--` handling |
 | `clap_complete` | 4.5 | MIT OR Apache-2.0 | completions generated from the live parser |
-| `reqwest` | 0.12 (blocking) | MIT OR Apache-2.0 | HTTP/1.1 + HTTP/2, redirects, chunked bodies, gzip, proxies |
+| `reqwest` | 0.12 (blocking) | MIT OR Apache-2.0 | HTTP/1.1, redirects, chunked bodies, gzip, proxies |
 | `rustls` | 0.23 (`ring`) | Apache-2.0 OR ISC OR MIT | TLS without OpenSSL |
 | `serde_json` | 1 | MIT OR Apache-2.0 | the seven sites speak JSON; so does `--json` |
 | `aes` | 0.8 | MIT OR Apache-2.0 | AES-128 block cipher, for encrypted HLS segments |
@@ -62,17 +62,21 @@ rejects duplicate flags.
 
 *Why not `ureq` or a hand-written HTTP client?* Three sites, three CDNs, plus
 redirectors (`t.co`, `vm.tiktok.com`) and Range requests. `reqwest` gives range
-handling, gzip, HTTP/2 and proxy configuration that are already tested against
+handling, gzip and proxy configuration that are already tested against
 real servers, and its blocking API keeps the whole program synchronous — no
 `async` runtime, no `tokio` in `main`, no executor to reason about when the only
 concurrency is "four URLs at once".
 
 *Cost:* `reqwest` pulls `hyper`, `tokio` (as a dependency of the blocking
-client), `h2`, `http`, `url`, `icu_*` (through `idna`) and `tower`. It is by far
-the largest thing in the tree, and it is the one dependency an owner might
-reasonably want gone. The alternative — `rustls` plus a hand-written HTTP/1.1
-client — is about 900 lines of code whose failure mode is silent truncation. That
-trade is recorded here rather than hidden.
+client), `http`, `url`, `icu_*` (through `idna`) and `tower`. It is by far the
+largest thing in the tree, and it is the one dependency an owner might reasonably
+want gone. Two of its optional features are off for size and are named where
+they are declared in `Cargo.toml`: `http2` (`h2`, 325 KB) and `charset`
+(`encoding_rs` plus `mime`, 31 KB, for a `.text()` this crate never calls).
+
+*The alternative:* `rustls` plus a hand-written HTTP/1.1 client — about 900 lines
+of code whose failure mode is silent truncation. That trade is recorded here
+rather than hidden.
 
 *Async alternative considered:* `reqwest` with `tokio` and `async` extractors.
 Rejected: the concurrency in this program is "a handful of URLs", the blocking
@@ -131,7 +135,7 @@ still demuxes into the same four samples.
 | Crate | Reached through | Note |
 | --- | --- | --- |
 | `tokio` | `reqwest/blocking` | built but never used as an async runtime by this code; the blocking client drives it internally |
-| `hyper`, `h2`, `http` | `reqwest` | HTTP/1.1 and HTTP/2 |
+| `hyper`, `http` | `reqwest` | HTTP/1.1 only: `h2` is deliberately off, see §4 |
 | `webpki-roots` | `reqwest` feature | the CA bundle, compiled in — no system trust store |
 | `ring` | `rustls` | see §1.3 |
 | `icu_*`, `idna` | `url` | internationalised domain handling |

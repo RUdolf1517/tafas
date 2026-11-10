@@ -11,6 +11,16 @@ version; adding a site, a flag or a container is minor. The policy is in
 
 ## [Unreleased]
 
+### Changed
+
+- **The binary is 31% smaller: 4.20 MB → 2.88 MB.** Two changes, both
+  measured on the same x86_64 build: `opt-level = "z"` instead of `3` (a
+  downloader is I/O bound, so the size buys back nothing a user can measure —
+  `--version` still starts in 4 ms), and `reqwest` without its `http2` and
+  `charset` features (`h2` was 325 KB for a protocol no site here speaks, and
+  `encoding_rs` was 31 KB for a `.text()` this crate never calls). The budget
+  job now records the smaller number, so the next growth is a diff.
+
 ### Fixed
 
 - **A caption body can no longer make the parser overflow.** A WebVTT cue

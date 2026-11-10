@@ -50,13 +50,19 @@ clap = { version = "4.5", default-features = false, features = [
 clap_complete = "4.5"
 
 # Blocking HTTP client. Chosen over a hand-rolled HTTP/1.1 stack because the
-# three sites are behind redirects, chunked transfer, gzip and HTTP/2, and a
-# downloader's failure modes there are silent corruption rather than an error.
+# sites are behind redirects, chunked transfer and gzip, and a downloader's
+# failure modes there are silent corruption rather than an error.
+# No `http2`: `h2` and its `hyper` integration are the single largest optional
+# piece of this graph, and every site here is reached over HTTP/1.1 with
+# `Connection: keep-alive` — measured at 325 KB of the release binary, 7.7%.
+# No `charset`: `encoding_rs` decodes a `Content-Type` charset for `.text()`,
+# and this crate never calls it — every page is read through `read_bounded`,
+# which is `String::from_utf8_lossy` over the bytes, because the sites are
+# UTF-8 and a Latin-1 body with a mislabelled header is not made better by
+# decoding it. Dropping the pair is 31 KB.
 reqwest = { version = "0.12", default-features = false, features = [
     "blocking",
     "gzip",
-    "charset",
-    "http2",
     "rustls-tls-webpki-roots-no-provider",
 ] }
 
@@ -87,7 +93,12 @@ cbc = { version = "0.1", features = ["block-padding"] }
 # already carry.
 
 [profile.release]
-opt-level = 3
+# `z` and not `3`: this program is I/O bound — its time goes into waiting for a
+# socket and into writing bytes it did not compute — so the ~25% of binary size
+# that `-Copt-level=3` buys over `z` is a download a user pays for and a start
+# they cannot measure. Both are checked: 4.20 MB -> 2.88 MB here, and the
+# `budgets` job refuses a build over its recorded size or start time.
+opt-level = "z"
 lto = "fat"
 codegen-units = 1
 panic = "abort"

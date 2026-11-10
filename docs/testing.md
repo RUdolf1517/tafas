@@ -94,8 +94,9 @@ rather than an assertion about how long the client took.
   `STYLE` and `REGION` are dropped on purpose, so there is no promise to test.
 - **Windows ACLs and case-insensitive collisions.** The name sanitiser is tested;
   the filesystem below it is not.
-- **HTTP/2-specific behaviour.** The client speaks both; the fixture server
-  speaks HTTP/1.1.
+- **HTTP/2.** The client speaks HTTP/1.1 only, because every site here does and
+  `h2` was 325 KB of the binary for it ([dependencies §4](dependencies.md)).
+  The fixture server speaks HTTP/1.1 for the same reason.
 - **The Windows installer, from `cargo test`.** `packaging/windows/install.ps1`
   is PowerShell: it moves directories, writes the user `PATH` and rolls back, so
   a Rust test asserting on strings would prove almost nothing. It has its own
