@@ -524,9 +524,15 @@ mod tests {
             assert_eq!(format.kind, StreamKind::Muxed, "sound is inside it");
         }
         let url = media.formats[0].url.as_deref().unwrap();
-        assert!(url.starts_with("https://clips-media-assets2.twitch.tv/1080.mp4?"), "{url}");
+        assert!(
+            url.starts_with("https://clips-media-assets2.twitch.tv/1080.mp4?"),
+            "{url}"
+        );
         assert!(url.contains("sig=abc123signature"), "{url}");
-        assert!(url.contains("&token=%7B%22authorization%22"), "the token is percent-encoded: {url}");
+        assert!(
+            url.contains("&token=%7B%22authorization%22"),
+            "the token is percent-encoded: {url}"
+        );
     }
 
     #[test]
@@ -553,11 +559,15 @@ mod tests {
     fn clip_urls_in_every_shape_the_site_uses() {
         let url = |raw: &str| Url::parse(raw).unwrap();
         assert_eq!(
-            clip_slug(&url("https://clips.twitch.tv/AwkwardHelplessSalamanderSwiftRage")),
+            clip_slug(&url(
+                "https://clips.twitch.tv/AwkwardHelplessSalamanderSwiftRage"
+            )),
             Some("AwkwardHelplessSalamanderSwiftRage".into())
         );
         assert_eq!(
-            clip_slug(&url("https://clips.twitch.tv/embed?clip=AwkwardHelplessSalamanderSwiftRage&parent=x")),
+            clip_slug(&url(
+                "https://clips.twitch.tv/embed?clip=AwkwardHelplessSalamanderSwiftRage&parent=x"
+            )),
             Some("AwkwardHelplessSalamanderSwiftRage".into()),
             "the embed form keeps the slug in the query"
         );
@@ -569,7 +579,10 @@ mod tests {
             clip_slug(&url("https://m.twitch.tv/someone/clip/AwkwardHelpless")),
             Some("AwkwardHelpless".into())
         );
-        assert_eq!(clip_slug(&url("https://www.twitch.tv/videos/1234567890")), None);
+        assert_eq!(
+            clip_slug(&url("https://www.twitch.tv/videos/1234567890")),
+            None
+        );
         assert_eq!(clip_slug(&url("https://www.twitch.tv/someone")), None);
     }
 
