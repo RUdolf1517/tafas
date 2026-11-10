@@ -16,6 +16,13 @@
 //! build can promise about it. A track that offers only the HLS/opus renditions
 //! is refused by name — demuxing opus it cannot do, and pretending an MP3
 //! exists when the page lists none would be a quiet lie.
+//!
+//! A set (`/<artist>/sets/<slug>`) is a list of tracks and is read as one, in
+//! [`soundcloud_set`](super::soundcloud_set): `--playlist-items`, one file per
+//! entry, one dead track costing the others nothing. The list route runs first,
+//! so a set URL never reaches this reader — and when it does (a build compiled
+//! without the list route, a shape the list reader refuses), the refusal says
+//! that the address is a set rather than calling it an unknown track.
 
 use serde_json::Value;
 
@@ -42,16 +49,19 @@ pub fn extract(
     } else {
         url.clone()
     };
-    if is_set(&url) {
-        return Err(Error::Unsupported(format!(
-            "{raw}: a set is a list of tracks, and this build captures one URL as one file; \
-             the set's page lists the tracks that can be captured one at a time"
-        )));
-    }
     let (artist, slug) = track_path(&url).ok_or_else(|| {
-        Error::Usage(format!(
-            "{raw} is not a track URL: expected https://soundcloud.com/<artist>/<track>"
-        ))
+        // A set URL reaches here only when the list route did not run, and
+        // “not a track URL” would hide the thing that has to happen instead.
+        if is_set(&url) {
+            Error::Usage(format!(
+                "{raw} is a set: a list of tracks, which the list route reads and which this \
+                 reader cannot turn into one file"
+            ))
+        } else {
+            Error::Usage(format!(
+                "{raw} is not a track URL: expected https://soundcloud.com/<artist>/<track>"
+            ))
+        }
     })?;
     let page_url = format!("https://soundcloud.com/{artist}/{slug}");
     let page = http.get_text(&page_url, &PAGE_HEADERS)?;
@@ -108,8 +118,12 @@ pub fn sound(value: &Value) -> Result<(&Value, String)> {
         }
     }
     if saw_playlist {
+        // The list route reads a set; reaching this point means it did not run,
+        // and “no track here” would send the reader looking for the wrong thing.
         return Err(Error::Unsupported(
-            "soundcloud: this page is a set, and a capture is one URL as one file".to_string(),
+            "soundcloud: this page is a set — a list of tracks — and the set's tracks are \
+             captured one at a time; this build reads a set only through its list route"
+                .to_string(),
         ));
     }
     Err(Error::Refused(
@@ -193,7 +207,7 @@ fn request_headers() -> Vec<(String, String)> {
 }
 
 /// `window.__sc_hydration = [ ... ];` out of the page, as JSON.
-fn hydration(page: &str) -> Option<Value> {
+pub(crate) fn hydration(page: &str) -> Option<Value> {
     let start = page.find("__sc_hydration")?;
     let tail = &page[start..];
     let open = tail.find('[')?;
@@ -231,7 +245,7 @@ fn hydration(page: &str) -> Option<Value> {
 /// The public `client_id` the player itself sends. It appears in the page as
 /// `client_id=<32 alphanumerics>`, inside a script URL and inside inline JSON,
 /// so both spellings are accepted.
-fn client_id(page: &str) -> Option<String> {
+pub(crate) fn client_id(page: &str) -> Option<String> {
     let marker = "client_id";
     let mut rest = page;
     while let Some(index) = rest.find(marker) {
@@ -362,10 +376,15 @@ mod tests {
     }
 
     #[test]
-    fn a_set_is_refused_by_name() {
+    fn a_set_page_is_named_as_a_set_and_not_as_a_missing_track() {
         let value = json!([{ "hydratable": "playlist", "data": { "title": "a set" } }]);
         let error = sound(&value).unwrap_err();
-        assert!(error.to_string().contains("set"), "{error}");
+        let text = error.to_string();
+        assert!(text.contains("set"), "{text}");
+        assert!(
+            text.contains("one at a time"),
+            "the sentence says what to do with the tracks: {text}"
+        );
     }
 
     #[test]

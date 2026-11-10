@@ -9,6 +9,34 @@ changing a default, an exit code's meaning or a JSON field's meaning is a major
 version; adding a site, a flag or a container is minor. The policy is in
 [docs/releases.md](docs/releases.md).
 
+## [Unreleased]
+
+### Added
+
+- **Twitch clips.** `clips.twitch.tv/<slug>`, its `embed?clip=` form,
+  `twitch.tv/<channel>/clip/<slug>` and the `m.` host: one unbatched GraphQL
+  request (`VideoAccessToken_Clip`) answers the `sig`/`token` pair and one
+  `sourceURL` per rendition, and each of those is a complete MP4 with the sound
+  already joined — so the chosen rendition is copied verbatim, through the same
+  route an ordinary progressive MP4 takes. Nothing new in the fetcher. Four
+  refusals, each by name: the clip does not exist, every rendition is still
+  being encoded, the answer carries no `sig` or no `token`, and an address that
+  is neither a VOD, a clip nor a collection.
+- **SoundCloud sets.** `/<artist>/sets/<slug>` is a list page: the set's entry in
+  the page's own hydration document, then
+  `api-v2.soundcloud.com/playlists/<id>` for the tracks the page did not carry,
+  following `next_href` the way the site's player does. `--playlist-items`, one
+  file per entry and one dead track costing the others nothing all come from
+  `listing.rs`, unchanged. A set whose page names more tracks than could be read
+  is captured anyway, and the run says so on stderr before the first entry:
+  “the page says it holds 40 entries and this build read 12”. Paging is bounded at
+  two pages of two hundred, as the other list readers are.
+
+### Changed
+
+- `--info` lists `soundcloud set` among the list pages, and SoundCloud's routes
+  name the set route.
+
 ## [0.2.1] - 2026-11-10
 
 A patch release: two parsers that could be made to panic by a file, and a

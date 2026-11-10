@@ -148,7 +148,7 @@ pub const READERS: &[Reader] = &[
         name: "soundcloud",
         hosts: &["soundcloud.com", "on.soundcloud.com"],
         args: false,
-        listing: None,
+        listing: Some(super::soundcloud_set::listing),
         video: super::soundcloud::extract,
     },
     #[cfg(feature = "twitch")]

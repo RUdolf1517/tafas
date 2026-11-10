@@ -300,7 +300,23 @@ fn process(
 
     match sites::extract(http, url, &options.extractor_args) {
         Ok(sites::Target::List(listing)) => {
-            return process_list(http, listing, options, printer, announce_now)
+            // Said here, once, before any entry is announced: a listing that
+            // holds fewer entries than the page promised is a capture, not a
+            // failure — and “12 of 12” printed over a set of forty is the quiet
+            // lie the reader went to the trouble of counting against.
+            if let Some(total) = listing.incomplete {
+                let read = listing.entries.len();
+                printer.warn(&format!(
+                    "tafas: {} {}: the page says it holds {total} {} and this build read {read}; \
+                     the {read} {} read {} captured, and nothing here claims the list is whole",
+                    listing.site,
+                    listing.id,
+                    if total == 1 { "entry" } else { "entries" },
+                    if read == 1 { "entry" } else { "entries" },
+                    if read == 1 { "is" } else { "are" }
+                ));
+            }
+            return process_list(http, listing, options, printer, announce_now);
         }
         Ok(sites::Target::Video(media)) => {
             match handle(http, *media, options, printer, &mut item) {
