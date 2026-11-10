@@ -48,7 +48,6 @@ use crate::url::{percent_encode, Url};
 /// query returns.
 pub const PER_PAGE: usize = 200;
 
-
 /// How many pages of a set one run reads. Two hundred tracks per page is more
 /// than any set this build expects; the bound exists so a `next_href` loop
 /// cannot run forever, and reaching it is a refusal that names the count.
@@ -206,7 +205,11 @@ fn listing_with(mut listing: Listing, entries: Vec<Entry>) -> Listing {
 /// The count is `track_count`, and it is only trusted when it is larger than
 /// what the page rendered: a page that says 3 and shows 3 has answered.
 fn set_entry(hydrated: &Value) -> Option<(&Value, Vec<Value>, Option<usize>)> {
-    for entry in hydrated.as_array().map(|list| list.as_slice()).unwrap_or(&[]) {
+    for entry in hydrated
+        .as_array()
+        .map(|list| list.as_slice())
+        .unwrap_or(&[])
+    {
         if text(entry, &["hydratable"]).as_deref() != Some("playlist") {
             continue;
         }
@@ -378,7 +381,11 @@ mod tests {
             "page order, not sorted"
         );
         assert_eq!(entries[0].title, "seven");
-        assert_eq!(entries[0].duration, Some(180), "milliseconds become seconds");
+        assert_eq!(
+            entries[0].duration,
+            Some(180),
+            "milliseconds become seconds"
+        );
         assert_eq!(entries[0].url, "https://soundcloud.com/someone/seven");
     }
 
@@ -466,7 +473,9 @@ mod tests {
                 "1234",
                 "abc",
                 None,
-                Some("https://api-v2.soundcloud.com/playlists/1234/tracks?offset=200&client_id=zzz")
+                Some(
+                    "https://api-v2.soundcloud.com/playlists/1234/tracks?offset=200&client_id=zzz"
+                )
             ),
             "https://api-v2.soundcloud.com/playlists/1234/tracks?offset=200&client_id=zzz",
             "an id the href already carries is not appended twice"
