@@ -52,7 +52,7 @@ $ tafas https://x.com/nasa/status/1732902605501431916 | xargs -r mpv
 ```bash
 curl -fsSL https://raw.githubusercontent.com/RUdolf1517/tafas/main/install.sh | sh   # binary, no Rust
 brew tap RUdolf1517/tafas https://github.com/RUdolf1517/tafas && brew install RUdolf1517/tafas/tafas
-cargo install --git https://github.com/RUdolf1517/tafas --tag v0.2.0                 # Rust 1.82+
+cargo install --git https://github.com/RUdolf1517/tafas --tag v0.2.1                 # Rust 1.82+
 ```
 
 Linux (x86_64 and ARM64), macOS (Apple silicon and Intel), Windows x64. The
@@ -191,6 +191,8 @@ afterwards and an item still being built is not a promise — so the first relea
 after 0.1.0 was the one with everything in it. Everything below is in that
 archive; `main` is ahead of it again as soon as the next item lands, and
 `cargo install --git https://github.com/RUdolf1517/tafas` is how to get that.
+0.2.1 is a patch on top of it — two parser fixes and a binary 31% smaller —
+and the same rule applies: it is a defect release, not a new promise.
 
 | Where it goes | State | What it is |
 | --- | --- | --- |

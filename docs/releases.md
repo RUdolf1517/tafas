@@ -87,7 +87,7 @@ stable URL, which is what `install.sh` downloads from.
 | AUR | Arch (x86_64, aarch64) | `PKGBUILD` from `tafas-channels-X.Y.Z.tar.gz`, then `makepkg -si` |
 | Scoop | Windows 10/11 x64 | `tafas.json` from `tafas-channels-X.Y.Z.tar.gz` into a bucket, then `scoop install tafas` |
 | Nix | any NixOS or Nix on Linux/macOS | `flake.nix` from `tafas-channels-X.Y.Z.tar.gz`, then `nix profile install .` |
-| cargo | anything with Rust 1.82+ | `cargo install --git https://github.com/RUdolf1517/tafas --tag v0.2.0` |
+| cargo | anything with Rust 1.82+ | `cargo install --git https://github.com/RUdolf1517/tafas --tag v0.2.1` |
 | PowerShell | Windows 10/11 x64 | download `install.ps1` from the release, then `powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1` |
 | winget (local manifest) | Windows 10/11 x64 | unpack `tafas-winget-local-manifests-vX.Y.Z.zip`, then `winget install --manifest <version>` |
 | archive | everything else | unpack, put `tafas` on `PATH` |

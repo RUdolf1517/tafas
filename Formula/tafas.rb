@@ -4,12 +4,16 @@
 #   brew tap RUdolf1517/tafas https://github.com/RUdolf1517/tafas
 #   brew install RUdolf1517/tafas/tafas
 #
-# The `sha256` values are filled in from the release's SHA256SUMS after the tag
-# exists; the release notes carry them. See docs/releases.md §4.
+# This formula is **not installable as it stands**, and it says so rather than
+# shipping zeroes that look like a hash: a `sha256` can only be known once the
+# tag exists and the release workflow has attached its archives. Filling them in
+# from that release's SHA256SUMS is the one hand edit in the release process
+# (docs/releases.md §4), and it is a follow-up commit on purpose — the archive
+# has to exist before its hash does.
 class Tafas < Formula
   desc "Capture a video from YouTube, TikTok, X, Vimeo, Reddit, SoundCloud or Twitch as one playable MP4"
   homepage "https://github.com/RUdolf1517/tafas"
-  version "0.2.0"
+  version "0.2.1"
   license "MIT"
 
   on_macos do

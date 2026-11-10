@@ -9,17 +9,25 @@ changing a default, an exit code's meaning or a JSON field's meaning is a major
 version; adding a site, a flag or a container is minor. The policy is in
 [docs/releases.md](docs/releases.md).
 
-## [Unreleased]
+## [0.2.1] - 2026-11-10
+
+A patch release: two parsers that could be made to panic by a file, and a
+binary less than half the size it needs to be. No flag, no default and no JSON
+field changed, so nothing here is a breaking change.
+
+Nothing is signed, and the Alpine package is still `--allow-untrusted`, for the
+reason 0.2.0 gave: the key is a secret this repository does not hold
+([releases](docs/releases.md#reproducibility-signatures-and-the-sbom)).
 
 ### Changed
 
 - **The binary is 31% smaller: 4.20 MB → 2.88 MB.** Two changes, both
   measured on the same x86_64 build: `opt-level = "z"` instead of `3` (a
   downloader is I/O bound, so the size buys back nothing a user can measure),
-  and `reqwest` without its `http2` and
-  `charset` features (`h2` was 325 KB for a protocol no site here speaks, and
-  `encoding_rs` was 31 KB for a `.text()` this crate never calls). The budget
-  job now records the smaller number, so the next growth is a diff.
+  and `reqwest` without its `http2` and `charset` features (`h2` was 325 KB for
+  a protocol no site here speaks, and `encoding_rs` was 31 KB for a `.text()`
+  this crate never calls). The budget job now records the smaller number, so
+  the next growth is a diff.
 
 ### Fixed
 
