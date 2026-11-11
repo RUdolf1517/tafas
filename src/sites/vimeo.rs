@@ -98,7 +98,7 @@ fn locked_refusal(id: &str, raw: &str) -> String {
 /// A locked player: the password is proved, and the config the endpoint answers
 /// with is what `parse` reads.
 fn unlocked(http: &Http, shell: &Value, id: &str, page_url: String, raw: &str) -> Result<Media> {
-    let Some(password) = crate::vimeo_password::from_environment() else {
+    let Some(password) = crate::vimeo_password::from_environment()? else {
         return Err(Error::Refused(locked_refusal(id, raw)));
     };
     // The player's own address for this video, which is what the endpoint is

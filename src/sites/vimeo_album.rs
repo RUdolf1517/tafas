@@ -97,7 +97,7 @@ pub fn extract(http: &Http, url: &Url, kind: &Kind, raw: &str) -> Result<Listing
     let album = album_document(http, &album_id, &jwt, raw)?;
     let mut hashed_pass: Option<String> = None;
     if at(&album, &["privacy", "view"]).and_then(Value::as_str) == Some("password") {
-        let Some(password) = crate::vimeo_password::from_environment() else {
+        let Some(password) = crate::vimeo_password::from_environment()? else {
             return Err(Error::Refused(format!(
                 "vimeo: album {album_id}: it is protected by a password, and none was given; set \
                  {} (or {} to a file holding one) — a password is not a command-line argument",

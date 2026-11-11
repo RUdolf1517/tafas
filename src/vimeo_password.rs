@@ -37,38 +37,27 @@ pub const PASSWORD_FILE_ENV: &str = "TAFAS_VIDEO_PASSWORD_FILE";
 
 /// The password this run was given, if it was given one.
 ///
-/// `None` means the user said nothing, and every refusal that mentions a
-/// password keeps saying the video is protected without one — the flag is not
-/// required for a public video, and a missing password is not an error until a
-/// page turns out to need one.
-pub fn from_environment() -> Option<String> {
+/// `Ok(None)` means the user said nothing, and every refusal that mentions a
+/// password keeps saying the video is protected without one — the variable is
+/// not required for a public video, and a missing password is not an error until
+/// a page turns out to need one. `Err` means the user named a file and it could
+/// not be read, which is not the same thing and must not read as "no password".
+pub fn from_environment() -> Result<Option<String>> {
     if let Some(path) = std::env::var_os(PASSWORD_FILE_ENV) {
-        // A file that cannot be read is *not* silently "no password": the user
-        // named a file, and the refusal says the file is the problem.
-        return match std::fs::read_to_string(&path) {
-            Ok(text) => {
-                let password = text.trim_end_matches(['\r', '\n']).to_string();
-                if password.is_empty() {
-                    None
-                } else {
-                    Some(password)
-                }
-            }
-            Err(error) => {
-                // Reported through the same channel as a refusal with a name, so
-                // the run stops before any request rather than at the password.
-                eprintln!(
-                    "tafas: {PASSWORD_FILE_ENV}={}: could not be read ({error})",
-                    path.to_string_lossy()
-                );
-                None
-            }
-        };
+        // A file that cannot be read is *not* "no password": the user named a
+        // file, and the run stops with the sentence that says which one and why.
+        let body = std::fs::read_to_string(&path).map_err(|error| {
+            Error::Usage(format!(
+                "{PASSWORD_FILE_ENV}={}: the file cannot be read ({error}); it has to hold the \
+                 password on its first line",
+                path.to_string_lossy()
+            ))
+        })?;
+        return Ok(password_from_file(&body));
     }
-    std::env::var(PASSWORD_ENV)
+    Ok(std::env::var(PASSWORD_ENV)
         .ok()
-        .map(|password| password.trim_end_matches(['\r', '\n']).to_string())
-        .filter(|password| !password.is_empty())
+        .and_then(|password| password_from_file(&password)))
 }
 
 /// The one line of a password file: the password, without the newline a shell
@@ -90,7 +79,7 @@ pub fn password_from_file(text: &str) -> Option<String> {
 pub fn base64(input: &str) -> String {
     const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let bytes = input.as_bytes();
-    let mut out = String::with_capacity((bytes.len() + 2) / 3 * 4);
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
     for chunk in bytes.chunks(3) {
         let b = [
             chunk[0],
@@ -178,11 +167,9 @@ pub fn unlock_album(
 ) -> Result<Option<String>> {
     let endpoint = format!("https://vimeo.com/showcase/{album_id}/auth");
     let mut body = format!("password={}", percent_encode(password));
-    if let Some(token) = xsrft {
-        if !token.is_empty() {
-            body.push_str("&token=");
-            body.push_str(&percent_encode(token));
-        }
+    if let Some(token) = xsrft.filter(|token| !token.is_empty()) {
+        body.push_str("&token=");
+        body.push_str(&percent_encode(token));
     }
     let status = http.status_of(
         "vimeo-album-password",
