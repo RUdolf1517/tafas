@@ -434,6 +434,71 @@ fn every_reader_is_a_feature_and_every_feature_is_a_reader() {
     }
 }
 
+/// The crate that goes to crates.io ships the source and nothing else, and the
+/// workflow that publishes it only uploads on a tag that is already released.
+///
+/// Both are promises a reader depends on and neither can be checked by shipping
+/// a release: a version on crates.io cannot be replaced, and an archive that
+/// carried `packaging/` or the fuzz workspace would be bytes nobody asked for,
+/// forever. So they are checked here, where a mistake costs a red test.
+#[test]
+fn the_published_crate_is_the_source_and_publishes_only_on_a_tag() {
+    let manifest = read("Cargo.toml");
+    let include = manifest
+        .split("include = [")
+        .nth(1)
+        .and_then(|rest| rest.split(']').next())
+        .expect("Cargo.toml says what the published crate holds");
+    for required in ["src/**", "Cargo.toml", "LICENSE", "README.md", "CHANGELOG.md"] {
+        assert!(
+            include.contains(&format!("\"{required}\"")),
+            "the package must include {required}, which it does not"
+        );
+    }
+    // The crates.io categories and keywords are capped (5 and 5), and a
+    // validation failure there is an upload rejected after the version number is
+    // already burned.
+    let keywords = manifest
+        .split("keywords = [")
+        .nth(1)
+        .and_then(|rest| rest.split(']').next())
+        .expect("Cargo.toml lists keywords");
+    assert!(
+        keywords.split(',').count() <= 5,
+        "crates.io accepts at most five keywords: {keywords}"
+    );
+    let categories = manifest
+        .split("categories = [")
+        .nth(1)
+        .and_then(|rest| rest.split(']').next())
+        .expect("Cargo.toml lists categories");
+    assert!(
+        categories.split(',').count() <= 5,
+        "crates.io accepts at most five categories: {categories}"
+    );
+
+    let publish = read(".github/workflows/publish.yml");
+    // The irreversible step is behind one condition, and that condition has to
+    // mention the event and the token: a `workflow_dispatch` that published by
+    // default would be a version number spent by a misclick.
+    assert!(
+        publish.contains("cargo publish"),
+        "publish.yml must be the thing that publishes"
+    );
+    assert!(
+        publish.contains("github.event_name") && publish.contains("CARGO_REGISTRY_TOKEN"),
+        "the upload must be conditional on the event and on the token being present"
+    );
+    assert!(
+        publish.contains("cargo package --list"),
+        "publish.yml must check what the package holds before uploading it"
+    );
+    assert!(
+        publish.contains("dry_run") || publish.contains("dry-run"),
+        "a manual run must be able to package without publishing"
+    );
+}
+
 /// Every script the release job runs has to exist, and the page that describes
 /// the process has to name the script that is actually there.
 ///

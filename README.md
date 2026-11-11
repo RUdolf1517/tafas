@@ -52,7 +52,8 @@ $ tafas https://x.com/nasa/status/1732902605501431916 | xargs -r mpv
 ```bash
 curl -fsSL https://raw.githubusercontent.com/RUdolf1517/tafas/main/install.sh | sh   # binary, no Rust
 brew tap RUdolf1517/tafas https://github.com/RUdolf1517/tafas && brew install RUdolf1517/tafas/tafas
-cargo install --git https://github.com/RUdolf1517/tafas --tag v0.2.1                 # Rust 1.82+
+cargo install tafas                                                                 # Rust 1.82+
+cargo install --git https://github.com/RUdolf1517/tafas --tag v0.2.1                # a version not yet on crates.io
 ```
 
 Linux (x86_64 and ARM64), macOS (Apple silicon and Intel), Windows x64. The

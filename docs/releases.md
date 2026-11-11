@@ -89,7 +89,7 @@ stable URL, which is what `install.sh` downloads from.
 | AUR | Arch (x86_64, aarch64) | `PKGBUILD` from `tafas-channels-X.Y.Z.tar.gz`, then `makepkg -si` |
 | Scoop | Windows 10/11 x64 | `tafas.json` from `tafas-channels-X.Y.Z.tar.gz` into a bucket, then `scoop install tafas` |
 | Nix | any NixOS or Nix on Linux/macOS | `flake.nix` from `tafas-channels-X.Y.Z.tar.gz`, then `nix profile install .` |
-| cargo | anything with Rust 1.82+ | `cargo install --git https://github.com/RUdolf1517/tafas --tag v0.2.1` |
+| cargo | anything with Rust 1.82+ | `cargo install tafas`, or `cargo install --git https://github.com/RUdolf1517/tafas --tag v0.2.1` for a version that is not on crates.io |
 | PowerShell | Windows 10/11 x64 | download `install.ps1` from the release, then `powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1` |
 | winget (local manifest) | Windows 10/11 x64 | unpack `tafas-winget-local-manifests-vX.Y.Z.zip`, then `winget install --manifest <version>` |
 | archive | everything else | unpack, put `tafas` on `PATH` |
@@ -178,11 +178,41 @@ that is done `main` is what there is.
 5. The Homebrew formula gets the new version and the hashes from
    `SHA256SUMS`; this is a follow-up commit, and it is the only hand edit in the
    process.
-6. `cargo install` works from the tag without any additional publication step.
+6. `cargo install` works from the tag without any additional publication step,
+   and the `publish` workflow attaches the same tag to crates.io — see
+   [§4.1](#41-cratesio).
 
 Nothing is built on a developer machine. The workflow is the only place a
 shipped binary is produced, which is what makes "the archive contains what the
 tag contains" a property rather than a hope.
+
+### 4.1 crates.io
+
+`cargo add tafas` downloads the *source*: the crate is a library with a binary
+on top, and publishing it is what makes `cargo install tafas` work without a
+git URL. It is a separate workflow (`.github/workflows/publish.yml`) because it
+can fail on its own — a missing artifact for one target is not a reason to
+withhold a crate — and because one of the two is irreversible.
+
+**A version on crates.io cannot be replaced, only yanked.** So the upload runs on
+one condition: a release that is already *published* here, with the owner's
+`CARGO_REGISTRY_TOKEN` present in the repository's secrets. A `workflow_dispatch`
+run packages, builds the archive the way `cargo install` will, and stops — the
+`dry_run` box is ticked by default. A fork, a pull request and a branch have the
+same behaviour: no token, no upload.
+
+The workflow checks three things before it can upload, all of them cheap and all
+of them things that cannot be fixed after the fact:
+
+| Check | Why before, not after |
+| --- | --- |
+| `cargo package --list` holds `src/`, the licence, the readme and the changelog, and holds no `packaging/`, `.github/`, `fuzz/`, `tests/` or `Formula/` | an archive carries whatever it was given, forever |
+| the `.crate` archive is unpacked and built with `cargo build --release --offline` | this is what a user's `cargo install` does, and a file the build needs but the package forgot fails here rather than in their terminal |
+| the packaged binary prints `--version` | a crate that publishes a binary that does not run is worse than one that publishes none |
+
+The token is the owner's and is not in this repository, which is the same rule the
+signing key follows ([§3](#3-reproducibility-signatures-and-the-sbom)). Nothing
+below needs a credential: publishing is the one step of a release that does.
 
 The publish job needs three tools beyond Rust and the shell: `nfpm` (Go) for the
 `.deb`/`.rpm`, `python3` for the `.apk`, the winget manifests, the

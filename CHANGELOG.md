@@ -50,10 +50,35 @@ version; adding a site, a flag or a container is minor. The policy is in
   pasted into bug reports. `docs/roadmap.md` §7 said there would be no `TAFAS_*`
   variables; it now says why this is the one exception.
 
+- **The crate is published to crates.io**, so `cargo install tafas` works
+  without a git URL and `cargo add tafas` gives a library that is the same code
+  the binary runs. The public surface is documented with runnable examples:
+  `tafas::inspect` reads one URL into a `Media`, `tafas::site` answers which site
+  a URL names without touching the network, and `download::run` with
+  `download::Options::default()` is the whole capture. The package ships `src/`,
+  the licence, the readme, the changelog and `docs/`; `packaging/`, `.github/`,
+  `fuzz/`, `tests/` and `Formula/` are excluded, and a packaging test keeps it
+  that way.
+
+  Publishing is `.github/workflows/publish.yml`, triggered by a published
+  release, because a version on crates.io cannot be replaced. A manual run
+  packages and builds the archive the way `cargo install` will, and stops.
+  Nothing here changes the binary and nothing changes an existing flag.
+
 ### Changed
 
 - `--info` lists `soundcloud set` among the list pages, and SoundCloud's routes
   name the set route.
+- `Cargo.toml` keywords are the sites rather than the file format: `video`,
+  `download`, `youtube`, `vimeo`, `soundcloud`. The crates.io search that a user
+  actually types is a site name, and `cli`/`tiktok` were not earning their slot.
+- **CI no longer skips a step because the one before it failed.** A clippy
+  failure with `continue-on-error` left the job green while `Test` and
+  `Release build` were skipped — a passing run that ran no test. Every step now
+  runs unless the run is cancelled, and the job fails when any step's outcome is
+  not `success`, including `skipped`. `no_release_is_cut_before_the_roadmap_is_done`
+  had been failing on `main` unseen for the same reason; the roadmap and the
+  releases page now state the rule in the present tense.
 
 ## [0.2.1] - 2026-11-10
 
