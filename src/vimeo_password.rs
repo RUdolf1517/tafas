@@ -163,10 +163,7 @@ pub fn unlock_video(http: &Http, page_url: &str, password: &str) -> Result<Video
         &endpoint,
         reqwest::Method::POST,
         &[("referer", page)],
-        Some((
-            "application/x-www-form-urlencoded",
-            body.into_bytes(),
-        )),
+        Some(("application/x-www-form-urlencoded", body.into_bytes())),
     )?;
     Ok(VideoAnswer::Configuration(config))
 }
@@ -192,7 +189,10 @@ pub fn unlock_album(
         &endpoint,
         reqwest::Method::POST,
         &[("x-requested-with", "XMLHttpRequest")],
-        Some(("application/x-www-form-urlencoded", body.clone().into_bytes())),
+        Some((
+            "application/x-www-form-urlencoded",
+            body.clone().into_bytes(),
+        )),
     )?;
     if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
         return Ok(None);
@@ -229,7 +229,11 @@ mod tests {
             Some("with trailing spaces  "),
             "only the line ending is removed; spaces are part of the password"
         );
-        assert_eq!(password_from_file("\n"), None, "a blank file is no password");
+        assert_eq!(
+            password_from_file("\n"),
+            None,
+            "a blank file is no password"
+        );
         assert_eq!(password_from_file(""), None);
     }
 

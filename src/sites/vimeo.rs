@@ -114,9 +114,7 @@ fn unlocked(http: &Http, shell: &Value, id: &str, page_url: String, raw: &str) -
             "vimeo: {id}: the password was not accepted (the player answers 418 for a wrong \
              one); nothing was retried and nothing was guessed"
         ))),
-        crate::vimeo_password::VideoAnswer::Configuration(config) => {
-            parse(&config, id, page_url)
-        }
+        crate::vimeo_password::VideoAnswer::Configuration(config) => parse(&config, id, page_url),
     }
 }
 
@@ -413,7 +411,10 @@ mod tests {
         // test in this build runs — so the sentence is what is checked.
         let text = locked_refusal("1", "https://vimeo.com/1");
         assert!(text.contains("TAFAS_VIDEO_PASSWORD"), "{text}");
-        assert!(text.contains("process list"), "it says why not a flag: {text}");
+        assert!(
+            text.contains("process list"),
+            "it says why not a flag: {text}"
+        );
     }
 
     #[test]

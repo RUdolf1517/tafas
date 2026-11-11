@@ -138,7 +138,14 @@ pub fn extract(http: &Http, url: &Url, kind: &Kind, raw: &str) -> Result<Listing
             )));
         }
         let before = entries.len();
-        let page = videos_page(http, &album_id, &jwt, pages + 1, raw, hashed_pass.as_deref())?;
+        let page = videos_page(
+            http,
+            &album_id,
+            &jwt,
+            pages + 1,
+            raw,
+            hashed_pass.as_deref(),
+        )?;
         pages += 1;
         collect(&page, &mut entries);
         if !another_page(&page, before, entries.len()) {
