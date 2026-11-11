@@ -32,6 +32,24 @@ version; adding a site, a flag or a container is minor. The policy is in
   “the page says it holds 40 entries and this build read 12”. Paging is bounded at
   two pages of two hundred, as the other list readers are.
 
+### Added (continued)
+
+- **Vimeo passwords.** A video or an album that asks for a password is unlocked
+  instead of refused. A locked video's config arrives with `"view": 4` and no
+  files; the password is proved against `<video.redirect_url>/check-password`
+  with the password base64'd, form-encoded, and a correct answer *is* the config,
+  so nothing is fetched twice. An album proves the password at
+  `vimeo.com/showcase/<id>/auth` and carries the `hashed_pass` it answers with on
+  every following `videos` request. A wrong password is the site's own `418`
+  (video) or `401` (album) and is reported as "not accepted", once: nothing is
+  retried and nothing is guessed.
+
+  The password is read from `TAFAS_VIDEO_PASSWORD`, or from the first line of the
+  file `TAFAS_VIDEO_PASSWORD_FILE` names. It is deliberately **not** a flag: a
+  command line is visible in `ps` to every local user, and `--help` output is
+  pasted into bug reports. `docs/roadmap.md` §7 said there would be no `TAFAS_*`
+  variables; it now says why this is the one exception.
+
 ### Changed
 
 - `--info` lists `soundcloud set` among the list pages, and SoundCloud's routes

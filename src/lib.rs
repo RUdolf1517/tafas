@@ -35,3 +35,4 @@ pub mod subtitles;
 pub mod thumbnails;
 pub mod ts;
 pub mod url;
+pub mod vimeo_password;

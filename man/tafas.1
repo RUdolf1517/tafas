@@ -60,7 +60,10 @@ written as an MP4 in process; a progressive MP4 is preferred when both exist.
 endpoint. Progressive MP4s are preferred; a video that offers only an HLS
 playlist is fetched, demuxed and written in process. DASH is not read and the
 refusal says so, and an unlisted video without its hash is the same 404 a deleted
-one gets, which the refusal also says.
+one gets, which the refusal also says. A password\-protected video or album is
+unlocked with the password in \fBTAFAS_VIDEO_PASSWORD\fR, or in the first line of
+the file \fBTAFAS_VIDEO_PASSWORD_FILE\fR names \- never with an argument, because
+an argument is in \fBps\fR and in every pasted \fB\-\-help\fR.
 .TP
 .B Reddit
 Posts whose `secure_media.reddit_video` lists a playlist, and bare

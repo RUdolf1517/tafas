@@ -14,6 +14,15 @@
 //! An unlisted video needs the hash that its URL carries, so the hash is passed
 //! back to the player as `?h=`. Without it the endpoint answers `404`, which is
 //! the same answer a deleted video gets — the refusal says both.
+//!
+//! A **password-protected** video answers the player's config with `"view": 4`
+//! — an empty shell — and the password is proved against
+//! `<the player's page>/check-password`. That page is the config's own
+//! `video.redirect_url`, which is the address the player redirects to when the
+//! password is right, and asking the *user's* URL costs a request that answers
+//! nothing. The correct answer is the config itself, so the second read replaces
+//! the first rather than being added to it. The password comes from
+//! [`crate::vimeo_password::from_environment`] and never from an argument.
 
 use serde_json::Value;
 
@@ -61,7 +70,54 @@ pub fn extract(
         Some(hash) => format!("https://vimeo.com/{id}/{hash}"),
         None => format!("https://vimeo.com/{id}"),
     };
+
+    // `view: 4` is the player's own "this one is locked": the document is a
+    // shell with no files in it, and parsing it would produce the "lists no
+    // playable file" refusal even though the video is there.
+    if at(&value, &["view"]).and_then(Value::as_u64) == Some(4) {
+        return unlocked(http, &value, &id, page_url, raw);
+    }
     parse(&value, &id, page_url)
+}
+
+/// The sentence a password-protected video gets when no password was given.
+///
+/// It names the variables and says *why* there is no flag, in one place, so the
+/// answer a user gets and the answer a test checks cannot drift apart.
+fn locked_refusal(id: &str, raw: &str) -> String {
+    format!(
+        "vimeo: {id}: the video is protected by a password, and none was given; set {} (or {} \
+         to a file holding one) — a password is not a command-line argument, because {raw} \
+         would then be in the process list and in the output of --help that gets pasted \
+         into bug reports",
+        crate::vimeo_password::PASSWORD_ENV,
+        crate::vimeo_password::PASSWORD_FILE_ENV
+    )
+}
+
+/// A locked player: the password is proved, and the config the endpoint answers
+/// with is what `parse` reads.
+fn unlocked(http: &Http, shell: &Value, id: &str, page_url: String, raw: &str) -> Result<Media> {
+    let Some(password) = crate::vimeo_password::from_environment() else {
+        return Err(Error::Refused(locked_refusal(id, raw)));
+    };
+    // The player's own address for this video, which is what the endpoint is
+    // built on. Without it there is nothing to prove the password against.
+    let Some(ticket) = text(shell, &["video", "redirect_url"]) else {
+        return Err(Error::Refused(format!(
+            "vimeo: {id}: the player says the video is locked and does not say where to prove a \
+             password against, so this build cannot enter one"
+        )));
+    };
+    match crate::vimeo_password::unlock_video(http, &ticket, &password)? {
+        crate::vimeo_password::VideoAnswer::Wrong => Err(Error::Refused(format!(
+            "vimeo: {id}: the password was not accepted (the player answers 418 for a wrong \
+             one); nothing was retried and nothing was guessed"
+        ))),
+        crate::vimeo_password::VideoAnswer::Configuration(config) => {
+            parse(&config, id, page_url)
+        }
+    }
 }
 
 /// The configuration document, read into a [`Media`].
@@ -140,9 +196,9 @@ pub fn parse(value: &Value, id: &str, page_url: String) -> Result<Media> {
             )));
         }
         return Err(Error::Refused(format!(
-            "vimeo: {id}: the player lists no playable file — the video is password-protected, \
-             private or blocked from embedding; --cookies FILE is sent when you name a file, and \
-             no challenge is solved"
+            "vimeo: {id}: the player lists no playable file — the video is private or blocked \
+             from embedding; --cookies FILE is sent when you name a file, and no challenge is \
+             solved"
         )));
     }
 
@@ -322,6 +378,42 @@ mod tests {
             Some("https://gcs.example/y.m3u8"),
             "the Google origin is preferred"
         );
+    }
+
+    #[test]
+    fn a_locked_player_is_recognised_by_its_own_view_field() {
+        // `view: 4` is the player's shell document: no files, and the password
+        // is proved against `video.redirect_url`. Parsing it as an ordinary
+        // config produces "lists no playable file", which is why it is checked
+        // before `parse` runs at all.
+        let shell = json!({
+            "view": 4,
+            "video": { "title": "locked", "redirect_url": "https://player.vimeo.com/video/1?h=abc" },
+            "request": { "files": {} }
+        });
+        assert_eq!(
+            at(&shell, &["view"]).and_then(Value::as_u64),
+            Some(4),
+            "a public config has no `view` at all, so this cannot false-positive"
+        );
+        assert_eq!(
+            text(&shell, &["video", "redirect_url"]).as_deref(),
+            Some("https://player.vimeo.com/video/1?h=abc"),
+            "and the page it names is where the password is proved"
+        );
+        let public = fixture();
+        assert_eq!(at(&public, &["view"]).and_then(Value::as_u64), None);
+    }
+
+    #[test]
+    fn the_password_refusal_names_the_variable_and_not_a_flag() {
+        // The refusal has to point at the thing that works, and it must not
+        // suggest an argument that does not exist. The environment is read once,
+        // by `unlocked`, and a test that set it would change how every other
+        // test in this build runs — so the sentence is what is checked.
+        let text = locked_refusal("1", "https://vimeo.com/1");
+        assert!(text.contains("TAFAS_VIDEO_PASSWORD"), "{text}");
+        assert!(text.contains("process list"), "it says why not a flag: {text}");
     }
 
     #[test]

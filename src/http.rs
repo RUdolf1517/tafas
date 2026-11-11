@@ -2,7 +2,7 @@ use std::io::{Read, Write};
 use std::time::Duration;
 
 use reqwest::blocking::{Client, Response};
-use reqwest::StatusCode;
+use reqwest::{Method, StatusCode};
 use serde_json::Value;
 
 use crate::cookies::Jar;
@@ -334,6 +334,68 @@ impl Http {
     pub fn get_json(&self, label: &str, url: &str, headers: &[(&str, &str)]) -> Result<Value> {
         self.get_json_opt(label, url, headers)?
             .ok_or_else(|| Error::Unsupported(format!("{label}: HTTP 404 from {url}")))
+    }
+
+    /// The status code a request answered, without treating it as a failure.
+    ///
+    /// Three sites answer "no" with a status rather than a body — Vimeo's player
+    /// says 418 for a wrong password, its album endpoint says 401 — and a caller
+    /// that has to tell "wrong password" from "the network is down" cannot do it
+    /// with an error whose class has already swallowed the code.
+    pub fn status_of(
+        &self,
+        label: &str,
+        url: &str,
+        method: Method,
+        headers: &[(&str, &str)],
+        body: Option<(&str, Vec<u8>)>,
+    ) -> Result<StatusCode> {
+        let response = self.execute(label, || {
+            let request = self
+                .client
+                .request(method.clone(), url)
+                .header("accept", "application/json");
+            let mut request = self.prepare_with(request, url, headers);
+            if let Some((content_type, bytes)) = &body {
+                request = request
+                    .header("content-type", *content_type)
+                    .body(bytes.clone());
+            }
+            request
+        })?;
+        Ok(response.status())
+    }
+
+    /// A JSON document from a request that is not a bare GET: the method, the
+    /// query the caller has already built, and a body when there is one.
+    ///
+    /// Vimeo is why this exists: its password endpoints answer
+    /// `application/x-www-form-urlencoded` and take a JSON body, and `Cargo.toml`
+    /// carries no serialisation helper for either.
+    pub fn json_request(
+        &self,
+        label: &str,
+        url: &str,
+        method: Method,
+        headers: &[(&str, &str)],
+        body: Option<(&str, Vec<u8>)>,
+    ) -> Result<Value> {
+        let response = self.execute(label, || {
+            let request = self
+                .client
+                .request(method.clone(), url)
+                .header("accept", "application/json");
+            let mut request = self.prepare_with(request, url, headers);
+            if let Some((content_type, bytes)) = &body {
+                request = request
+                    .header("content-type", *content_type)
+                    .body(bytes.clone());
+            }
+            request
+        })?;
+        let response = self.classify(label, url, response)?;
+        let text = read_bounded(response, MAX_JSON_BYTES)?;
+        parse_json(label, &text)
     }
 
     /// A JSON document from a POST, which is how InnerTube is spoken to.

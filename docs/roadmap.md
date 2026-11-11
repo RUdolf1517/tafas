@@ -105,7 +105,7 @@ signature. See [releases](releases.md#reproducibility-signatures-and-the-sbom).
 | shipping an external binary (yt-dlp, ffmpeg, a headless browser) | the binary must work on a machine with no package manager |
 | a dependency in a language other than Rust unless it can be neither written here nor replaced by a Rust crate | [dependencies §0](dependencies.md#0-the-rule); `ring` is the one exception, and it is argued, not inherited |
 | an update check or telemetry | a downloader that phones home is not a downloader |
-| a config file or `TAFAS_*` variables | every decision is an argument, so a command that worked yesterday works today |
+| a config file or `TAFAS_*` variables | every decision is an argument, so a command that worked yesterday works today. The one exception is `TAFAS_VIDEO_PASSWORD`/`TAFAS_VIDEO_PASSWORD_FILE`, and it is the argument's fault: a password on a command line is in `ps` and in every pasted `--help` |
 | writing a file that failed verification | exit 4 and a bug report instead |
 | silently skipping something | a refusal is a failure with a name |
 
