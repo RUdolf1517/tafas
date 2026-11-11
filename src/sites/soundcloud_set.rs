@@ -88,8 +88,8 @@ pub fn listing(http: &Http, url: &Url, raw: &str) -> Option<Result<Listing>> {
 /// the set needs.
 pub fn extract(http: &Http, _url: &Url, kind: &Kind, _raw: &str) -> Result<Listing> {
     let page_url = format!("https://soundcloud.com/{}/sets/{}", kind.artist, kind.slug);
-    let page = http.get_text(&page_url, &PAGE_HEADERS)?;
-    let hydrated = super::soundcloud::hydration(&page);
+    let html = http.get_text(&page_url, &PAGE_HEADERS)?;
+    let hydrated = super::soundcloud::hydration(&html);
     let found = hydrated.as_ref().and_then(set_entry);
     let (set, tracks, declared) = match found {
         Some(found) => found,
@@ -113,7 +113,7 @@ pub fn extract(http: &Http, _url: &Url, kind: &Kind, _raw: &str) -> Result<Listi
         }
     };
 
-    let client_id = super::soundcloud::client_id(&page).ok_or_else(|| {
+    let client_id = super::soundcloud::client_id(&html).ok_or_else(|| {
         Error::Refused(format!(
             "soundcloud: {page_url}: the page did not carry the public client id its player \
              uses, so the rest of the set cannot be asked for; --cookies FILE is sent when you \
