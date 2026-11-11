@@ -336,20 +336,23 @@ impl Http {
             .ok_or_else(|| Error::Unsupported(format!("{label}: HTTP 404 from {url}")))
     }
 
-    /// The status code a request answered, without treating it as a failure.
+    /// A request whose *status* is part of the answer: the code comes back
+    /// beside the document when the site says yes, and alone when it does not.
     ///
-    /// Three sites answer "no" with a status rather than a body — Vimeo's player
-    /// says 418 for a wrong password, its album endpoint says 401 — and a caller
-    /// that has to tell "wrong password" from "the network is down" cannot do it
-    /// with an error whose class has already swallowed the code.
-    pub fn status_of(
+    /// Vimeo is why this exists. A wrong password is `418` on one endpoint and
+    /// `401` on another, and a caller that has to tell "wrong password" from
+    /// "the connection dropped" cannot use a function that has already thrown
+    /// the code away. One request, not two: the body is only read when the
+    /// status is a success, which also keeps an error page out of the JSON
+    /// parser.
+    pub fn json_answer(
         &self,
         label: &str,
         url: &str,
         method: Method,
         headers: &[(&str, &str)],
         body: Option<(&str, Vec<u8>)>,
-    ) -> Result<StatusCode> {
+    ) -> Result<(StatusCode, Option<Value>)> {
         let response = self.execute(label, || {
             let request = self
                 .client
@@ -363,39 +366,12 @@ impl Http {
             }
             request
         })?;
-        Ok(response.status())
-    }
-
-    /// A JSON document from a request that is not a bare GET: the method, the
-    /// query the caller has already built, and a body when there is one.
-    ///
-    /// Vimeo is why this exists: its password endpoints answer
-    /// `application/x-www-form-urlencoded` and take a JSON body, and `Cargo.toml`
-    /// carries no serialisation helper for either.
-    pub fn json_request(
-        &self,
-        label: &str,
-        url: &str,
-        method: Method,
-        headers: &[(&str, &str)],
-        body: Option<(&str, Vec<u8>)>,
-    ) -> Result<Value> {
-        let response = self.execute(label, || {
-            let request = self
-                .client
-                .request(method.clone(), url)
-                .header("accept", "application/json");
-            let mut request = self.prepare_with(request, url, headers);
-            if let Some((content_type, bytes)) = &body {
-                request = request
-                    .header("content-type", *content_type)
-                    .body(bytes.clone());
-            }
-            request
-        })?;
-        let response = self.classify(label, url, response)?;
+        let status = response.status();
+        if !status.is_success() {
+            return Ok((status, None));
+        }
         let text = read_bounded(response, MAX_JSON_BYTES)?;
-        parse_json(label, &text)
+        parse_json(label, &text).map(|document| (status, Some(document)))
     }
 
     /// A JSON document from a POST, which is how InnerTube is spoken to.

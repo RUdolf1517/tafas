@@ -125,35 +125,29 @@ pub enum VideoAnswer {
 pub fn unlock_video(http: &Http, page_url: &str, password: &str) -> Result<VideoAnswer> {
     let page = page_url.split(['?', '#']).next().unwrap_or(page_url);
     let endpoint = format!("{page}/check-password");
-    let body = video_password_body(password);
-    let status = http.status_of(
+    // One request. Asking for the status and then for the body would send the
+    // password twice for one capture, which is a password spent for nothing.
+    let (status, document) = http.json_answer(
         "vimeo-password",
         &endpoint,
         reqwest::Method::POST,
         &[("referer", page)],
         Some((
             "application/x-www-form-urlencoded",
-            body.clone().into_bytes(),
+            video_password_body(password).into_bytes(),
         )),
     )?;
     if status == reqwest::StatusCode::IM_A_TEAPOT {
         // 418 is the site's own "wrong password", not a joke and not a typo.
         return Ok(VideoAnswer::Wrong);
     }
-    if !status.is_success() {
+    let Some(config) = document else {
         return Err(Error::Refused(format!(
             "vimeo: {page}: the password endpoint answered HTTP {}; the password was not \
              accepted and the video cannot be read",
             status.as_u16()
         )));
-    }
-    let config = http.json_request(
-        "vimeo-password",
-        &endpoint,
-        reqwest::Method::POST,
-        &[("referer", page)],
-        Some(("application/x-www-form-urlencoded", body.into_bytes())),
-    )?;
+    };
     Ok(VideoAnswer::Configuration(config))
 }
 
@@ -171,33 +165,23 @@ pub fn unlock_album(
         body.push_str("&token=");
         body.push_str(&percent_encode(token));
     }
-    let status = http.status_of(
-        "vimeo-album-password",
-        &endpoint,
-        reqwest::Method::POST,
-        &[("x-requested-with", "XMLHttpRequest")],
-        Some((
-            "application/x-www-form-urlencoded",
-            body.clone().into_bytes(),
-        )),
-    )?;
-    if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
-        return Ok(None);
-    }
-    if !status.is_success() {
-        return Err(Error::Refused(format!(
-            "vimeo: album {album_id}: the password endpoint answered HTTP {}; the password was \
-             not accepted and the album cannot be read",
-            status.as_u16()
-        )));
-    }
-    let answer = http.json_request(
+    let (status, document) = http.json_answer(
         "vimeo-album-password",
         &endpoint,
         reqwest::Method::POST,
         &[("x-requested-with", "XMLHttpRequest")],
         Some(("application/x-www-form-urlencoded", body.into_bytes())),
     )?;
+    if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
+        return Ok(None);
+    }
+    let Some(answer) = document else {
+        return Err(Error::Refused(format!(
+            "vimeo: album {album_id}: the password endpoint answered HTTP {}; the password was \
+             not accepted and the album cannot be read",
+            status.as_u16()
+        )));
+    };
     Ok(text(&answer, &["hashed_pass"]))
 }
 

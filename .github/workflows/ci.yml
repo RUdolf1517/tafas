@@ -36,6 +36,7 @@ jobs:
       # generator is rendered against a stand-in archive and checked.
       - name: Channel generators
         id: channels
+        if: ${{ !cancelled() }}
         continue-on-error: true
         shell: bash
         run: |
@@ -59,27 +60,30 @@ jobs:
           # that install a package by path.
           python3 packaging/tests/apk.py
 
+      # Every step below is guarded by `!cancelled()` and *not* by the outcome of
+      # the one before it. Two runs proved why: clippy failed, `continue-on-error`
+      # recorded that as `outcome: failure` while the job's conclusion stayed
+      # `success`, and `if: steps.clippy.outcome == 'success'` then skipped `Test`
+      # and `Release build` — a green job that ran no test at all. The outcome of
+      # each step is reported by `Publish the failure` and turned into a failed
+      # job by `Fail the job`; it is not a reason to run less.
       - name: Clippy
         id: clippy
-        if: steps.channels.outcome == 'success'
+        if: ${{ !cancelled() }}
         continue-on-error: true
         shell: bash
         run: cargo clippy --all-targets -- -D warnings 2>&1 | tee clippy.log
 
       - name: Test
         id: test
-        if: steps.clippy.outcome == 'success'
+        if: ${{ !cancelled() }}
         continue-on-error: true
         shell: bash
         run: cargo test --all-targets 2>&1 | tee test.log
 
-      # `success` and not `== 'success'`: `cargo test --all-targets` builds the
-      # binary in debug, and the release build is the one that has to link, so
-      # this step runs whenever nothing before it failed. The distinction cost a
-      # whole green run: the step was silently skipped and the job still passed.
       - name: Release build
         id: build
-        if: steps.clippy.outcome == 'success' && success()
+        if: ${{ !cancelled() }}
         continue-on-error: true
         shell: bash
         run: cargo build --release 2>&1 | tee build.log
@@ -98,7 +102,7 @@ jobs:
           # Only the steps that actually failed: a passing clippy log would
           # otherwise be published under a failing test's name.
           : > failure.md
-          for pair in "clippy:${{ steps.clippy.outcome }}" "test:${{ steps.test.outcome }}" "build:${{ steps.build.outcome }}"; do
+          for pair in "channels:${{ steps.channels.outcome }}" "clippy:${{ steps.clippy.outcome }}" "test:${{ steps.test.outcome }}" "build:${{ steps.build.outcome }}"; do
             name="${pair%%:*}"
             outcome="${pair##*:}"
             [ "$outcome" = "failure" ] || continue
@@ -124,13 +128,36 @@ jobs:
           fi
           gh pr comment "$number" --body-file failure.md || true
 
-      # `failure()` is true when any *previous* step failed, which is the whole
-      # point of this step: the per-step conditions above were written one at a
-      # time and did not survive a step being added beside them.
+      # The job fails when any step's *outcome* is a failure, and not when
+      # `failure()` is true. `continue-on-error` is what stopped `failure()` from
+      # being true here: clippy failed, the job was green, and the only sign was
+      # a step whose outcome nobody read. This is the step that reads it.
       - name: Fail the job
-        if: failure()
+        if: always()
         shell: bash
-        run: exit 1
+        env:
+          CHANNELS: ${{ steps.channels.outcome }}
+          CLIPPY: ${{ steps.clippy.outcome }}
+          TEST: ${{ steps.test.outcome }}
+          BUILD: ${{ steps.build.outcome }}
+        run: |
+          set -uo pipefail
+          failed=""
+          for pair in "channels:${CHANNELS:-skipped}" "clippy:${CLIPPY:-skipped}" \
+                      "test:${TEST:-skipped}" "build:${BUILD:-skipped}"; do
+            name="${pair%%:*}"
+            outcome="${pair##*:}"
+            # A step that was skipped is not a pass either: `Test` skipped is a
+            # run that built nothing and tested nothing.
+            case "$outcome" in
+              success) ;;
+              *) failed="$failed $name($outcome)" ;;
+            esac
+          done
+          if [ -n "$failed" ]; then
+            echo "these steps did not succeed:$failed"
+            exit 1
+          fi
 
   # A downloader is allowed to grow; it is not allowed to grow silently. The two
   # numbers in `packaging/budgets.json` — the size of the binary and the time it
