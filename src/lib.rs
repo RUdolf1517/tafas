@@ -118,7 +118,11 @@ pub mod ts;
 pub mod url;
 pub mod vimeo_password;
 
-use crate::model::{Media, Site};
+/// What every reader returns, and the site it came from — re-exported at the
+/// root because they are in the first sentence of the examples above and of the
+/// readme. A caller who has to write `tafas::model::Site` to ask which site a URL
+/// names has found a layout decision that leaked.
+pub use crate::model::{Entry, Format, Listing, Media, Site};
 
 /// One URL read into a [`Media`], with the defaults the program uses for the
 /// HTTP client and for `--extractor-args`.
