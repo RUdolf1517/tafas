@@ -74,12 +74,22 @@ jobs:
         shell: bash
         run: cargo clippy --all-targets -- -D warnings 2>&1 | tee clippy.log
 
+      # `--all-targets` covers the unit, integration, example and bench targets
+      # and deliberately *not* the doc-tests, which are their own target group.
+      # The examples in `src/lib.rs` are the public API documentation: a library
+      # user copies them, so a release that publishes examples nobody compiled is
+      # the failure this step exists for.
       - name: Test
         id: test
         if: ${{ !cancelled() }}
         continue-on-error: true
         shell: bash
-        run: cargo test --all-targets 2>&1 | tee test.log
+        run: |
+          set -o pipefail
+          {
+            cargo test --all-targets
+            cargo test --doc
+          } 2>&1 | tee test.log
 
       - name: Release build
         id: build
