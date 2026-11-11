@@ -449,7 +449,13 @@ fn the_published_crate_is_the_source_and_publishes_only_on_a_tag() {
         .nth(1)
         .and_then(|rest| rest.split(']').next())
         .expect("Cargo.toml says what the published crate holds");
-    for required in ["src/**", "Cargo.toml", "LICENSE", "README.md", "CHANGELOG.md"] {
+    for required in [
+        "src/**",
+        "Cargo.toml",
+        "LICENSE",
+        "README.md",
+        "CHANGELOG.md",
+    ] {
         assert!(
             include.contains(&format!("\"{required}\"")),
             "the package must include {required}, which it does not"
