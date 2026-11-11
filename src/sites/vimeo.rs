@@ -418,11 +418,18 @@ mod tests {
     }
 
     #[test]
-    fn a_video_with_no_playable_file_is_refused() {
+    fn a_video_with_no_playable_file_is_refused_and_does_not_blame_a_password() {
         let value = json!({ "video": { "title": "x" }, "request": { "files": {} } });
         let error = parse(&value, "1", "https://vimeo.com/1".into()).unwrap_err();
         let text = error.to_string();
-        assert!(text.contains("password-protected"), "{text}");
+        assert!(text.contains("private or blocked from embedding"), "{text}");
+        // A password-protected video never reaches `parse`: `extract` sees
+        // `"view": 4` first and proves the password. So this sentence must not
+        // send a user looking for a password that would not help.
+        assert!(
+            !text.contains("password-protected"),
+            "a config that is not locked must not be described as locked: {text}"
+        );
     }
 
     #[test]
