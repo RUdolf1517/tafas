@@ -13,9 +13,9 @@ Two rules keep this list honest:
 - an item that stays unsupported gets a refusal text in
   [extractors](extractors.md), because "not yet" is a feature only if it says so.
 
-**One rule decided when anything is tagged.** No version was released until the
-whole roadmap was done — v0.2 through v0.5 — so the first tag after 0.1.0
-carried all of it: **0.2.0, 2026-11-08**. This is the project owner's decision,
+**One rule decided when anything is tagged.** No version is released until the
+whole roadmap is done — v0.2 through v0.5 — so the first tag after 0.1.0 carried
+all of it: **0.2.0, 2026-11-08**. This is the project owner's decision,
 and it is a decision about *releases*, not about the work: commits land on
 `main` continuously and CI builds them, but a version number is a promise about
 a published archive, and the archive appears once. The consequence worth knowing

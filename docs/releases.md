@@ -21,14 +21,16 @@ What counts as breaking here is not the command line but the *contract*:
 `tafas --version` prints the crate version. The binary has no self-update
 mechanism, checks for nothing and downloads nothing except the URL you gave it.
 
-**Nothing was tagged until the whole roadmap was done**, and then one archive
-carried all of it: **0.2.0, 2026-11-08**, with v0.2 through v0.5 of the
-[roadmap](roadmap.md). This is deliberate: a tag is a promise about an archive
-that cannot be edited afterwards, and an item that is still being built is not a
-promise yet. From here on, an item that lands is a minor release of its own when
-the owner says so; `main` is ahead of the last archive as soon as that happens,
-and `cargo install --git https://github.com/RUdolf1517/tafas` is how a reader
-gets what is not released.
+**Nothing is tagged until the whole roadmap is done**, and then one archive
+carries all of it. That rule was kept for **0.2.0, 2026-11-08**, which carried
+v0.2 through v0.5 of the [roadmap](roadmap.md) in one archive, and it is kept
+again now: the work after 0.2.0 — Twitch clips, SoundCloud sets, Vimeo
+passwords, the crates.io package — lands on `main` and is built by CI, but a tag
+waits for the roadmap, so there is no version to promise yet. This is
+deliberate: a tag is a promise about an archive that cannot be edited afterwards,
+and an item that is still being built is not a promise yet.
+`cargo install --git https://github.com/RUdolf1517/tafas` is how a reader gets
+what is not released.
 
 **0.2.0 is not signed, and one of its packages is not either.** Both need a key
 this repository does not hold, and both say so rather than pretending: the
@@ -160,6 +162,8 @@ promise this repository does not keep.
 
 These steps were run once, for 0.2.0, which carried the whole roadmap
 ([§1](#1-versioning)); a later release runs the same steps for its own version.
+**None of them is run today**: the procedure waits for the roadmap, and until
+that is done `main` is what there is.
 
 1. `CHANGELOG.md` gets its section, `Cargo.toml` its version.
 2. The version is committed to `main` with the tag that will carry it.
