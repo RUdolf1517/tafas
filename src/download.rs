@@ -321,10 +321,10 @@ fn process(
         Ok(sites::Target::Video(media)) => {
             match handle(http, *media, options, printer, &mut item) {
                 Ok(status) => item.status = status,
-                Err(error) => fail(&mut item, &error, options, printer),
+                Err(error) => fail(&mut item, &error, printer),
             }
         }
-        Err(error) => fail(&mut item, &error, options, printer),
+        Err(error) => fail(&mut item, &error, printer),
     }
 
     item.elapsed_ms = started.elapsed().as_millis() as u64;
@@ -354,7 +354,7 @@ fn process_list(
     let fail_page = |url: &str, error: &Error| {
         let mut item = Item::new(url);
         item.site = listing.site.as_str().to_string();
-        fail(&mut item, error, options, printer);
+        fail(&mut item, error, printer);
         item.elapsed_ms = 0;
         item
     };
@@ -422,7 +422,7 @@ fn process_list(
 
         match load(http, &entry.url, &entry_options, printer, &mut item) {
             Ok(status) => item.status = status,
-            Err(error) => fail(&mut item, &error, options, printer),
+            Err(error) => fail(&mut item, &error, printer),
         }
         item.elapsed_ms = started.elapsed().as_millis() as u64;
         if announce_now {
@@ -440,7 +440,7 @@ fn process_list(
 /// item (`docs/cli.md` §7). Printing here as well put two objects on stdout for
 /// one broken URL, which a reader piping into `jq` sees as a duplicate and a
 /// script counting lines sees as two failures.
-fn fail(item: &mut Item, error: &Error, options: &Options, printer: &Printer) {
+fn fail(item: &mut Item, error: &Error, printer: &Printer) {
     item.status = Status::Failed;
     item.reason = Some(error.kind().to_string());
     item.message = error.to_string();

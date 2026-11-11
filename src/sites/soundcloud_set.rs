@@ -160,7 +160,7 @@ pub fn extract(http: &Http, _url: &Url, kind: &Kind, _raw: &str) -> Result<Listi
         let mut pages = 1;
         loop {
             push_entries(
-                &crate::sites::list(&document, &["collection"]),
+                crate::sites::list(&document, &["collection"]),
                 &mut entries,
                 &mut seen,
             );
