@@ -3,9 +3,13 @@
 #
 # `docs/releases.md` §4.1 says why this is the one step of a release that needs a
 # credential, and this script is that step written down so it is the same every
-# time. It refuses to run in the three situations that produce a broken archive
-# rather than a rejected upload — which is worse, because a rejected upload can
-# be retried and a published archive cannot be replaced.
+# time. Six of its seven checks refuse *before* the upload, because they are
+# about mistakes an upload cannot undo: a dirty tree, a tag pointing at another
+# commit, a version already spent, an archive missing its own source, an archive
+# carrying the files that are about shipping rather than about the crate, a
+# changelog that does not describe the version, and an unpacked crate that does
+# not build. A rejected upload can be retried; a published archive cannot be
+# replaced.
 #
 #   ./packaging/publish.sh          # package, verify, upload
 #   ./packaging/publish.sh --check  # package and verify only
