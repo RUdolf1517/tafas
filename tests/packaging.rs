@@ -483,6 +483,27 @@ fn the_published_crate_is_the_source_and_publishes_only_on_a_tag() {
         "crates.io accepts at most five categories: {categories}"
     );
 
+    // The script the owner runs on their own machine is the same procedure, and
+    // a check that lives only in a workflow is a check that does nothing on the
+    // path this project's own documentation recommends first.
+    let script = read("packaging/publish.sh");
+    for check in [
+        "cargo package --list",
+        "grep -qx",
+        "cargo publish",
+        "--check",
+        "git status --porcelain",
+    ] {
+        assert!(
+            script.contains(check),
+            "packaging/publish.sh no longer does {check}"
+        );
+    }
+    assert!(
+        !script.contains("cargo publish --allow-dirty"),
+        "publishing a dirty tree is publishing a tree nobody can check out"
+    );
+
     let publish = read(".github/workflows/publish.yml");
     // The irreversible step is behind one condition, and that condition has to
     // mention the event and the token: a `workflow_dispatch` that published by
@@ -502,6 +523,13 @@ fn the_published_crate_is_the_source_and_publishes_only_on_a_tag() {
     assert!(
         publish.contains("dry_run") || publish.contains("dry-run"),
         "a manual run must be able to package without publishing"
+    );
+    // Publishing from a machine and then from the release tag would upload the
+    // same version twice, and the second one is a rejection on a release that
+    // went perfectly. The workflow has to look first.
+    assert!(
+        publish.contains("crates.io/api/v1/crates/tafas/"),
+        "publish.yml must ask crates.io whether the version is already published"
     );
 }
 

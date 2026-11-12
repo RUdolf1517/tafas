@@ -60,10 +60,13 @@ version; adding a site, a flag or a container is minor. The policy is in
   `fuzz/`, `tests/` and `Formula/` are excluded, and a packaging test keeps it
   that way.
 
-  Publishing is `.github/workflows/publish.yml`, triggered by a published
-  release, because a version on crates.io cannot be replaced. A manual run
-  packages and builds the archive the way `cargo install` will, and stops.
-  Nothing here changes the binary and nothing changes an existing flag.
+  Publishing happens one of two ways, and whichever runs second does nothing:
+  `./packaging/publish.sh` on the owner's machine, which refuses a dirty tree, a
+  tag pointing elsewhere, a version already taken, an archive missing the source
+  or carrying `packaging/`, and an unpacked crate that does not build; or
+  `.github/workflows/publish.yml` on a published release, which asks crates.io
+  for the version first and stops if it is there. Nothing here changes the binary
+  and nothing changes an existing flag.
 
 ### Changed
 

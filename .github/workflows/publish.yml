@@ -65,6 +65,30 @@ jobs:
             echo "the dry-run box was ticked"
           fi
 
+      # The version may already be there: publishing from the owner's own machine
+      # is the documented way to do it (docs/releases.md §4.1), and then this
+      # workflow runs again on the same release tag and would try to upload a
+      # version crates.io already has. That is a rejection, and a red run for a
+      # release that went perfectly. So the version is asked for first, and a
+      # `200` means the crate is published and there is nothing to do.
+      - name: Is this version already published?
+        id: check
+        shell: bash
+        run: |
+          set -uo pipefail
+          version="$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          code="$(curl -s -o /dev/null -w '%{http_code}' \
+            -A "tafas-publish-workflow (https://github.com/RUdolf1517/tafas)" \
+            "https://crates.io/api/v1/crates/tafas/${version}" || true)"
+          if [ "$code" = "200" ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "tafas ${version} is already on crates.io; nothing to publish"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "tafas ${version} is not on crates.io yet (HTTP ${code:-none})"
+          fi
+
       # Two checks that the package is what it claims to be, both cheap and both
       # failing here rather than on crates.io. `cargo package --list` is the
       # archive's own file list: a path that should not ship, shipping, is the
@@ -109,11 +133,14 @@ jobs:
           ./target/release/tafas --version
 
       - name: Upload
-        if: steps.mode.outputs.upload == 'true'
+        if: steps.mode.outputs.upload == 'true' && steps.check.outputs.exists != 'true'
         shell: bash
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: cargo publish --allow-dirty
+        # No `--allow-dirty`: a dirty tree at a release tag means the archive in
+        # the *release* is not the crate published here, and cargo's refusal is
+        # the check that notices.
+        run: cargo publish
 
       # A published crate is a promise, so say plainly which promise this run
       # made — silence after an upload looks the same as a skipped step.
@@ -121,8 +148,10 @@ jobs:
         if: always()
         shell: bash
         run: |
-          if [ "${{ steps.mode.outputs.upload }}" = "true" ]; then
-            echo "uploaded $(grep -m1 '^version' Cargo.toml) to crates.io"
+          if [ "${{ steps.check.outputs.exists }}" = "true" ]; then
+            echo "tafas ${{ steps.check.outputs.version }} was already on crates.io: published elsewhere, nothing to do"
+          elif [ "${{ steps.mode.outputs.upload }}" = "true" ]; then
+            echo "uploaded tafas ${{ steps.check.outputs.version }} to crates.io"
           else
             echo "packaged and verified, not uploaded: see the step above for why"
           fi

@@ -178,8 +178,10 @@ that is done `main` is what there is.
 5. The Homebrew formula gets the new version and the hashes from
    `SHA256SUMS`; this is a follow-up commit, and it is the only hand edit in the
    process.
-6. `cargo install` works from the tag without any additional publication step,
-   and the `publish` workflow attaches the same tag to crates.io — see
+6. `cargo install` works from the tag without any additional publication step.
+7. crates.io: either `./packaging/publish.sh` from the owner's machine, or the
+   `publish` workflow on the published release once `CARGO_REGISTRY_TOKEN` is in
+   the repository's secrets — whichever runs second does nothing. See
    [§4.1](#41-cratesio).
 
 Nothing is built on a developer machine. The workflow is the only place a
@@ -213,6 +215,35 @@ of them things that cannot be fixed after the fact:
 The token is the owner's and is not in this repository, which is the same rule the
 signing key follows ([§3](#3-reproducibility-signatures-and-the-sbom)). Nothing
 below needs a credential: publishing is the one step of a release that does.
+
+#### Publishing from the owner's machine
+
+The other way to do step 7, and the one this repository tests, is
+`packaging/publish.sh`. It exists because six checks stand between a directory
+and a published version, and five of them are only useful *before* the upload.
+
+```sh
+cargo login                      # once, with a token scoped to publish updates
+./packaging/publish.sh --check   # package and verify, upload nothing
+./packaging/publish.sh           # the same, then ask, then upload
+```
+
+| It refuses when | Because |
+| --- | --- |
+| the tree is dirty | a published crate has to be a commit somebody can check out |
+| the tag `v<version>` points somewhere else | the crate and the release have to be one tree |
+| the version is already on crates.io | a version cannot be replaced, only yanked |
+| `cargo package --list` is missing `src/`, the licence, the readme or the changelog | an archive carries whatever it was given, forever |
+| the same list contains `packaging/`, `.github/`, `fuzz/`, `tests/` or `Formula/` | those are about shipping, not about the crate |
+| the unpacked `.crate` does not build, or its binary does not print `--version` | this is exactly what a user's `cargo install` does next |
+
+The upload itself is the last thing it does, after a `cargo publish` that is not
+`--allow-dirty`: a dirty tree at a release tag means the archive in the release
+is not the crate being published, and cargo's refusal is the check that notices.
+
+If the version is published from here, the `publish` workflow sees it on the same
+release tag and does nothing — it asks crates.io for the version first. The two
+steps are ordered so that whichever runs second is a no-op, not a failure.
 
 The publish job needs three tools beyond Rust and the shell: `nfpm` (Go) for the
 `.deb`/`.rpm`, `python3` for the `.apk`, the winget manifests, the
