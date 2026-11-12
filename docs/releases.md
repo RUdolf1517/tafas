@@ -161,12 +161,12 @@ promise this repository does not keep.
 ## 4. How a release is cut
 
 These steps were run for 0.2.0, which carried the whole roadmap
-([§1](#1-versioning)), and the same steps are run for every version after it —
-they were run for 0.2.1 and are run for 0.3.0. The procedure still waits for the
-roadmap to be done before a version is cut, but that wait is over: the roadmap is
-finished, so what the steps produce now is an ordinary minor release rather than
-a first one. **Step 7 is the only one that needs a credential**, and it is the
-only one whose result cannot be undone.
+([§1](#1-versioning)), and the same steps are run for every version after it:
+they were run for 0.2.1, and they are run for 0.3.0. The procedure still
+waits for the roadmap, and that wait is over — the roadmap is finished — so what
+it produces now is an ordinary minor release rather than a first one.
+**Step 7 is the only one that needs a credential**, and the only one whose
+result cannot be undone.
 
 1. `CHANGELOG.md` gets its section, `Cargo.toml` its version.
 2. The version is committed to `main` with the tag that will carry it.
