@@ -53,7 +53,7 @@ $ tafas https://x.com/nasa/status/1732902605501431916 | xargs -r mpv
 curl -fsSL https://raw.githubusercontent.com/RUdolf1517/tafas/main/install.sh | sh   # binary, no Rust
 brew tap RUdolf1517/tafas https://github.com/RUdolf1517/tafas && brew install RUdolf1517/tafas/tafas
 cargo install tafas                                                                 # Rust 1.82+
-cargo install --git https://github.com/RUdolf1517/tafas --tag v0.2.1                # a version not yet on crates.io
+cargo install --git https://github.com/RUdolf1517/tafas --tag v0.3.0                # the same code, without the registry
 ```
 
 Linux (x86_64 and ARM64), macOS (Apple silicon and Intel), Windows x64. The
@@ -192,8 +192,10 @@ afterwards and an item still being built is not a promise — so the first relea
 after 0.1.0 was the one with everything in it. Everything below is in that
 archive; `main` is ahead of it again as soon as the next item lands, and
 `cargo install --git https://github.com/RUdolf1517/tafas` is how to get that.
-0.2.1 is a patch on top of it — two parser fixes and a binary 31% smaller —
-and the same rule applies: it is a defect release, not a new promise.
+0.2.1 was a patch on top of it — two parser fixes and a binary 31% smaller.
+0.3.0 is the first version after the roadmap, and the first one to be published
+to crates.io: Twitch clips, SoundCloud sets, Vimeo passwords, and a library
+surface with examples that compile.
 
 | Where it goes | State | What it is |
 | --- | --- | --- |

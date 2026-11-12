@@ -533,6 +533,37 @@ fn the_published_crate_is_the_source_and_publishes_only_on_a_tag() {
     );
 }
 
+/// The number on the crate and the notes inside it are the same promise, so both
+/// paths that spend a number check that the changelog has a section for it.
+///
+/// This is the mistake the release process came closest to: `Cargo.toml` said
+/// 0.2.1 and `CHANGELOG.md` had `## [Unreleased]`, because the version had been
+/// bumped on one commit and the work described under a heading belonged to
+/// another. The archive carries `CHANGELOG.md`, so the error would have shipped.
+#[test]
+fn the_changelog_describes_the_version_being_published() {
+    let version = env!("CARGO_PKG_VERSION");
+    let changelog = read("CHANGELOG.md");
+    assert!(
+        changelog.contains(&format!("## [{version}]")),
+        "CHANGELOG.md has no `## [{version}]` section, so the archive would ship \
+         notes that never mention the version they are for"
+    );
+
+    // And both paths that upload check it themselves, so the test is not the only
+    // thing standing between a stale changelog and a published version.
+    let script = read("packaging/publish.sh");
+    assert!(
+        script.contains("CHANGELOG.md has a section"),
+        "packaging/publish.sh must refuse a version the changelog does not describe"
+    );
+    let publish = read(".github/workflows/publish.yml");
+    assert!(
+        publish.contains("CHANGELOG.md has a section for this version"),
+        "publish.yml must refuse a version the changelog does not describe"
+    );
+}
+
 /// Every script the release job runs has to exist, and the page that describes
 /// the process has to name the script that is actually there.
 ///

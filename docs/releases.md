@@ -23,14 +23,14 @@ mechanism, checks for nothing and downloads nothing except the URL you gave it.
 
 **Nothing is tagged until the whole roadmap is done**, and then one archive
 carries all of it. That rule was kept for **0.2.0, 2026-11-08**, which carried
-v0.2 through v0.5 of the [roadmap](roadmap.md) in one archive, and it is kept
-again now: the work after 0.2.0 — Twitch clips, SoundCloud sets, Vimeo
-passwords, the crates.io package — lands on `main` and is built by CI, but a tag
-waits for the roadmap, so there is no version to promise yet. This is
-deliberate: a tag is a promise about an archive that cannot be edited afterwards,
-and an item that is still being built is not a promise yet.
-`cargo install --git https://github.com/RUdolf1517/tafas` is how a reader gets
-what is not released.
+v0.2 through v0.5 of the [roadmap](roadmap.md) in one archive. The roadmap is now
+done, so the rule permits what follows it: **0.3.0, 2026-11-12** carries the work
+that landed after 0.2.0 — Twitch clips, SoundCloud sets, Vimeo passwords, and the
+crates.io package with its documented library surface. Nothing in it changes a
+default, an exit code or a JSON field's meaning, so it is a minor release
+([§2](#2-what-a-release-contains)). A tag is still a promise about an archive that
+cannot be edited afterwards, which is why the two defect fixes of 0.2.1 were
+released as a patch and this, with new routes and a new public API, is not.
 
 **0.2.0 is not signed, and one of its packages is not either.** Both need a key
 this repository does not hold, and both say so rather than pretending: the
@@ -89,7 +89,7 @@ stable URL, which is what `install.sh` downloads from.
 | AUR | Arch (x86_64, aarch64) | `PKGBUILD` from `tafas-channels-X.Y.Z.tar.gz`, then `makepkg -si` |
 | Scoop | Windows 10/11 x64 | `tafas.json` from `tafas-channels-X.Y.Z.tar.gz` into a bucket, then `scoop install tafas` |
 | Nix | any NixOS or Nix on Linux/macOS | `flake.nix` from `tafas-channels-X.Y.Z.tar.gz`, then `nix profile install .` |
-| cargo | anything with Rust 1.82+ | `cargo install tafas`, or `cargo install --git https://github.com/RUdolf1517/tafas --tag v0.2.1` for a version that is not on crates.io |
+| cargo | anything with Rust 1.82+ | `cargo install tafas`, or `cargo install --git https://github.com/RUdolf1517/tafas --tag v0.3.0` to build the same code instead of downloading it |
 | PowerShell | Windows 10/11 x64 | download `install.ps1` from the release, then `powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1` |
 | winget (local manifest) | Windows 10/11 x64 | unpack `tafas-winget-local-manifests-vX.Y.Z.zip`, then `winget install --manifest <version>` |
 | archive | everything else | unpack, put `tafas` on `PATH` |
@@ -160,10 +160,13 @@ promise this repository does not keep.
 
 ## 4. How a release is cut
 
-These steps were run once, for 0.2.0, which carried the whole roadmap
-([§1](#1-versioning)); a later release runs the same steps for its own version.
-**None of them is run today**: the procedure waits for the roadmap, and until
-that is done `main` is what there is.
+These steps were run for 0.2.0, which carried the whole roadmap
+([§1](#1-versioning)), and the same steps are run for every version after it —
+they were run for 0.2.1 and are run for 0.3.0. The procedure still waits for the
+roadmap to be done before a version is cut, but that wait is over: the roadmap is
+finished, so what the steps produce now is an ordinary minor release rather than
+a first one. **Step 7 is the only one that needs a credential**, and it is the
+only one whose result cannot be undone.
 
 1. `CHANGELOG.md` gets its section, `Cargo.toml` its version.
 2. The version is committed to `main` with the tag that will carry it.
@@ -203,7 +206,7 @@ run packages, builds the archive the way `cargo install` will, and stops — the
 `dry_run` box is ticked by default. A fork, a pull request and a branch have the
 same behaviour: no token, no upload.
 
-The workflow checks three things before it can upload, all of them cheap and all
+The workflow checks four things before it can upload, all of them cheap and all
 of them things that cannot be fixed after the fact:
 
 | Check | Why before, not after |
@@ -211,6 +214,7 @@ of them things that cannot be fixed after the fact:
 | `cargo package --list` holds `src/`, the licence, the readme and the changelog, and holds no `packaging/`, `.github/`, `fuzz/`, `tests/` or `Formula/` | an archive carries whatever it was given, forever |
 | the `.crate` archive is unpacked and built with `cargo build --release --offline` | this is what a user's `cargo install` does, and a file the build needs but the package forgot fails here rather than in their terminal |
 | the packaged binary prints `--version` | a crate that publishes a binary that does not run is worse than one that publishes none |
+| `CHANGELOG.md` has a `## [<version>]` section | the notes ship inside the archive, so a stale heading is a document that never names its own version |
 
 The token is the owner's and is not in this repository, which is the same rule the
 signing key follows ([§3](#3-reproducibility-signatures-and-the-sbom)). Nothing
@@ -219,8 +223,8 @@ below needs a credential: publishing is the one step of a release that does.
 #### Publishing from the owner's machine
 
 The other way to do step 7, and the one this repository tests, is
-`packaging/publish.sh`. It exists because six checks stand between a directory
-and a published version, and five of them are only useful *before* the upload.
+`packaging/publish.sh`. It exists because seven checks stand between a directory
+and a published version, and all but one are only useful *before* the upload.
 
 ```sh
 cargo login                      # once, with a token scoped to publish updates
@@ -236,6 +240,7 @@ cargo login                      # once, with a token scoped to publish updates
 | `cargo package --list` is missing `src/`, the licence, the readme or the changelog | an archive carries whatever it was given, forever |
 | the same list contains `packaging/`, `.github/`, `fuzz/`, `tests/` or `Formula/` | those are about shipping, not about the crate |
 | the unpacked `.crate` does not build, or its binary does not print `--version` | this is exactly what a user's `cargo install` does next |
+| `CHANGELOG.md` has no `## [<version>]` section | the archive carries the changelog, so a number its notes never mention ships with it |
 
 The upload itself is the last thing it does, after a `cargo publish` that is not
 `--allow-dirty`: a dirty tree at a release tag means the archive in the release

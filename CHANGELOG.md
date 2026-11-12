@@ -11,6 +11,10 @@ version; adding a site, a flag or a container is minor. The policy is in
 
 ## [Unreleased]
 
+Nothing yet — 0.3.0 is the release this section became.
+
+## [0.3.0] - 2026-11-12
+
 ### Added
 
 - **Twitch clips.** `clips.twitch.tv/<slug>`, its `embed?clip=` form,
@@ -63,10 +67,13 @@ version; adding a site, a flag or a container is minor. The policy is in
   Publishing happens one of two ways, and whichever runs second does nothing:
   `./packaging/publish.sh` on the owner's machine, which refuses a dirty tree, a
   tag pointing elsewhere, a version already taken, an archive missing the source
-  or carrying `packaging/`, and an unpacked crate that does not build; or
-  `.github/workflows/publish.yml` on a published release, which asks crates.io
-  for the version first and stops if it is there. Nothing here changes the binary
-  and nothing changes an existing flag.
+  or carrying `packaging/`, an unpacked crate that does not build, and a version
+  the changelog does not describe; or `.github/workflows/publish.yml` on a
+  published release, which asks crates.io for the version first and stops if it
+  is there. The changelog check is the newest of them and the reason for it is
+  the archive: `CHANGELOG.md` ships inside it, so a version whose notes are still
+  under `Unreleased` is a document that never names the number it was published
+  with. Nothing here changes the binary and nothing changes an existing flag.
 
 ### Changed
 

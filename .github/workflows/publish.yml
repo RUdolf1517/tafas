@@ -113,6 +113,22 @@ jobs:
             fi
           done
 
+      # The changelog is what a reader sees after `cargo add tafas`, and it ships
+      # inside the archive. A version whose section never left `Unreleased` ships
+      # a document that does not mention the number on the crate — which is what
+      # 0.2.1 came close to, tagged while the work it was meant to carry was on a
+      # different commit.
+      - name: CHANGELOG.md has a section for this version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)"
+          if ! grep -q "^## \[$version\]" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no \"## [$version]\" section"
+            exit 1
+          fi
+          echo "CHANGELOG.md documents $version"
+
       # The archive is built, then built again from inside the unpacked archive.
       # That second build is the one that matters: it is what a user's
       # `cargo install` does, and a file the binary needs but the package forgot

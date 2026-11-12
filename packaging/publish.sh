@@ -92,6 +92,15 @@ for forbidden in '^packaging/' '^\.github/' '^fuzz/' '^tests/' '^Formula/' '^tar
 done
 echo "$(wc -l < /tmp/tafas-package-files.$$ | tr -d ' ') files"
 
+# 4b. And the changelog has to describe this version. The archive carries
+#     CHANGELOG.md, so a release whose section is still `Unreleased` ships a
+#     document that never mentions the number on the front of it — 0.2.1 was
+#     tagged while the work it was meant to carry was on another commit, and a
+#     check that the number and the notes agree is what notices next time.
+step "CHANGELOG.md has a section for $version"
+grep -q "^## \\[$version\\]" CHANGELOG.md ||
+  fail "CHANGELOG.md has no \"## [$version]\" section; write the notes before spending the number"
+
 # 5. Build the archive the way `cargo install tafas` will: unpack the .crate and
 #    compile it from there. A file the build needs but the package forgot fails
 #    here, at the last moment it can be fixed, instead of in a user's terminal.

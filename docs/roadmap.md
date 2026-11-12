@@ -24,6 +24,12 @@ as soon as the next item lands, and `cargo install --git` is how to get what is
 not released yet. [releases §1](releases.md#1-versioning) states the rule, and
 what 0.2.0 does not contain.
 
+**The roadmap is done**, so the rule now withholds nothing: every version after
+0.2.0 — 0.2.1, the defect release, then 0.3.0 — is an ordinary release of the
+work that landed since the last one. New items do not enter §2–§5 again; they
+arrive as a sentence in [§6](#6-ideas-that-are-parked-not-planned) and leave it
+by the process in §8.
+
 ## 1. v0.1.0 — shipped
 
 YouTube (watch page + InnerTube client chain), TikTok (page rehydration + mobile
