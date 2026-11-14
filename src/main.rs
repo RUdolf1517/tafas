@@ -195,7 +195,9 @@ fn capabilities() -> String {
             "max_redirects": 10,
             "concurrent_fragments": { "default": 1, "max": 16 },
             "limit_rate": { "default": "unlimited", "min": 1024, "max": 1073741824 },
-            "max_filesize": { "default": "unlimited", "max": 1125899906842624 },
+            // `u64` explicitly: `json!` infers an integer literal as `i32`, and a
+            // petabyte does not fit in one.
+            "max_filesize": { "default": "unlimited", "max": 1125899906842624u64 },
             "retry_after": true,
             "restrict_filenames": false
         },
