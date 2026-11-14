@@ -13,6 +13,54 @@ version; adding a site, a flag or a container is minor. The policy is in
 
 ### Added
 
+- **`cargo audit` runs on a clock, because the database is not this repository.**
+  It is `.github/workflows/audit.yml`: every Monday at 06:17 UTC and on a tag, one
+  step before a release is published. Not per-commit — an advisory is published
+  by somebody else, and a red pull request for it teaches people to ignore the
+  check — and not silent either, which is the failure mode of every scheduled
+  job: a red run opens one issue and a clean run closes it. Licences, bans and
+  sources stay on every commit in `licenses`, because those are decided by the
+  tree.
+
+### Fixed
+
+- **The licence check's first run, and the report it wrote.** Turning on
+  `cargo deny` in CI immediately failed on `webpki-roots`, which ships the
+  Mozilla certificate store under `CDLA-Permissive-2.0`: the allow-list had been
+  written from the crates this project *chooses*, and the CA bundle is one it
+  *inherits*, data rather than code. The licence is now allowed and the reason is
+  next to it. The job also reported that failure badly — it published the last
+  eighty lines of output, which were `license-not-encountered` warnings, and cut
+  the error that caused it; the comment now starts at the verdict and the first
+  error. Two tests keep both halves: the allow-list is one list in `deny.toml`
+  and in the prose, and the report is built from the error.
+
+### Added
+
+- **`cargo deny` runs in CI, because it never did.** `deny.toml` has been in this
+  repository since 0.2.0 and three pages said the check happened "when a release
+  is cut" — `release.yml` has never mentioned it, and neither had anything else,
+  so the MIT licence on the front page was a claim nobody applied. It is now the
+  `licenses` job: every commit, `--all-features`, failing on a dependency whose
+  licence is not on the list. A test keeps the workflow and the prose in step,
+  which is the part that was missing rather than the command.
+
+- **What the binary weighs, measured rather than guessed.**
+  `docs/dependencies.md` §3.2 now says where the 2.88 MB goes — `tafas` 19.6%,
+  `std` 19.0%, `rustls` 14.6%, `ring` 10.3%, `reqwest` 8.2%, `clap` 8.2% — and
+  records the four ways it was tried against: `opt-level = "s"` is 5.8% *worse*
+  than the `"z"` already in the profile, `2` and `3` are 28% and 34% worse, and
+  neither dropping `tls12` (byte-identical: rustls keeps the code, the feature
+  only stops it being reached) nor dropping `reqwest`'s `gzip` (−1.7%, for
+  uncompressed transfers) is a trade worth making. No profile changed.
+
+- **A fixture response no longer races its own last bytes.** The parallel-segment
+  HLS test failed on `windows-latest` twice with `connection closed before message
+  completed`, for a response the test server had written in full: the server
+  declared `Connection: close` and then dropped the socket, which on Windows is a
+  reset before the reader has consumed the body. Head and body now leave in one
+  write, and the connection is half-closed and drained. Fixed in the fixture, not
+  in the assertion.
 - **The Homebrew formula is checked against the release.** `Formula/tafas.rb`
   repeats four hashes by hand, once per release, and nothing compared them with
   the archives they name: 0.3.0 was tagged with four zeroes, so `brew install`

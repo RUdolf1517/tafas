@@ -21,10 +21,26 @@ project cannot do it in less code than it costs, what it drags in, which licence
 it carries, what happens when it is wrong, and what it costs in binary size. A
 dependency that cannot answer all six is not added.
 
-`cargo deny` (`deny.toml`: licences, banned crates, sources, advisories) runs when
-a release is cut and whenever the lockfile moves, alongside `cargo audit`. It is
-not a per-commit job: advisory databases move independently of this repository,
-and a badge turning red at 03:00 is not a test.
+`cargo deny` (`deny.toml`: licences, banned crates, sources, advisories) runs in
+CI on every commit, as the `licenses` job, with `--all-features` so that a
+dependency reached only from one site's code is checked by the build a reader
+actually compiles. It used to say it ran "when a release is cut" — and it ran
+nowhere: `release.yml` has never invoked it, and neither had anything else.
+
+`cargo audit` is deliberately not per-commit. The advisory database moves
+independently of this repository, so a build that was perfect on Friday is red on
+Monday for a reason nobody here caused — and if that red landed on whichever pull
+request happened to be open, it would teach people to ignore the check. It runs
+on a clock instead: `audit.yml` every Monday, and on a tag, which is the last
+moment before a release is published. When it fails it opens one issue rather
+than failing quietly, and closes it the first time a run is clean. It is also
+still the step `CONTRIBUTING.md` names for a change to the graph, and it still
+runs by hand when a dependency moves.
+
+The distinction with `cargo deny` is what each one depends on. Licences, banned
+crates and sources are decided by the tree, so they are checked on every commit;
+advisories are decided by a database that changes while the tree does not, so
+they are checked on a schedule.
 
 ---
 
@@ -136,15 +152,19 @@ still demuxes into the same four samples.
 | --- | --- | --- |
 | `tokio` | `reqwest/blocking` | built but never used as an async runtime by this code; the blocking client drives it internally |
 | `hyper`, `http` | `reqwest` | HTTP/1.1 only: `h2` is deliberately off, see §4 |
-| `webpki-roots` | `reqwest` feature | the CA bundle, compiled in — no system trust store |
+| `webpki-roots` | `reqwest` feature | the CA bundle, compiled in — no system trust store. Data, not code, and `CDLA-Permissive-2.0`, which is why that licence is allowed |
 | `ring` | `rustls` | see §1.3 |
 | `icu_*`, `idna` | `url` | internationalised domain handling |
 | `cc` | `ring` build | compiles the vendored C; requires a C compiler at build time, not at run time |
 
 `cargo deny` fails on any new dependency whose licence is not in
 `{MIT, Apache-2.0, Apache-2.0 WITH LLVM-exception, BSD-2-Clause, BSD-3-Clause,
-ISC, Unicode-3.0, Zlib, MPL-2.0}`. MPL-2.0 is allowed because it is
-file-scoped copyleft and does not affect the licence of this crate.
+ISC, Unicode-3.0, Zlib, MPL-2.0, CC0-1.0, CDLA-Permissive-2.0}`. MPL-2.0 is
+allowed because it is file-scoped copyleft and does not affect the licence of
+this crate. `CDLA-Permissive-2.0` is the licence of the Mozilla certificate
+store that `webpki-roots` compiles in: it is data, not code, and it is the entry
+the first CI run of this check added — the list had been written from the crates
+this project chooses, and the CA bundle is one it inherits.
 
 ## 3. Where the C is
 
@@ -177,6 +197,69 @@ graph at all.
 Nightly-only, dev-only, and the measurement §4 asks for comes out as zero — no
 byte of the released binary changed. That is a honest measurement, not a missing
 one. The targets themselves are described in [testing §6](testing.md#6-fuzzing).
+
+## 3.2 What the binary weighs, and where it goes
+
+2 878 392 bytes is the recorded budget; an ordinary build on a CI runner today is
+2 905 872 (+1.0%), which is drift between runners and days rather than a change
+in the graph. Both numbers are `x86_64-unknown-linux-gnu`, `opt-level = "z"`,
+fat LTO, `panic = "abort"`, symbols stripped.
+
+`cargo bloat --crates` on that build, as a share of `.text`:
+
+| Crate | `.text` | Share | What it is |
+| --- | --- | --- | --- |
+| `tafas` | 340.3 KiB | 19.6% | this repository: seven parsers, the remuxers, the writer |
+| `std` | 329.7 KiB | 19.0% | allocation, formatting, `std::backtrace` symbolisation, intrinsics |
+| `rustls` | 253.4 KiB | 14.6% | the TLS state machine and its message codec |
+| `ring` | 179.0 KiB | 10.3% | TLS primitives; the only C and assembly in the graph |
+| `reqwest` | 142.7 KiB | 8.2% | the HTTP client |
+| `clap_builder` | 108.2 KiB | 6.2% | argument parsing |
+| `hyper_util`, `http`, `hyper` | 94.7 KiB | 5.4% | the HTTP/1.1 plumbing under `reqwest` |
+| `webpki` + `webpki-roots` | 36.3 KiB | 2.1% | certificate path validation and the CA bundle |
+| `clap_complete` | 35.4 KiB | 2.0% | `--completions` for four shells |
+| everything else | ~130 KiB | 7.6% | `aes`/`cbc` (6.1 KiB), `miniz_oxide`, `idna`, `serde_json`, … |
+
+Which is the useful way to read it: **most of the binary is not this repository.**
+Two thirds of it is TLS, the HTTP client, the argument parser and the standard
+library, and every one of those is a correctness argument rather than a fat one —
+`ring` is what makes the binary static, `clap` is what prints the errors, and
+`rustls` is what keeps OpenSSL out of the build.
+
+### What was tried, and what it bought
+
+Every number below is one build on the same runner, same commit, one variable
+changed. They are recorded so that the next person does not spend a day
+rediscovering them.
+
+| Change | Bytes | Effect |
+| --- | --- | --- |
+| `opt-level = "s"` instead of `"z"` | 3 075 328 | **+5.8%:** `"z"` is already the best choice |
+| `opt-level = 2` | 3 720 056 | +28.0% |
+| `opt-level = 3` | 3 906 504 | +34.4% |
+| no `tls12` in `rustls` | 2 905 872 | **exactly the same, byte for byte** — rustls keeps the TLS 1.2 code whether or not the feature is on; the feature only stops it being *reached* |
+| no `reqwest` `gzip` (and no `.gzip(true)`) | 2 856 032 | −1.7%, at the cost of every page and every JSON body crossing the wire uncompressed |
+| one site only (`--no-default-features --features youtube`) | 2 815 144 | −3.1% for six of the seven readers |
+
+None of these is worth a change on this evidence. The two that *would* pay are
+already done and are in the profile above: `opt-level = "z"` and dropping
+`http2` and `charset` from `reqwest`.
+
+### Where the next reduction would have to come from
+
+Not from a flag. The remaining candidates each cost something a user can see:
+
+- **`clap` → hand-written parsing** (108 KiB + 35 KiB). The completions are
+  generated from the live parser, so they would have to be written by hand and
+  would then be able to drift from `--help` — the exact failure this repository
+  avoids elsewhere.
+- **`aes` + `cbc` → a 120-line AES-128-CBC** (~7 KiB). It is one function
+  (`hlsfetch::decrypt`). A hand-written cipher is the one place where a smaller
+  binary is a worse program, and the dependency is pure Rust with a known name.
+- **Static musl → glibc** (not measured here). The release binary is `musl` so it
+  runs on any distribution; a glibc build is smaller and runs on fewer machines.
+- **`panic = "abort"`, fat LTO, `strip`** — all three are already on. There is no
+  fourth lever in the profile.
 
 ## 4. Adding a dependency
 

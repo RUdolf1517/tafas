@@ -241,6 +241,6 @@ Written by AI. Directed by [RUdolf1517](https://github.com/RUdolf1517) ·
 ## License
 
 [MIT](LICENSE). Dependency licences are checked with `cargo deny` against
-[`deny.toml`](deny.toml) when a release is cut; the reasoning for each
+[`deny.toml`](deny.toml) in CI, on every commit; the reasoning for each
 dependency, and the rule for adding one, is in
 [docs/dependencies.md](docs/dependencies.md).

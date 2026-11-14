@@ -1,0 +1,131 @@
+name: audit
+
+# `cargo audit`, on a schedule rather than on every commit.
+#
+# The reason is in the database, not in the repository: RustSec moves
+# independently of this code, so an advisory can turn a build that was perfect on
+# Friday red on Monday for a reason nobody here caused. A per-commit job would
+# put that red on the pull request of whoever happens to be editing a doc that
+# day, which teaches people to ignore the check. Here it lands on a scheduled
+# run and on a tag — the two moments where "is the thing we shipped still
+# considered safe" is the actual question.
+#
+# The same run happens when a tag is pushed: that is one step before a release
+# is published, and an advisory against a crate in the lock file is a reason to
+# look again rather than to discover it in the shipped archive.
+#
+# `cargo deny check` in `ci.yml` also reads advisories per commit; what makes
+# this job different is that it runs on a clock, so the *first* run after an
+# advisory is published happens without anybody touching the repository.
+
+on:
+  schedule:
+    # Mondays at 06:17 UTC. Not on the hour: a scheduled job that shares a minute
+    # with everybody else's starts late, and lateness here would be indistinguishable
+    # from a check that did not run.
+    - cron: "17 6 * * 1"
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  CARGO_TERM_COLOR: never
+
+jobs:
+  audit:
+    name: cargo audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # The advisory database is the whole point of this job, so it is fetched
+      # fresh by the tool rather than cached from a previous run: a cache here
+      # would be a check against last week's advisories.
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
+      # `--all-features` so the graph an ordinary build resolves is the graph that
+      # is checked, not the smallest one.
+      - name: cargo audit
+        id: audit
+        continue-on-error: true
+        shell: bash
+        run: cargo audit --all-features 2>&1 | tee audit.log
+
+      # A scheduled run has no pull request to comment on, so the failure is
+      # reported the way an unprompted one has to be: one open issue, updated
+      # while it fails and closed the first time the run is clean. A job that
+      # fails silently every Monday is the same as no job.
+      - name: Report the failure
+        if: steps.audit.outcome == 'failure'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TITLE: "cargo audit: an advisory covers a dependency"
+        run: |
+          set -uo pipefail
+          {
+            echo '### `cargo audit` — the lock file has an advisory against it'
+            echo
+            echo "Run: $REPO/actions/runs/$GITHUB_RUN_ID"
+            echo
+            echo '```'
+            # The verdict is the summary line. The body is the *vulnerability*
+            # blocks and not the unmaintained ones: `cargo audit` prints
+            # `Warning:` blocks for crates nobody has yanked or fixed anything
+            # about, and putting those first is how the previous report in this
+            # repository managed to hide its own error. If every block is a
+            # warning, all of them are shown — that is then the finding.
+            grep -E '^(error|warning): ' audit.log | tail -n 2 || true
+            echo
+            blocks="$(awk 'BEGIN { RS = ""; ORS = "\n\n" } /Crate:/ && !/Warning:/' audit.log)"
+            if [ -z "$blocks" ]; then
+              blocks="$(awk 'BEGIN { RS = ""; ORS = "\n\n" } /Crate:/' audit.log)"
+            fi
+            printf '%s\n' "$blocks" | head -c 4000
+            echo '```'
+            echo
+            echo 'The fix is an upgrade, and the upgrade is a lock-file diff plus'
+            echo 'whatever the changelog of the crate says. If it is not exploitable'
+            echo 'here, an ignore in `deny.toml` with a reason is the recorded answer'
+            echo '— the advisory database itself is not this repository to silence.'
+          } > audit.md
+
+          number="$(gh issue list --repo "$REPO" --state open --search "$TITLE in:title" \
+            --json number,title -q ".[] | select(.title == \"$TITLE\") | .number" | head -n 1)"
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --repo "$REPO" --body-file audit.md
+          else
+            gh issue create --repo "$REPO" --title "$TITLE" --body-file audit.md
+          fi
+
+      # Closing it is not cosmetic: an issue that stays open after the database
+      # moved on is how a red check becomes background noise.
+      - name: Close the issue when the run is clean
+        if: steps.audit.outcome == 'success'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TITLE: "cargo audit: an advisory covers a dependency"
+        run: |
+          set -uo pipefail
+          number="$(gh issue list --repo "$REPO" --state open --search "$TITLE in:title" \
+            --json number,title -q ".[] | select(.title == \"$TITLE\") | .number" | head -n 1)"
+          [ -n "$number" ] || { echo "nothing to close"; exit 0; }
+          gh issue comment "$number" --repo "$REPO" \
+            --body "Clean on $GITHUB_SERVER_URL/$REPO/actions/runs/$GITHUB_RUN_ID — closing."
+          gh issue close "$number" --repo "$REPO"
+
+      - name: Fail the job
+        if: steps.audit.outcome == 'failure'
+        shell: bash
+        run: exit 1

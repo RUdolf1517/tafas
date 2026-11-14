@@ -1,5 +1,8 @@
 name: ci
 
+# Every job runs on a push and on a pull request. The one exception would be
+# `licenses`, whose cadence is argued in its own comment — but the trigger is
+# still this one: the job decides to run, not the event.
 on:
   push:
     branches: [main, "arena/**"]
@@ -351,3 +354,80 @@ jobs:
         shell: bash
         run: exit 1
 
+
+  # The licence in the readme is a claim, and `deny.toml` is the file that
+  # checks it. Until this job existed, `cargo deny` ran nowhere: three pages said
+  # it ran "when a release is cut", `release.yml` has never mentioned it, and
+  # neither had CI. A configuration for a command nobody runs is a claim nobody
+  # checks.
+  #
+  # It runs on every commit rather than only when the lockfile moves. The reason
+  # `cargo audit` is not per-commit is that its database moves independently of
+  # this repository — a build that was perfect on Friday is red on Monday for a
+  # reason nobody here caused. `deny.toml` does not depend on a moving database
+  # for the checks that matter here: it is licences, banned crates and sources,
+  # all of which are decided by the tree. A minute of runner time on every commit
+  # is a cheaper thing to spend than an argument about when to remember.
+  # Advisories are the moving part, so they live in `audit.yml` on a schedule
+  # instead; see docs/dependencies.md §0.
+  licenses:
+    name: licenses
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+
+      # `--all-features` because the default build is not the only one a reader
+      # compiles: `--no-default-features --features youtube` is documented, and a
+      # dependency reached only from one site's code has to pass the same test.
+      - name: cargo deny check
+        id: deny
+        continue-on-error: true
+        shell: bash
+        run: cargo deny --all-features check 2>&1 | tee deny.log
+
+      - name: Publish the failure
+        if: steps.deny.outcome == 'failure'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
+          set -uo pipefail
+          number="$(gh pr list --head "$HEAD_BRANCH" --state open --json number -q '.[0].number' 2>/dev/null || true)"
+          if [ -z "$number" ]; then
+            echo "no open pull request for $HEAD_BRANCH; see the step log"
+            exit 0
+          fi
+          # The comment is the only channel: the job log lives behind a blob URL
+          # that expires, so what is here is what a reader gets. Reporting
+          # `tail -n 80` put 80 lines of `license-not-encountered` warnings in
+          # the first such comment and cut the error that caused the failure —
+          # so the verdict comes first, then the diagnostics from the first
+          # error onwards, and warnings only when there is no error at all.
+          {
+            echo '### `licenses` — a dependency is not allowed here'
+            echo
+            echo '```'
+            grep -E '^(advisories|bans|licenses|sources) .*(ok|FAILED)' deny.log | tail -n 1 || true
+            echo
+            if grep -q '^error' deny.log; then
+              awk '/^error/ {keep=1} keep' deny.log | head -n 120
+            else
+              tail -n 60 deny.log
+            fi
+            echo '```'
+            echo
+            echo 'The whole run is in the job log; `cargo deny check` locally'
+            echo 'reproduces it. Licences are listed in `deny.toml`.'
+          } > deny.md
+          gh pr comment "$number" --body-file deny.md || true
+
+      - name: Fail the job
+        if: steps.deny.outcome == 'failure'
+        shell: bash
+        run: exit 1

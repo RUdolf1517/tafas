@@ -21,6 +21,11 @@ allow = [
     "Zlib",
     "MPL-2.0",
     "CC0-1.0",
+    # The licence of the Mozilla CA bundle, which is data rather than code. It
+    # arrives with `webpki-roots` and is the reason the first CI run of this
+    # check failed: the list above was written from the crates this repository
+    # chooses, and the certificate store is one it inherits.
+    "CDLA-Permissive-2.0",
 ]
 confidence-threshold = 0.8
 # MPL-2.0 is file-scoped copyleft and does not affect this crate's licence.

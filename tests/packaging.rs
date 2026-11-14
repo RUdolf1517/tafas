@@ -634,6 +634,95 @@ fn the_homebrew_formula_names_hashes_the_release_published() {
     );
 }
 
+/// The licence claim in the readme is checked by a job that exists.
+///
+/// `deny.toml` sat in this repository for three releases while three pages said
+/// `cargo deny` ran "when a release is cut" and no workflow mentioned it. A
+/// configuration for a command nobody runs is a claim nobody checks, and the
+/// claim here is the licence on the front page.
+#[test]
+fn the_licence_check_runs_and_says_what_it_is() {
+    let ci = read(".github/workflows/ci.yml");
+    assert!(
+        ci.contains("cargo deny"),
+        "CI must run `cargo deny`: deny.toml is otherwise a policy nobody applies"
+    );
+    assert!(
+        ci.contains("--all-features"),
+        "the licence check must cover the feature builds a reader is told to make"
+    );
+    // And the sentence that made this test necessary: the one that said the
+    // check ran at release time and nowhere else.
+    for page in ["README.md", "docs/dependencies.md", "docs/testing.md"] {
+        let text = read(page).split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(
+            !text.contains("when a release is cut;"),
+            "{page} still says the licence check happens at release time"
+        );
+    }
+    let contributing = read("CONTRIBUTING.md");
+    assert!(
+        contributing.contains("cargo deny check"),
+        "CONTRIBUTING.md must name the command a contributor runs by hand"
+    );
+}
+
+/// The allow-list in `deny.toml` and the allow-list quoted in the prose are the
+/// same list, and every entry in it is an SPDX identifier `cargo deny` accepts.
+///
+/// This test exists because the check's first real run failed on a licence that
+/// was in neither place: `webpki-roots` ships the Mozilla certificate store
+/// under `CDLA-Permissive-2.0`, which is data rather than code and so had been
+/// missed by a list written from the crates this project chooses. A page that
+/// quotes the list is how the next reader knows what will pass.
+#[test]
+fn the_allow_list_is_one_list() {
+    let deny = read("deny.toml");
+    let listed: Vec<String> = deny
+        .split_once("allow = [")
+        .expect("deny.toml has a licence allow-list")
+        .1
+        .split_once(']')
+        .expect("the allow-list is closed")
+        .0
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .map(|line| line.trim_end_matches(',').trim_matches('"').to_string())
+        .collect();
+    assert!(
+        listed.contains(&"CDLA-Permissive-2.0".to_string()),
+        "the certificate bundle's licence has to be allowed, or the check fails"
+    );
+    let page = read("docs/dependencies.md")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    for licence in &listed {
+        assert!(
+            page.contains(licence.as_str()),
+            "docs/dependencies.md quotes an allow-list that has lost `{licence}`"
+        );
+    }
+}
+
+/// The `licenses` job reports through a pull-request comment, because the job
+/// log lives behind a URL that expires. That comment is therefore the whole
+/// failure, and the first one this job ever produced put eighty lines of
+/// warnings in it and cut the error that caused the failure.
+#[test]
+fn the_licence_failure_is_reported_from_the_error() {
+    let ci = read(".github/workflows/ci.yml");
+    assert!(
+        !ci.contains("tail -n 80 deny.log"),
+        "reporting the tail of the log hides the error behind the warnings"
+    );
+    assert!(
+        ci.contains("/^error/ {keep=1} keep"),
+        "the published failure must start at the first error"
+    );
+}
+
 /// Every script the release job runs has to exist, and the page that describes
 /// the process has to name the script that is actually there.
 ///
@@ -696,4 +785,56 @@ fn every_script_the_release_runs_exists() {
         docs.contains("packaging/apk.py"),
         "docs/releases.md must say which script builds the .apk"
     );
+}
+/// `cargo audit` is not per-commit, and the reason is the database rather than
+/// the code: RustSec moves while this repository does not. The arrangement is
+/// therefore a schedule and a tag, and it has to be an arrangement that *says*
+/// something — a job that fails every Monday in silence is a job nobody has.
+///
+/// This test exists in the same spirit as the one above it: the previous version
+/// of this project said the licence check ran "when a release is cut" and it ran
+/// nowhere, so what a page claims about a workflow is now checked against the
+/// workflow.
+#[test]
+fn the_advisory_check_runs_on_a_clock_and_says_so() {
+    let audit = read(".github/workflows/audit.yml");
+    assert!(
+        audit.contains("schedule:"),
+        "`cargo audit` has to run without anybody touching the repository"
+    );
+    assert!(
+        audit.contains("cargo audit"),
+        "audit.yml must actually invoke cargo audit"
+    );
+    assert!(
+        audit.contains("tags:"),
+        "a tag is the last moment before archives go out; audit there too"
+    );
+    // A scheduled run has no pull request to comment on, so silence is the
+    // failure mode to design against.
+    assert!(
+        audit.contains("gh issue create") && audit.contains("gh issue close"),
+        "a scheduled failure must open an issue and close it when clean"
+    );
+
+    // And the pages that describe the cadence have to describe this one. The
+    // sentence they used to carry — that it is "not wired into a workflow" — was
+    // true until this job existed and is now the exact kind of claim this test
+    // is for.
+    for page in [
+        "docs/dependencies.md",
+        "docs/testing.md",
+        "CONTRIBUTING.md",
+        "docs/releases.md",
+    ] {
+        let text = read(page).split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(
+            text.contains("audit.yml"),
+            "{page} does not name the workflow that runs `cargo audit`"
+        );
+        assert!(
+            !text.contains("not wired into a workflow"),
+            "{page} still says the advisory check runs nowhere"
+        );
+    }
 }
