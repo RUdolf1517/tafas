@@ -145,15 +145,19 @@ still demuxes into the same four samples.
 | --- | --- | --- |
 | `tokio` | `reqwest/blocking` | built but never used as an async runtime by this code; the blocking client drives it internally |
 | `hyper`, `http` | `reqwest` | HTTP/1.1 only: `h2` is deliberately off, see §4 |
-| `webpki-roots` | `reqwest` feature | the CA bundle, compiled in — no system trust store |
+| `webpki-roots` | `reqwest` feature | the CA bundle, compiled in — no system trust store. Data, not code, and `CDLA-Permissive-2.0`, which is why that licence is allowed |
 | `ring` | `rustls` | see §1.3 |
 | `icu_*`, `idna` | `url` | internationalised domain handling |
 | `cc` | `ring` build | compiles the vendored C; requires a C compiler at build time, not at run time |
 
 `cargo deny` fails on any new dependency whose licence is not in
 `{MIT, Apache-2.0, Apache-2.0 WITH LLVM-exception, BSD-2-Clause, BSD-3-Clause,
-ISC, Unicode-3.0, Zlib, MPL-2.0}`. MPL-2.0 is allowed because it is
-file-scoped copyleft and does not affect the licence of this crate.
+ISC, Unicode-3.0, Zlib, MPL-2.0, CC0-1.0, CDLA-Permissive-2.0}`. MPL-2.0 is
+allowed because it is file-scoped copyleft and does not affect the licence of
+this crate. `CDLA-Permissive-2.0` is the licence of the Mozilla certificate
+store that `webpki-roots` compiles in: it is data, not code, and it is the entry
+the first CI run of this check added — the list had been written from the crates
+this project chooses, and the CA bundle is one it inherits.
 
 ## 3. Where the C is
 

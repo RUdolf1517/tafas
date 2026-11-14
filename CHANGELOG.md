@@ -11,6 +11,19 @@ version; adding a site, a flag or a container is minor. The policy is in
 
 ## [Unreleased]
 
+### Fixed
+
+- **The licence check's first run, and the report it wrote.** Turning on
+  `cargo deny` in CI immediately failed on `webpki-roots`, which ships the
+  Mozilla certificate store under `CDLA-Permissive-2.0`: the allow-list had been
+  written from the crates this project *chooses*, and the CA bundle is one it
+  *inherits*, data rather than code. The licence is now allowed and the reason is
+  next to it. The job also reported that failure badly — it published the last
+  eighty lines of output, which were `license-not-encountered` warnings, and cut
+  the error that caused it; the comment now starts at the verdict and the first
+  error. Two tests keep both halves: the allow-list is one list in `deny.toml`
+  and in the prose, and the report is built from the error.
+
 ### Added
 
 - **`cargo deny` runs in CI, because it never did.** `deny.toml` has been in this

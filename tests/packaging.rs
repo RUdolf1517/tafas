@@ -667,6 +667,63 @@ fn the_licence_check_runs_and_says_what_it_is() {
     );
 }
 
+/// The allow-list in `deny.toml` and the allow-list quoted in the prose are the
+/// same list, and every entry in it is an SPDX identifier `cargo deny` accepts.
+///
+/// This test exists because the check's first real run failed on a licence that
+/// was in neither place: `webpki-roots` ships the Mozilla certificate store
+/// under `CDLA-Permissive-2.0`, which is data rather than code and so had been
+/// missed by a list written from the crates this project chooses. A page that
+/// quotes the list is how the next reader knows what will pass.
+#[test]
+fn the_allow_list_is_one_list() {
+    let deny = read("deny.toml");
+    let listed: Vec<String> = deny
+        .split_once("allow = [")
+        .expect("deny.toml has a licence allow-list")
+        .1
+        .split_once(']')
+        .expect("the allow-list is closed")
+        .0
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .map(|line| {
+            line.trim_end_matches(',')
+                .trim_matches('"')
+                .to_string()
+        })
+        .collect();
+    assert!(
+        listed.contains(&"CDLA-Permissive-2.0".to_string()),
+        "the certificate bundle's licence has to be allowed, or the check fails"
+    );
+    let page = read("docs/dependencies.md").split_whitespace().collect::<Vec<_>>().join(" ");
+    for licence in &listed {
+        assert!(
+            page.contains(licence.as_str()),
+            "docs/dependencies.md quotes an allow-list that has lost `{licence}`"
+        );
+    }
+}
+
+/// The `licenses` job reports through a pull-request comment, because the job
+/// log lives behind a URL that expires. That comment is therefore the whole
+/// failure, and the first one this job ever produced put eighty lines of
+/// warnings in it and cut the error that caused the failure.
+#[test]
+fn the_licence_failure_is_reported_from_the_error() {
+    let ci = read(".github/workflows/ci.yml");
+    assert!(
+        !ci.contains("tail -n 80 deny.log"),
+        "reporting the tail of the log hides the error behind the warnings"
+    );
+    assert!(
+        ci.contains("/^error/ {keep=1} keep"),
+        "the published failure must start at the first error"
+    );
+}
+
 /// Every script the release job runs has to exist, and the page that describes
 /// the process has to name the script that is actually there.
 ///

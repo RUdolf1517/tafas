@@ -401,11 +401,27 @@ jobs:
             echo "no open pull request for $HEAD_BRANCH; see the step log"
             exit 0
           fi
+          # The comment is the only channel: the job log lives behind a blob URL
+          # that expires, so what is here is what a reader gets. Reporting
+          # `tail -n 80` put 80 lines of `license-not-encountered` warnings in
+          # the first such comment and cut the error that caused the failure —
+          # so the verdict comes first, then the diagnostics from the first
+          # error onwards, and warnings only when there is no error at all.
           {
             echo '### `licenses` — a dependency is not allowed here'
+            echo
             echo '```'
-            tail -n 80 deny.log
+            grep -E '^(advisories|bans|licenses|sources) .*(ok|FAILED)' deny.log | tail -n 1 || true
+            echo
+            if grep -q '^error' deny.log; then
+              awk '/^error/ {keep=1} keep' deny.log | head -n 120
+            else
+              tail -n 60 deny.log
+            fi
             echo '```'
+            echo
+            echo 'The whole run is in the job log; `cargo deny check` locally'
+            echo 'reproduces it. Licences are listed in `deny.toml`.'
           } > deny.md
           gh pr comment "$number" --body-file deny.md || true
 
