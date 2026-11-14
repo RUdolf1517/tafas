@@ -1144,7 +1144,8 @@ mod tests {
 
         let mut removed = Vec::new();
         let mut blanked = 0u64;
-        strip_moov(&mut payload, &mut removed, &mut blanked, &mut 0).unwrap();
+        let mut zeroed = 0usize;
+        strip_moov(&mut payload, &mut removed, &mut blanked, &mut zeroed).unwrap();
 
         assert_eq!(removed, vec!["udta".to_string()]);
         assert_eq!(payload.len(), before.len(), "the header must not shrink");
@@ -1195,7 +1196,8 @@ mod tests {
 
         let mut removed = Vec::new();
         let mut blanked = 0u64;
-        strip_moov(&mut payload, &mut removed, &mut blanked, &mut 0).unwrap();
+        let mut zeroed = 0usize;
+        strip_moov(&mut payload, &mut removed, &mut blanked, &mut zeroed).unwrap();
 
         assert_eq!(removed, vec!["udta".to_string()]);
     }
@@ -1210,7 +1212,8 @@ mod tests {
 
         let mut removed = Vec::new();
         let mut blanked = 0u64;
-        strip_moov(&mut payload, &mut removed, &mut blanked, &mut 0).unwrap();
+        let mut zeroed = 0usize;
+        strip_moov(&mut payload, &mut removed, &mut blanked, &mut zeroed).unwrap();
 
         assert!(removed.is_empty());
         assert_eq!(blanked, 0);
@@ -1405,9 +1408,9 @@ fn strip_moov(
             // never entered: there is nothing to find below them, and walking
             // them would mean understanding them.
             b"trak" | b"mdia" | b"minf" => {
-                let inner = payload[span.payload..span.end].to_vec();
+                let mut inner = payload[span.payload..span.end].to_vec();
                 let mut nested = Vec::new();
-                strip_moov(&inner, &mut nested, blanked, zeroed)?;
+                strip_moov(&mut inner, &mut nested, blanked, zeroed)?;
                 payload[span.payload..span.end].copy_from_slice(&inner);
                 removed.append(&mut nested);
             }
