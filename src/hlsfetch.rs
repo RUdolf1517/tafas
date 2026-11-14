@@ -179,12 +179,14 @@ pub fn fetch(
     let video_bytes = fetch_media(
         http,
         &video_segments,
-        &borrowed,
-        concurrency,
-        on_bytes,
+        &mut Walk {
+            headers: &borrowed,
+            concurrency,
+            ceiling,
+            on_bytes,
+        },
         &mut segments,
         &mut video_cache,
-        ceiling,
     )?;
     let mut tracks = tracks_of(&video_bytes, video_map.as_deref())?;
     let mut duration = video_media.total_duration();
@@ -229,12 +231,14 @@ pub fn fetch(
         let audio_bytes = fetch_media(
             http,
             &audio_segments,
-            &borrowed,
-            concurrency,
-            on_bytes,
+            &mut Walk {
+                headers: &borrowed,
+                concurrency,
+                ceiling,
+                on_bytes,
+            },
             &mut segments,
             &mut audio_cache,
-            ceiling,
         )?;
         if let Some(warning) = audio_cache.warning.clone() {
             warnings.push(warning);
@@ -709,6 +713,20 @@ fn write_segment(
     journal.flush()
 }
 
+/// The answers every segment fetch in one run shares: how many workers, how
+/// large a body may be, and where progress is reported.
+///
+/// Named rather than passed as four positional arguments because the two calls
+/// that reach `fetch_media` — video, then audio — were eight arguments of which
+/// six were identical, which is a shape where a transposed pair compiles and
+/// lies. The compiler sees one argument now, and clippy's argument count agrees.
+struct Walk<'a> {
+    headers: &'a [(&'a str, &'a str)],
+    concurrency: usize,
+    ceiling: u64,
+    on_bytes: &'a mut dyn FnMut(u64),
+}
+
 /// One list of segments, fetched in order into a cache that may already hold
 /// the beginning of it.
 ///
@@ -719,13 +737,17 @@ fn write_segment(
 fn fetch_media(
     http: &Http,
     chosen: &[&Segment],
-    headers: &[(&str, &str)],
-    concurrency: usize,
-    on_bytes: &mut dyn FnMut(u64),
+    walk: &mut Walk<'_>,
     segments: &mut usize,
     cache: &mut Cache,
-    ceiling: u64,
 ) -> Result<Vec<u8>> {
+    let ceiling = walk.ceiling;
+    let concurrency = walk.concurrency;
+    // Reborrowed, not moved: the caller passes `&mut Walk`, and taking the
+    // closure by value here would consume it on the first call and make the
+    // audio walk a second borrow of something already gone.
+    let on_bytes = &mut *walk.on_bytes;
+    let headers = walk.headers;
     // Everything before `skip` is already in the cache: it was fetched by the
     // run this one is continuing.
     let skip = cache.done;

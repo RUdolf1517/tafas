@@ -109,9 +109,10 @@ fn ascii_fold(text: &str) -> String {
 /// not here becomes `_` rather than an invented spelling.
 fn ascii_of(ch: char) -> Option<&'static str> {
     // `static`, not `const`: a `const` is inlined at every use, so the reference
-    // returned below would point into a temporary. Each entry's `&'static str`
-    // keeps its own lifetime, which is the only reason this compiles.
-    static TABLE: [(char, &'static str); 61] = [
+    // returned below would point into a temporary. Inside a `static` the lifetime
+    // is already `'static`, which is why the item type does not repeat it —
+    // clippy refuses the repetition, and it is right to.
+    static TABLE: [(char, &str); 61] = [
         ('À', "A"),
         ('Á', "A"),
         ('Â', "A"),

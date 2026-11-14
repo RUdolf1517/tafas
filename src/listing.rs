@@ -219,7 +219,7 @@ mod tests {
             title: "A/B: \"test\"?".into(),
             duration: None,
         };
-        let stem = stem(3, &entry);
+        let stem = stem(3, &entry, false);
         assert!(stem.starts_with("03 - "), "{stem}");
         assert!(stem.ends_with("[dQw4w9WgXcQ]"), "{stem}");
         assert!(!stem.contains('/'), "a title never adds a path: {stem}");
@@ -233,7 +233,7 @@ mod tests {
             title: "   ".into(),
             duration: None,
         };
-        assert_eq!(stem(10, &entry), "10 - untitled [abcdefghijk]");
+        assert_eq!(stem(10, &entry, false), "10 - untitled [abcdefghijk]");
     }
 
     #[test]
