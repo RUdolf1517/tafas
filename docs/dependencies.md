@@ -178,6 +178,69 @@ Nightly-only, dev-only, and the measurement §4 asks for comes out as zero — n
 byte of the released binary changed. That is a honest measurement, not a missing
 one. The targets themselves are described in [testing §6](testing.md#6-fuzzing).
 
+## 3.2 What the binary weighs, and where it goes
+
+2 878 392 bytes is the recorded budget; an ordinary build on a CI runner today is
+2 905 872 (+1.0%), which is drift between runners and days rather than a change
+in the graph. Both numbers are `x86_64-unknown-linux-gnu`, `opt-level = "z"`,
+fat LTO, `panic = "abort"`, symbols stripped.
+
+`cargo bloat --crates` on that build, as a share of `.text`:
+
+| Crate | `.text` | Share | What it is |
+| --- | --- | --- | --- |
+| `tafas` | 340.3 KiB | 19.6% | this repository: seven parsers, the remuxers, the writer |
+| `std` | 329.7 KiB | 19.0% | allocation, formatting, `std::backtrace` symbolisation, intrinsics |
+| `rustls` | 253.4 KiB | 14.6% | the TLS state machine and its message codec |
+| `ring` | 179.0 KiB | 10.3% | TLS primitives; the only C and assembly in the graph |
+| `reqwest` | 142.7 KiB | 8.2% | the HTTP client |
+| `clap_builder` | 108.2 KiB | 6.2% | argument parsing |
+| `hyper_util`, `http`, `hyper` | 94.7 KiB | 5.4% | the HTTP/1.1 plumbing under `reqwest` |
+| `webpki` + `webpki-roots` | 36.3 KiB | 2.1% | certificate path validation and the CA bundle |
+| `clap_complete` | 35.4 KiB | 2.0% | `--completions` for four shells |
+| everything else | ~130 KiB | 7.6% | `aes`/`cbc` (6.1 KiB), `miniz_oxide`, `idna`, `serde_json`, … |
+
+Which is the useful way to read it: **most of the binary is not this repository.**
+Two thirds of it is TLS, the HTTP client, the argument parser and the standard
+library, and every one of those is a correctness argument rather than a fat one —
+`ring` is what makes the binary static, `clap` is what prints the errors, and
+`rustls` is what keeps OpenSSL out of the build.
+
+### What was tried, and what it bought
+
+Every number below is one build on the same runner, same commit, one variable
+changed. They are recorded so that the next person does not spend a day
+rediscovering them.
+
+| Change | Bytes | Effect |
+| --- | --- | --- |
+| `opt-level = "s"` instead of `"z"` | 3 075 328 | **+5.8%:** `"z"` is already the best choice |
+| `opt-level = 2` | 3 720 056 | +28.0% |
+| `opt-level = 3` | 3 906 504 | +34.4% |
+| no `tls12` in `rustls` | 2 905 872 | **exactly the same, byte for byte** — rustls keeps the TLS 1.2 code whether or not the feature is on; the feature only stops it being *reached* |
+| no `reqwest` `gzip` (and no `.gzip(true)`) | 2 856 032 | −1.7%, at the cost of every page and every JSON body crossing the wire uncompressed |
+| one site only (`--no-default-features --features youtube`) | 2 815 144 | −3.1% for six of the seven readers |
+
+None of these is worth a change on this evidence. The two that *would* pay are
+already done and are in the profile above: `opt-level = "z"` and dropping
+`http2` and `charset` from `reqwest`.
+
+### Where the next reduction would have to come from
+
+Not from a flag. The remaining candidates each cost something a user can see:
+
+- **`clap` → hand-written parsing** (108 KiB + 35 KiB). The completions are
+  generated from the live parser, so they would have to be written by hand and
+  would then be able to drift from `--help` — the exact failure this repository
+  avoids elsewhere.
+- **`aes` + `cbc` → a 120-line AES-128-CBC** (~7 KiB). It is one function
+  (`hlsfetch::decrypt`). A hand-written cipher is the one place where a smaller
+  binary is a worse program, and the dependency is pure Rust with a known name.
+- **Static musl → glibc** (not measured here). The release binary is `musl` so it
+  runs on any distribution; a glibc build is smaller and runs on fewer machines.
+- **`panic = "abort"`, fat LTO, `strip`** — all three are already on. There is no
+  fourth lever in the profile.
+
 ## 4. Adding a dependency
 
 Open an issue first. A pull request that adds one is expected to contain:

@@ -13,6 +13,15 @@ version; adding a site, a flag or a container is minor. The policy is in
 
 ### Added
 
+- **What the binary weighs, measured rather than guessed.**
+  `docs/dependencies.md` §3.2 now says where the 2.88 MB goes — `tafas` 19.6%,
+  `std` 19.0%, `rustls` 14.6%, `ring` 10.3%, `reqwest` 8.2%, `clap` 8.2% — and
+  records the four ways it was tried against: `opt-level = "s"` is 5.8% *worse*
+  than the `"z"` already in the profile, `2` and `3` are 28% and 34% worse, and
+  neither dropping `tls12` (byte-identical: rustls keeps the code, the feature
+  only stops it being reached) nor dropping `reqwest`'s `gzip` (−1.7%, for
+  uncompressed transfers) is a trade worth making. No profile changed.
+
 - **The Homebrew formula is checked against the release.** `Formula/tafas.rb`
   repeats four hashes by hand, once per release, and nothing compared them with
   the archives they name: 0.3.0 was tagged with four zeroes, so `brew install`
