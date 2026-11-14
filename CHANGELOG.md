@@ -11,7 +11,18 @@ version; adding a site, a flag or a container is minor. The policy is in
 
 ## [Unreleased]
 
-Nothing yet — 0.3.0 is the release this section became.
+### Added
+
+- **The Homebrew formula is checked against the release.** `Formula/tafas.rb`
+  repeats four hashes by hand, once per release, and nothing compared them with
+  the archives they name: 0.3.0 was tagged with four zeroes, so `brew install`
+  would have downloaded the tarball and then refused it on its checksum.
+  `packaging/tests/formula.py` reads a release's own `SHA256SUMS` and checks the
+  version, the four hashes, the platform set and that every URL lives under the
+  version it claims; `tests/packaging.rs` fails when the formula still carries
+  zeroes. CI runs the comparison against the latest release with
+  `continue-on-error`, because a third party being unreachable must not look like
+  a wrong hash — the mistake it exists for is printed in the step log instead.
 
 ## [0.3.0] - 2026-11-12
 

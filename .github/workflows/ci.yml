@@ -59,6 +59,33 @@ jobs:
           # 2.14, and the v3 format it writes is unreadable to most installs
           # that install a package by path.
           python3 packaging/tests/apk.py
+          # The Homebrew formula is the one artifact that repeats a hash by hand,
+          # and nothing checked it: 0.3.0 shipped four zeroes. It is checked
+          # against the *latest* release's SHA256SUMS, over the network; that
+          # part is a step of its own below.
+
+      # The formula's four hashes are the one place a release hash is written by
+      # hand, and the one place nothing checked. It is compared with the latest
+      # release's own `SHA256SUMS`, so the check cannot be fooled by the formula
+      # and the release agreeing with each other.
+      #
+      # `continue-on-error` here is deliberate and is not the `skipped`-step
+      # mistake this workflow was fixed for: the step always runs, its outcome is
+      # always reported, and the job's verdict does not depend on a third party
+      # being reachable. The failure that matters — a hash that is not the
+      # release's — is printed in full in the step log below it.
+      - name: The Homebrew formula matches the release
+        id: formula
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="$(curl -sS -m 30 -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/${{ github.repository }}/releases/latest" \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"])')"
+          echo "comparing Formula/tafas.rb with $tag"
+          python3 packaging/tests/formula.py --release "$tag" 2>&1 | tee formula.log
 
       # Every step below is guarded by `!cancelled()` and *not* by the outcome of
       # the one before it. Two runs proved why: clippy failed, `continue-on-error`
