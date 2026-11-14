@@ -907,7 +907,7 @@ fn a_segment_over_the_ceiling_is_refused_and_leaves_nothing_behind() {
     // user's number reached that check rather than the module's own 64 MiB
     // default: the message carries the ceiling that was given.
     assert!(
-        matches!(error, tafas::error::Error::Limit(_)),
+        matches!(&error, tafas::error::Error::Limit(_)),
         "a body over the ceiling is a limit refusal, got {error:?}"
     );
     let said = error.to_string();

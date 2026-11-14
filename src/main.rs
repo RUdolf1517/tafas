@@ -254,7 +254,7 @@ mod tests {
         let value: serde_json::Value = serde_json::from_str(&capabilities()).unwrap();
         let transfers = &value["transfers"];
         assert_eq!(transfers["limit_rate"]["min"], 1024);
-        assert_eq!(transfers["max_filesize"]["max"], crate::ratelimit::MAX_SIZE);
+        assert_eq!(transfers["max_filesize"]["max"], tafas::ratelimit::MAX_SIZE);
         assert_eq!(transfers["retry_after"], true);
         assert_eq!(transfers["restrict_filenames"], false);
     }

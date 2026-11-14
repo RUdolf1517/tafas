@@ -108,7 +108,10 @@ fn ascii_fold(text: &str) -> String {
 /// character that a European title actually carries, and a character that is
 /// not here becomes `_` rather than an invented spelling.
 fn ascii_of(ch: char) -> Option<&'static str> {
-    const TABLE: [(char, &str); 61] = [
+    // `static`, not `const`: a `const` is inlined at every use, so the reference
+    // returned below would point into a temporary. Each entry's `&'static str`
+    // keeps its own lifetime, which is the only reason this compiles.
+    static TABLE: [(char, &'static str); 61] = [
         ('À', "A"),
         ('Á', "A"),
         ('Â', "A"),
