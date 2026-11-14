@@ -13,6 +13,13 @@ version; adding a site, a flag or a container is minor. The policy is in
 
 ### Added
 
+- **A procedure for releasing the signing key**, in `docs/releases.md`. The
+  roadmap's one open sub-item was the key, and the page said it exists without
+  saying how to make one — the exact gap that leaves a step undone for three
+  releases. The commands, the reason the key has no passphrase, and what happens
+  to old signatures after a rotation are now written down next to the step that
+  uses them.
+
 - **`--max-filesize SIZE`.** A ceiling for one written file, in the same grammar
   `--limit-rate` takes (`500K`, `2M`, `1.5G`, `1T`). Enforced twice, because a
   download arrives in two shapes: a progressive body is measured against its
