@@ -1167,7 +1167,7 @@ mod tests {
             ]) as usize,
             udta_len
         );
-        assert!(!payload.windows(4).any(|window| window == b"iTun"));
+        assert!(!payload.windows(4).any(|window| window == &b"iTun"[..]));
     }
 
     #[test]
