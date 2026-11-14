@@ -166,6 +166,7 @@ by name rather than converted.
 | `--limit-rate RATE` | cap a transfer at `RATE` bytes per second (`500K`, `2M`, `1.5M`; default no limit) |
 | `--max-filesize SIZE` | refuse any single file larger than `SIZE` (`500K`, `2M`, `1.5G`; default no ceiling) |
 | `--restrict-filenames` | make written names ASCII: fold what has a plain letter, drop the rest |
+| `--strip-meta` | empty the metadata an MP4 carries about itself (MP4/M4A only) |
 | `--extractor-args SITE:KEY=VALUE` | narrow an extractor's route by hand (repeatable; see below) |
 
 Retried: transport failures, `429`, and `5xx`, with a growing delay (0.4 s,
@@ -273,6 +274,35 @@ UTF-8 — where a Cyrillic title becomes a row of `?` and the file is no longer
 findable. It applies to list entries too (`03 - Title [id]`), because it is a
 statement about the machine the files land on, not about one file.
 
+`--strip-meta` empties what a file says about *itself*: `udta` and the `ilst`
+inside it (title, artist, encoder, the serial number a phone writes), `meta`,
+`chpl`, and the creation and modification times in `mvhd`, `tkhd` and `mdhd`.
+The last of those is the one worth naming — a timestamp to the second, in a
+field nobody reads, in a file that may be the only record of when it was made.
+
+The boxes are not deleted. Each becomes a `free` box of exactly the same length,
+holding zeros. The reason is the chunk offset table: `stco` and `co64` store
+absolute byte positions, so removing a box that sits before the media would
+shift every sample after it, and the index would name the wrong bytes for every
+frame in the file. Rewriting the index is possible — it is what the remux path
+does when it joins a separate video with its audio — but it is work with a
+failure mode, and stripping needs none of it: a box emptied in place moves
+nothing, in any layout, and the copied index stays right by construction. The
+file does not get smaller; the part of it that was about the file rather than
+the media stops saying anything.
+
+The stripped copy is verified with the same reader every written MP4 goes
+through, and only then does it replace the temporary. A file that verifier
+refuses leaves the original untouched and the run failed. A file with no
+metadata is left byte for byte as it was, and `--verbose` says so; MP4s tafas
+assembles itself never had any, so the flag does nothing on them and does not
+pretend otherwise.
+
+Scope is MP4 and M4A. An MP3 is written verbatim and keeps its ID3 tags;
+`--capabilities` reports `strip_meta` as `["mp4"]` rather than leaving that to be
+discovered. A file the reader refuses as a whole — a fragmented MP4, which this
+build does not remux either — is kept as it arrived with a warning, because a
+download that succeeded should not be lost to a limitation of the stripper.
 `--concurrent-fragments N` decides how many segments of one HLS list are in
 flight at once; the default, `1`, fetches them one after another, so the flag is
 the only thing that changes the order requests are made in. `N` is bounded to

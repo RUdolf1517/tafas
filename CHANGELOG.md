@@ -13,6 +13,18 @@ version; adding a site, a flag or a container is minor. The policy is in
 
 ### Added
 
+- **`--strip-meta`.** Empties what an MP4 says about itself: `udta` and the
+  `ilst` inside it — title, artist, encoder, the serial number a phone writes —
+  plus `meta`, `chpl`, and the creation and modification times in `mvhd`, `tkhd`
+  and `mdhd`. The boxes are emptied rather than deleted: each becomes a `free`
+  box of the same length, because `stco`/`co64` store absolute byte offsets and
+  shrinking the header would move every sample after it without moving the
+  index. In-place emptying makes the copied index correct by construction, in
+  any layout, and the file's length never changes behind a player's back. The
+  stripped copy goes through `mux::verify` before it replaces the original; a
+  file with no metadata is left alone and `--verbose` says so. Scope is MP4/M4A
+  — an MP3 is written verbatim and keeps its ID3 tags, which `--capabilities`
+  reports instead of leaving it to be discovered.
 - **A procedure for releasing the signing key**, in `docs/releases.md`. The
   roadmap's one open sub-item was the key, and the page said it exists without
   saying how to make one — the exact gap that leaves a step undone for three

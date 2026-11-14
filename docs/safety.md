@@ -81,6 +81,28 @@ A page title is attacker-controlled input that becomes a path. The reduction:
   will live on, not about trust: a title is equally attacker-controlled in
   either mode, and neither mode lets it escape the directory.
 
+### Metadata
+
+A downloaded MP4 is not only the frames the site served. It may also carry what
+its creator's tooling wrote: a `udta` box with a title, an artist, the name and
+version of the encoder, a serial number a phone puts there. `--strip-meta`
+empties those boxes and zeroes the creation and modification times in `mvhd`,
+`tkhd` and `mdhd` — the latter being a timestamp to the second, in a field no
+player shows.
+
+The boxes are replaced by `free` boxes of identical length rather than deleted,
+so the file does not shrink. That is a safety property, not a storage one: chunk
+offsets are absolute, and a shorter header would leave every sample in the file
+pointed at by an index that had silently become wrong. A file whose metadata was
+emptied is verified afterwards and only then replaced; if verification fails, the
+original stays and the run fails.
+
+The flag is not a claim of anonymity, and the code says so where it applies: it
+covers the MP4 boxes named above, not the media itself. Frames can identify a
+recording, and so can the site's own watermark. An MP3 is written verbatim and
+keeps its ID3 tags — `--capabilities` reports `strip_meta` as MP4-only so that
+this is a documented limit rather than a surprise.
+
 The directory part of the name never comes from the page: it comes from `-o`,
 `--name` or the current directory. There is no way for a title to place a file
 outside the directory the user chose.

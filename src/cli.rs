@@ -117,6 +117,10 @@ pub struct Args {
     #[arg(long, value_name = "SIZE", value_parser = parse_size)]
     pub max_filesize: Option<u64>,
 
+    /// Empty the file's own metadata (udta, meta, ilst, timestamps), keeping the media
+    #[arg(long)]
+    pub strip_meta: bool,
+
     /// Print what would be fetched and where, then stop
     #[arg(short = 'n', long)]
     pub dry_run: bool,
@@ -323,6 +327,7 @@ impl Args {
             name: self.name.clone(),
             restrict_filenames: self.restrict_filenames,
             max_filesize: self.max_filesize,
+            strip_meta: self.strip_meta,
             dry_run: self.dry_run,
             list_formats: self.list_formats,
             json: self.json,

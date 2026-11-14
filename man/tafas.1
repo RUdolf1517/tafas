@@ -226,6 +226,27 @@ renamed. A file over the ceiling is refused and removed rather than kept short,
 and the exit code says the run failed. A size of zero is a legal request that
 refuses every file. The default is no ceiling.
 .TP
+.B \-\-strip\-meta
+Empty the metadata a downloaded file carries about itself: the user-data boxes
+(\fBudta\fR and the \fBilst\fR inside it, which is where a title, an artist or
+the name of the program that wrote the file lives), the \fBmeta\fR and
+\fBchpl\fR boxes, and the creation and modification times in the movie, track
+and media headers. It applies to MP4 and M4A, which are the files this program
+edits; an MP3 is copied as it arrived and keeps its tags, and
+.B \-\-capabilities
+says so rather than leaving the flag to imply more than it does.
+.PP
+The boxes are emptied in place, not deleted: each becomes a box of padding of
+exactly the same length. A chunk offset table stores absolute byte positions, so
+removing a box that sits before the media would silently corrupt every sample
+after it, and the file's length is the one thing this program will not change
+behind a player's back. What is left holds no trace of the metadata, and the
+stripped copy is verified before it replaces the original. A file with nothing
+to strip is left exactly as it was, and a file this reader cannot open at all
+\- a fragmented MP4 \- is kept as it arrived with a warning rather than
+discarded. Files tafas assembles itself are written
+without metadata in the first place, so the flag is a no-op on them.
+.TP
 .B \-\-cookies \fIFILE\fR
 Send the cookies in a Netscape cookie file, in the format curl writes and every
 browser exports. The file is read once at startup, sent only to the hosts its

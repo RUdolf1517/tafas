@@ -199,7 +199,10 @@ fn capabilities() -> String {
             // petabyte does not fit in one.
             "max_filesize": { "default": "unlimited", "max": 1125899906842624u64 },
             "retry_after": true,
-            "restrict_filenames": false
+            "restrict_filenames": false,
+            // What the flag actually reaches: an MP4 is edited, an MP3 is
+            // copied and therefore keeps whatever its tags say.
+            "strip_meta": { "containers": ["mp4"] }
         },
         "external_binaries": [],
         "tls": "rustls (ring provider)",
@@ -259,6 +262,7 @@ mod tests {
         assert_eq!(transfers["max_filesize"]["max"], tafas::ratelimit::MAX_SIZE);
         assert_eq!(transfers["retry_after"], true);
         assert_eq!(transfers["restrict_filenames"], false);
+        assert_eq!(transfers["strip_meta"]["containers"][0], "mp4");
     }
 
     #[test]

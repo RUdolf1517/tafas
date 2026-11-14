@@ -73,6 +73,10 @@ survived the remux and are findable in the output.
 | `--limit-rate 0`, `1`, `5G`, `fast` | exit 2 before any request, and the message shows the spelling that would have worked |
 | `--max-filesize 0`, `1`, `1.5G`, `2000T`, `fast` | `0` and `1` are legal (a size, unlike a rate, may be tiny), `2000T` is refused for being past the petabyte ceiling, and only the message for the flag that was used names that flag |
 | a segment larger than `--max-filesize` | refused, nothing assembled, nothing left on disk; a segment at exactly the ceiling is written |
+| `--strip-meta` on an MP4 whose `moov` carries a `udta` and whose `mvhd`/`tkhd`/`mdhd` carry timestamps | every metadata box is a `free` box of the same length, the times are zero, the file is the same size, the chunk offset still points at the same byte and `mux::verify` still sees both samples |
+| the same file with `moov` after `mdat`, where a shrunken header would be most tempting | stripped the same way, same length, still verifies |
+| `--strip-meta` on a file with no metadata | nothing written, `changed()` is false, and the run says so rather than claiming work it did not do |
+| `--strip-meta` on a file the MP4 reader refuses (fragmented) | warning, file kept as it arrived, run succeeds |
 | a `Retry-After` of `120`, of `Fri, 31 Dec 1999 23:59:59 GMT`, of an invalid date, and of `3600` | 120 s, a wait of zero for the past, the schedule for the invalid one, and 60 s for the capped one |
 | `--extractor-args youtube:client=flash` (and five other shapes) | exit 2 before any request, and the message lists the values that would have worked |
 | two `--extractor-args` flags, one per site | both are accepted; the same key named twice is exit 2, not a silent last-one-wins |
