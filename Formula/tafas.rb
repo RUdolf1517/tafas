@@ -4,12 +4,12 @@
 #   brew tap RUdolf1517/tafas https://github.com/RUdolf1517/tafas
 #   brew install RUdolf1517/tafas/tafas
 #
-# This formula is **not installable as it stands**, and it says so rather than
-# shipping zeroes that look like a hash: a `sha256` can only be known once the
-# tag exists and the release workflow has attached its archives. Filling them in
-# from that release's SHA256SUMS is the one hand edit in the release process
-# (docs/releases.md §4), and it is a follow-up commit on purpose — the archive
-# has to exist before its hash does.
+# The four `sha256` values are the hashes of this version's archives, copied from
+# the release's own `SHA256SUMS`. They cannot be written before the release
+# exists, so filling them in is the one hand edit in the release process
+# (docs/releases.md §4 step 5), and it is a follow-up commit on purpose: the
+# archive has to exist before its hash does. A formula that shipped zeroes would
+# look like a hash and fail at install time instead.
 class Tafas < Formula
   desc "Capture a video from YouTube, TikTok, X, Vimeo, Reddit, SoundCloud or Twitch as one playable MP4"
   homepage "https://github.com/RUdolf1517/tafas"
@@ -19,22 +19,22 @@ class Tafas < Formula
   on_macos do
     on_arm do
       url "https://github.com/RUdolf1517/tafas/releases/download/v#{version}/tafas-aarch64-apple-darwin.tar.gz"
-      sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+      sha256 "e4f79006e7b9220617fdfd21cab8a702cfa2116356d53baecb26a13fbe18aa9c"
     end
     on_intel do
       url "https://github.com/RUdolf1517/tafas/releases/download/v#{version}/tafas-x86_64-apple-darwin.tar.gz"
-      sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+      sha256 "8e02a05bf9410f48309034017b611fc9fd418061305dc517a62a28925dab9f3f"
     end
   end
 
   on_linux do
     on_arm do
       url "https://github.com/RUdolf1517/tafas/releases/download/v#{version}/tafas-aarch64-unknown-linux-musl.tar.gz"
-      sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+      sha256 "8e58e32226fab58e056a41c1e15af6257b52abacc0d62678e104372cce0f3fba"
     end
     on_intel do
       url "https://github.com/RUdolf1517/tafas/releases/download/v#{version}/tafas-x86_64-unknown-linux-musl.tar.gz"
-      sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+      sha256 "d8781dd5e32e71060368657c34f95f0fb084f53be2d63c7b54a79b715ed4a18b"
     end
   end
 
