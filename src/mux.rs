@@ -1136,7 +1136,10 @@ mod tests {
     #[test]
     fn metadata_is_emptied_without_moving_a_byte() {
         let mut payload = Vec::new();
-        payload.extend_from_slice(&box_of(b"trak", b"trak-body"));
+        // A well-formed `trak`, because `strip_moov` recurses into it and would
+        // rightly refuse to walk boxes that are not boxes.
+        let tkhd = box_of(b"tkhd", &[0u8; 92]);
+        payload.extend_from_slice(&box_of(b"trak", &tkhd));
         let udta = box_of(b"udta", b"iTunes said hello");
         let udta_len = udta.len();
         payload.extend_from_slice(&udta);
