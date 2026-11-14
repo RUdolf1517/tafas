@@ -178,9 +178,13 @@ result cannot be undone.
    ZIP, writes the SBOM, writes `SHA256SUMS`, renders the AUR, Scoop and flake
    files from those checksums, signs every file when the key is present, and
    attaches everything to the release.
-5. The Homebrew formula gets the new version and the hashes from
+5. The Homebrew formula gets the new version and the four hashes from
    `SHA256SUMS`; this is a follow-up commit, and it is the only hand edit in the
-   process.
+   process. It is not an unexamined one any more: `packaging/tests/formula.py`
+   compares the formula with a release's real checksums, CI runs it against the
+   latest release on every pull request, and a test in `tests/packaging.rs` fails
+   if the formula is left with zeroes. 0.3.0 was tagged with four of them, so
+   `brew install` would have refused the archive it had just downloaded.
 6. `cargo install` works from the tag without any additional publication step.
 7. crates.io: either `./packaging/publish.sh` from the owner's machine, or the
    `publish` workflow on the published release once `CARGO_REGISTRY_TOKEN` is in

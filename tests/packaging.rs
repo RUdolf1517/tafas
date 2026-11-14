@@ -564,6 +564,76 @@ fn the_changelog_describes_the_version_being_published() {
     );
 }
 
+/// The Homebrew formula repeats four release hashes by hand, so something has to
+/// compare them with the release.
+///
+/// It did not, and 0.3.0 was tagged with four zeroes in the formula: `brew
+/// install` would have downloaded four megabytes and then refused the archive on
+/// its checksum. Everything else that names an archive — `PKGBUILD`, the Scoop
+/// manifest, `flake.nix` — is generated from `SHA256SUMS`, so it cannot drift;
+/// the formula is the one file that can, and is the one file that did.
+#[test]
+fn the_homebrew_formula_names_hashes_the_release_published() {
+    let formula = read("Formula/tafas.rb");
+    let version = env!("CARGO_PKG_VERSION");
+
+    // The formula's version and the crate's are one number: the archives it
+    // downloads live under `v<version>`, which is the crate's version.
+    assert!(
+        formula.contains(&format!("  version \"{version}\"")),
+        "Formula/tafas.rb does not say version {version}"
+    );
+
+    // A zeroed hash is a placeholder, and a placeholder is an install that
+    // fails with a message about a checksum rather than about an edit somebody
+    // forgot to make.
+    let zeroes = "0".repeat(64);
+    assert!(
+        !formula.contains(&format!("sha256 \"{zeroes}\"")),
+        "Formula/tafas.rb still carries a zero-filled sha256: the archives exist, so the hashes do"
+    );
+
+    let hashes: Vec<&str> = formula
+        .match_indices("sha256 \"")
+        .map(|(at, marker)| {
+            let rest = &formula[at + marker.len()..];
+            &rest[..rest.find('"').expect("an unclosed sha256 string")]
+        })
+        .collect();
+    assert_eq!(
+        hashes.len(),
+        4,
+        "the formula installs macOS and Linux for two architectures: {hashes:?}"
+    );
+    for hash in &hashes {
+        assert_eq!(hash.len(), 64, "{hash} is not a sha256");
+        assert!(
+            hash.chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
+            "{hash} is not lowercase hex"
+        );
+    }
+    // Four different archives have four different hashes; two equal values mean
+    // one was pasted twice.
+    let mut unique = hashes.clone();
+    unique.sort_unstable();
+    unique.dedup();
+    assert_eq!(unique.len(), 4, "the formula repeats a hash: {hashes:?}");
+
+    // And the check itself runs, on both the path CI takes and the path a person
+    // takes, and it is wired into the workflow that runs on every pull request.
+    let checker = read("packaging/tests/formula.py");
+    assert!(
+        checker.contains("--sums") && checker.contains("--release"),
+        "packaging/tests/formula.py must work offline (--sums) and against a release (--release)"
+    );
+    let ci = read(".github/workflows/ci.yml");
+    assert!(
+        ci.contains("packaging/tests/formula.py"),
+        "CI must compare the formula with the release, or the next release's zeroes ship too"
+    );
+}
+
 /// Every script the release job runs has to exist, and the page that describes
 /// the process has to name the script that is actually there.
 ///
