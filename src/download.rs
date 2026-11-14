@@ -421,11 +421,7 @@ fn process_list(
         entry_options.output = Some(directory.clone());
         // `--restrict-filenames` survives into a list: it is a statement about
         // the machine the files land on, not about one file.
-        entry_options.name = Some(listing::stem(
-            position,
-            &entry,
-            options.restrict_filenames,
-        ));
+        entry_options.name = Some(listing::stem(position, &entry, options.restrict_filenames));
         entry_options.multiple = true;
         entry_options.playlist_items = None;
         // `--format` and `--name` describe *one* file; a list renames each entry

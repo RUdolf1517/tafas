@@ -716,7 +716,10 @@ mod tests {
         assert_eq!(days_from_civil(1999, 12, 31), 10_956);
         // 2000-03-01 is the day after the leap day of a century year, which is
         // where a hand-written calendar usually breaks.
-        assert_eq!(days_from_civil(2000, 3, 1) - days_from_civil(2000, 2, 29), 1);
+        assert_eq!(
+            days_from_civil(2000, 3, 1) - days_from_civil(2000, 2, 29),
+            1
+        );
         assert_eq!(
             httpdate_seconds("Fri, 31 Dec 1999 23:59:59 GMT"),
             Some(10_956 * 86_400 + 23 * 3_600 + 59 * 60 + 59)
@@ -728,8 +731,8 @@ mod tests {
             httpdate_seconds("Fri, 31 Dec 1999 23:59:59 GMT")
         );
         for wrong in [
-            "31 Dec 1999 23:59:59 GMT",   // no day name
-            "Fri, 31 Dec 1999 23:59:59",  // no GMT
+            "31 Dec 1999 23:59:59 GMT",  // no day name
+            "Fri, 31 Dec 1999 23:59:59", // no GMT
             "Fri, 31 Foo 1999 23:59:59 GMT",
             "Fri, 32 Dec 1999 23:59:59 GMT",
             "Fri, 31 Dec 1999 24:00:00 GMT",
@@ -742,7 +745,10 @@ mod tests {
     fn a_date_in_the_past_waits_no_time_at_all() {
         // The header is an instruction, and a date that has passed means
         // "now" — not a reason to fall back to 400 ms.
-        assert_eq!(parse_retry_after("Fri, 31 Dec 1999 23:59:59 GMT"), Some(Duration::ZERO));
+        assert_eq!(
+            parse_retry_after("Fri, 31 Dec 1999 23:59:59 GMT"),
+            Some(Duration::ZERO)
+        );
     }
 
     #[test]

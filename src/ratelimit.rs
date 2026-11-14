@@ -84,10 +84,7 @@ fn scaled(text: &str, flag: &str, what: &str) -> Result<f64, String> {
         // `T` is here for `--max-filesize`, where a terabyte is a real answer.
         // Through `--limit-rate` it is a number the rate ceiling refuses, which
         // is the same answer in fewer words than a second grammar would give.
-        Some(b't') | Some(b'T') => (
-            &digits[..digits.len() - 1],
-            1024u64 * 1024 * 1024 * 1024,
-        ),
+        Some(b't') | Some(b'T') => (&digits[..digits.len() - 1], 1024u64 * 1024 * 1024 * 1024),
         _ => (digits, 1u64),
     };
     let number = number.trim();
