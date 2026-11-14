@@ -9,6 +9,87 @@ changing a default, an exit code's meaning or a JSON field's meaning is a major
 version; adding a site, a flag or a container is minor. The policy is in
 [docs/releases.md](docs/releases.md).
 
+## [Unreleased]
+
+Nothing yet — 0.3.0 is the release this section became.
+
+## [0.3.0] - 2026-11-12
+
+### Added
+
+- **Twitch clips.** `clips.twitch.tv/<slug>`, its `embed?clip=` form,
+  `twitch.tv/<channel>/clip/<slug>` and the `m.` host: one unbatched GraphQL
+  request (`VideoAccessToken_Clip`) answers the `sig`/`token` pair and one
+  `sourceURL` per rendition, and each of those is a complete MP4 with the sound
+  already joined — so the chosen rendition is copied verbatim, through the same
+  route an ordinary progressive MP4 takes. Nothing new in the fetcher. Four
+  refusals, each by name: the clip does not exist, every rendition is still
+  being encoded, the answer carries no `sig` or no `token`, and an address that
+  is neither a VOD, a clip nor a collection.
+- **SoundCloud sets.** `/<artist>/sets/<slug>` is a list page: the set's entry in
+  the page's own hydration document, then
+  `api-v2.soundcloud.com/playlists/<id>` for the tracks the page did not carry,
+  following `next_href` the way the site's player does. `--playlist-items`, one
+  file per entry and one dead track costing the others nothing all come from
+  `listing.rs`, unchanged. A set whose page names more tracks than could be read
+  is captured anyway, and the run says so on stderr before the first entry:
+  “the page says it holds 40 entries and this build read 12”. Paging is bounded at
+  two pages of two hundred, as the other list readers are.
+
+### Added (continued)
+
+- **Vimeo passwords.** A video or an album that asks for a password is unlocked
+  instead of refused. A locked video's config arrives with `"view": 4` and no
+  files; the password is proved against `<video.redirect_url>/check-password`
+  with the password base64'd, form-encoded, and a correct answer *is* the config,
+  so nothing is fetched twice. An album proves the password at
+  `vimeo.com/showcase/<id>/auth` and carries the `hashed_pass` it answers with on
+  every following `videos` request. A wrong password is the site's own `418`
+  (video) or `401` (album) and is reported as "not accepted", once: nothing is
+  retried and nothing is guessed.
+
+  The password is read from `TAFAS_VIDEO_PASSWORD`, or from the first line of the
+  file `TAFAS_VIDEO_PASSWORD_FILE` names. It is deliberately **not** a flag: a
+  command line is visible in `ps` to every local user, and `--help` output is
+  pasted into bug reports. `docs/roadmap.md` §7 said there would be no `TAFAS_*`
+  variables; it now says why this is the one exception.
+
+- **The crate is published to crates.io**, so `cargo install tafas` works
+  without a git URL and `cargo add tafas` gives a library that is the same code
+  the binary runs. The public surface is documented with runnable examples:
+  `tafas::inspect` reads one URL into a `Media`, `tafas::site` answers which site
+  a URL names without touching the network, and `download::run` with
+  `download::Options::default()` is the whole capture. The package ships `src/`,
+  the licence, the readme, the changelog and `docs/`; `packaging/`, `.github/`,
+  `fuzz/`, `tests/` and `Formula/` are excluded, and a packaging test keeps it
+  that way.
+
+  Publishing happens one of two ways, and whichever runs second does nothing:
+  `./packaging/publish.sh` on the owner's machine, which refuses a dirty tree, a
+  tag pointing elsewhere, a version already taken, an archive missing the source
+  or carrying `packaging/`, an unpacked crate that does not build, and a version
+  the changelog does not describe; or `.github/workflows/publish.yml` on a
+  published release, which asks crates.io for the version first and stops if it
+  is there. The changelog check is the newest of them and the reason for it is
+  the archive: `CHANGELOG.md` ships inside it, so a version whose notes are still
+  under `Unreleased` is a document that never names the number it was published
+  with. Nothing here changes the binary and nothing changes an existing flag.
+
+### Changed
+
+- `--info` lists `soundcloud set` among the list pages, and SoundCloud's routes
+  name the set route.
+- `Cargo.toml` keywords are the sites rather than the file format: `video`,
+  `download`, `youtube`, `vimeo`, `soundcloud`. The crates.io search that a user
+  actually types is a site name, and `cli`/`tiktok` were not earning their slot.
+- **CI no longer skips a step because the one before it failed.** A clippy
+  failure with `continue-on-error` left the job green while `Test` and
+  `Release build` were skipped — a passing run that ran no test. Every step now
+  runs unless the run is cancelled, and the job fails when any step's outcome is
+  not `success`, including `skipped`. `no_release_is_cut_before_the_roadmap_is_done`
+  had been failing on `main` unseen for the same reason; the roadmap and the
+  releases page now state the rule in the present tense.
+
 ## [0.2.1] - 2026-11-10
 
 A patch release: two parsers that could be made to panic by a file, and a

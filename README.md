@@ -52,7 +52,8 @@ $ tafas https://x.com/nasa/status/1732902605501431916 | xargs -r mpv
 ```bash
 curl -fsSL https://raw.githubusercontent.com/RUdolf1517/tafas/main/install.sh | sh   # binary, no Rust
 brew tap RUdolf1517/tafas https://github.com/RUdolf1517/tafas && brew install RUdolf1517/tafas/tafas
-cargo install --git https://github.com/RUdolf1517/tafas --tag v0.2.1                 # Rust 1.82+
+cargo install tafas                                                                 # Rust 1.82+
+cargo install --git https://github.com/RUdolf1517/tafas --tag v0.3.0                # the same code, without the registry
 ```
 
 Linux (x86_64 and ARM64), macOS (Apple silicon and Intel), Windows x64. The
@@ -157,10 +158,10 @@ stream, which is what a phone on a train wants.
 | **YouTube** | `watch?v=`, `youtu.be/`, `/shorts/`, `/embed/`, `/live/`, `music.youtube.com`; lists: `/playlist?list=`, `/@handle`, `/channel/`, `/c/`, `/user/` | the watch page's inlined player response, then InnerTube with a fixed client chain (`android_vr` → `ios` → `android` → embedded TV → `web`) | MP4; separate DASH streams are remuxed into one file |
 | **TikTok** | `/@user/video/`, `/@user/photo/`, `vm.tiktok.com`, `vt.tiktok.com` | the page's rehydration document, then the mobile feed | MP4, watermark-free version preferred; photo posts give images |
 | **X** | `/<user>/status/`, `i/web/status/`, `t.co` | the syndication endpoint the embedded widget uses | MP4 (video, or an animated GIF's MP4), the post's photos as JPEG, or — when a post offers nothing else — its HLS playlist assembled into an MP4 |
-| **Vimeo** | `vimeo.com/<id>`, channel URLs, unlisted `<id>/<hash>`, `player.vimeo.com/video/<id>`; lists: `/album/<id>`, `/showcase/<id or slug>` | the player's own configuration endpoint; one request, no HTML | MP4 from the progressive files; a video that offers only an HLS playlist is assembled into an MP4; the poster and duration come from the same document |
+| **Vimeo** | `vimeo.com/<id>`, channel URLs, unlisted `<id>/<hash>`, `player.vimeo.com/video/<id>`; lists: `/album/<id>`, `/showcase/<id or slug>` | the player's own configuration endpoint; one request, no HTML; a locked one adds `check-password` | MP4 from the progressive files; a video that offers only an HLS playlist is assembled into an MP4; the poster and duration come from the same document; a password comes from `TAFAS_VIDEO_PASSWORD`/`TAFAS_VIDEO_PASSWORD_FILE` |
 | **Reddit** | `/r/<sub>/comments/<id>/`, `redd.it`, `v.redd.it/<hash>` | the post's own JSON (`/comments/<id>.json`), or the fixed playlist path for a bare media URL | MP4 assembled from the HLS playlist; the progressive `DASH_<height>.mp4` files carry no audio and are refused by name |
-| **SoundCloud** | `<artist>/<track>`, `on.soundcloud.com` | the page's hydration document, then the transcoding document it names | **MP3**, copied byte for byte — sound only, no container rebuilt; sets, Go+ tracks and opus-only renditions are refused by name |
-| **Twitch** | `/videos/<id>`; lists: `/collections/<id>` | one batched GraphQL request: the playback token, plus the title, length and poster | MP4 assembled from the usher playlist; a live channel, a clip and a subscriber-only recording are refused by name |
+| **SoundCloud** | `<artist>/<track>`, `<artist>/sets/<slug>`, `on.soundcloud.com` | the page's hydration document, then the transcoding document it names; a set is a list, paged through `api-v2` | **MP3**, copied byte for byte — sound only, no container rebuilt; Go+ tracks and opus-only renditions are refused by name |
+| **Twitch** | `/videos/<id>`, `clips.twitch.tv/<slug>`, `/clip/<slug>`; lists: `/collections/<id>` | one batched GraphQL request for a VOD; one unbatched request per clip | MP4 assembled from the usher playlist, or a clip's own MP4 copied verbatim; a live channel and a subscriber-only recording are refused by name |
 
 A site is listed only because its reader exists and its refusals are written
 down. What each one can and cannot reach — age gates, PO tokens, signature
@@ -191,8 +192,10 @@ afterwards and an item still being built is not a promise — so the first relea
 after 0.1.0 was the one with everything in it. Everything below is in that
 archive; `main` is ahead of it again as soon as the next item lands, and
 `cargo install --git https://github.com/RUdolf1517/tafas` is how to get that.
-0.2.1 is a patch on top of it — two parser fixes and a binary 31% smaller —
-and the same rule applies: it is a defect release, not a new promise.
+0.2.1 was a patch on top of it — two parser fixes and a binary 31% smaller.
+0.3.0 is the first version after the roadmap, and the first one to be published
+to crates.io: Twitch clips, SoundCloud sets, Vimeo passwords, and a library
+surface with examples that compile.
 
 | Where it goes | State | What it is |
 | --- | --- | --- |

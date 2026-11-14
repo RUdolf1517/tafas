@@ -14,6 +14,8 @@
 pub mod reddit;
 #[cfg(feature = "soundcloud")]
 pub mod soundcloud;
+#[cfg(feature = "soundcloud")]
+pub mod soundcloud_set;
 #[cfg(feature = "tiktok")]
 pub mod tiktok;
 #[cfg(feature = "twitch")]
@@ -53,7 +55,7 @@ pub fn sites() -> Vec<&'static str> {
 // `serde` derive would turn a missing key into a parse failure for the whole
 // page, which is exactly the brittleness this tool has to avoid.
 
-pub(crate) fn at<'a>(value: &'a Value, path: &[&str]) -> Option<&'a Value> {
+pub fn at<'a>(value: &'a Value, path: &[&str]) -> Option<&'a Value> {
     let mut current = value;
     for key in path {
         current = current.get(key)?;
@@ -61,14 +63,14 @@ pub(crate) fn at<'a>(value: &'a Value, path: &[&str]) -> Option<&'a Value> {
     Some(current)
 }
 
-pub(crate) fn text(value: &Value, path: &[&str]) -> Option<String> {
+pub fn text(value: &Value, path: &[&str]) -> Option<String> {
     at(value, path)
         .and_then(|v| v.as_str())
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
 }
 
-pub(crate) fn uint(value: &Value, path: &[&str]) -> Option<u64> {
+pub fn uint(value: &Value, path: &[&str]) -> Option<u64> {
     match at(value, path)? {
         Value::Number(n) => n.as_u64(),
         // YouTube quotes `contentLength` and `lengthSeconds` as strings, so a
@@ -79,7 +81,7 @@ pub(crate) fn uint(value: &Value, path: &[&str]) -> Option<u64> {
     }
 }
 
-pub(crate) fn list<'a>(value: &'a Value, path: &[&str]) -> &'a [Value] {
+pub fn list<'a>(value: &'a Value, path: &[&str]) -> &'a [Value] {
     at(value, path)
         .and_then(|v| v.as_array())
         .map(|v| v.as_slice())

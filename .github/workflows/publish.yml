@@ -1,0 +1,173 @@
+name: publish
+
+# Publishes the crate to crates.io.
+#
+# It is a separate workflow from `release` on purpose. `release` builds the
+# archives; this publishes the *source*, which is what `cargo install tafas`
+# and any library user download. They can fail independently: a missing
+# artifact for one target is not a reason to withhold a crate, and a version
+# already taken on crates.io cannot be undone, so the two are never tangled.
+#
+# A version on crates.io cannot be replaced, only yanked. That is why this is
+# triggered by a tag that is *already* released rather than by a push: the
+# archive a reader installs and the crate they `cargo add` are then the same
+# commit, and one of them cannot move without the other being re-tagged.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: package and verify, but do not upload
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: never
+
+jobs:
+  publish:
+    name: publish to crates.io
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      # The token is the owner's, and the only thing in this repository that can
+      # publish under the crate's name. `--dry-run` is what a fork, a pull
+      # request or a `workflow_dispatch` with the box ticked gets: the whole
+      # procedure without the one irreversible step.
+      - name: Decide whether this run uploads
+        id: mode
+        shell: bash
+        env:
+          TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          EVENT: ${{ github.event_name }}
+          DRY: ${{ inputs.dry_run }}
+        run: |
+          set -uo pipefail
+          if [ "$EVENT" != "release" ]; then
+            echo "upload=false" >> "$GITHUB_OUTPUT"
+            echo "a manual run verifies and stops; only a published release uploads"
+          elif [ -z "${TOKEN:-}" ]; then
+            echo "upload=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::CARGO_REGISTRY_TOKEN is not set, so nothing was published"
+          else
+            echo "upload=true" >> "$GITHUB_OUTPUT"
+          fi
+          if [ "${DRY:-}" = "true" ]; then
+            echo "upload=false" >> "$GITHUB_OUTPUT"
+            echo "the dry-run box was ticked"
+          fi
+
+      # The version may already be there: publishing from the owner's own machine
+      # is the documented way to do it (docs/releases.md §4.1), and then this
+      # workflow runs again on the same release tag and would try to upload a
+      # version crates.io already has. That is a rejection, and a red run for a
+      # release that went perfectly. So the version is asked for first, and a
+      # `200` means the crate is published and there is nothing to do.
+      - name: Is this version already published?
+        id: check
+        shell: bash
+        run: |
+          set -uo pipefail
+          version="$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          code="$(curl -s -o /dev/null -w '%{http_code}' \
+            -A "tafas-publish-workflow (https://github.com/RUdolf1517/tafas)" \
+            "https://crates.io/api/v1/crates/tafas/${version}" || true)"
+          if [ "$code" = "200" ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "tafas ${version} is already on crates.io; nothing to publish"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "tafas ${version} is not on crates.io yet (HTTP ${code:-none})"
+          fi
+
+      # Two checks that the package is what it claims to be, both cheap and both
+      # failing here rather than on crates.io. `cargo package --list` is the
+      # archive's own file list: a path that should not ship, shipping, is the
+      # kind of mistake that cannot be fixed after the upload.
+      - name: The package holds the source, and only the source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo package --list --allow-dirty 2>/dev/null | sort > package-files.txt
+          echo "--- what ships ---"
+          cat package-files.txt
+          for required in Cargo.toml LICENSE README.md src/lib.rs src/main.rs; do
+            grep -qx "$required" package-files.txt || {
+              echo "::error::$required is missing from the package"
+              exit 1
+            }
+          done
+          for forbidden in '^packaging/' '^\.github/' '^fuzz/' '^tests/' '^Formula/' '^target/'; do
+            if grep -qE "$forbidden" package-files.txt; then
+              echo "::error::$forbidden is in the package and should not be"
+              exit 1
+            fi
+          done
+
+      # The changelog is what a reader sees after `cargo add tafas`, and it ships
+      # inside the archive. A version whose section never left `Unreleased` ships
+      # a document that does not mention the number on the crate — which is what
+      # 0.2.1 came close to, tagged while the work it was meant to carry was on a
+      # different commit.
+      - name: CHANGELOG.md has a section for this version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)"
+          if ! grep -q "^## \[$version\]" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no \"## [$version]\" section"
+            exit 1
+          fi
+          echo "CHANGELOG.md documents $version"
+
+      # The archive is built, then built again from inside the unpacked archive.
+      # That second build is the one that matters: it is what a user's
+      # `cargo install` does, and a file the binary needs but the package forgot
+      # fails here instead of in their terminal.
+      - name: Build the crate the way a user will
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo package --allow-dirty
+          version="$(cargo metadata --no-deps --format-version 1 | python3 -c \
+            'import json,sys; print(json.load(sys.stdin)["packages"][0]["version"])')"
+          archive="target/package/tafas-${version}.crate"
+          test -f "$archive" || { echo "::error::$archive was not built"; exit 1; }
+          mkdir -p /tmp/unpacked
+          tar -xzf "$archive" -C /tmp/unpacked
+          cd "/tmp/unpacked/tafas-${version}"
+          cargo build --release --offline
+          ./target/release/tafas --version
+
+      - name: Upload
+        if: steps.mode.outputs.upload == 'true' && steps.check.outputs.exists != 'true'
+        shell: bash
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        # No `--allow-dirty`: a dirty tree at a release tag means the archive in
+        # the *release* is not the crate published here, and cargo's refusal is
+        # the check that notices.
+        run: cargo publish
+
+      # A published crate is a promise, so say plainly which promise this run
+      # made — silence after an upload looks the same as a skipped step.
+      - name: Say what happened
+        if: always()
+        shell: bash
+        run: |
+          if [ "${{ steps.check.outputs.exists }}" = "true" ]; then
+            echo "tafas ${{ steps.check.outputs.version }} was already on crates.io: published elsewhere, nothing to do"
+          elif [ "${{ steps.mode.outputs.upload }}" = "true" ]; then
+            echo "uploaded tafas ${{ steps.check.outputs.version }} to crates.io"
+          else
+            echo "packaged and verified, not uploaded: see the step above for why"
+          fi

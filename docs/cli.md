@@ -375,8 +375,21 @@ otherwise colour is used only when the stream is a terminal.
 ## 9. Environment
 
 Only what the ecosystem standardises: `HTTPS_PROXY`/`HTTP_PROXY`/`NO_PROXY` for
-the HTTP client, and the four colour variables above. There is no `TAFAS_*`
-variable, because a hidden input is a bug report waiting to happen.
+the HTTP client, and the four colour variables above.
+
+Two exceptions, both about one secret. A password-protected Vimeo video or album
+takes its password from `TAFAS_VIDEO_PASSWORD`, or from the first line of the
+file named by `TAFAS_VIDEO_PASSWORD_FILE` — never from an argument. `--help` is
+pasted into bug reports and a process's arguments are readable by every local
+user, so a password typed on the command line is a password published. Neither
+variable is read by anything else, and neither is logged.
+
+```sh
+TAFAS_VIDEO_PASSWORD_FILE=~/.vimeo tafas https://vimeo.com/76979871
+```
+
+A wrong password is a refusal: the player answers `418` and the album endpoint
+`401`, and both are reported as "not accepted" without a retry.
 
 ## 10. Conformance notes
 

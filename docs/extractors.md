@@ -65,12 +65,20 @@ the ones a user can see:
 | `--extractor-args` | only the keys of sites it has are accepted |
 | the binary | smaller: the `features` job measures both and fails if the difference is not there |
 
-Three of the seven rows have list pages, and each site's own page lists the
+Four of the seven rows have list pages, and each site's own page lists the
 shapes: YouTube playlists and channels ([sites/youtube.md](sites/youtube.md)),
-Vimeo albums and showcases ([sites/vimeo.md](sites/vimeo.md)), and Twitch
-collections ([sites/twitch.md](sites/twitch.md)). A list is read into the same
-`Listing` whatever the site, so `--playlist-items`, the directory rule, the
+Vimeo albums and showcases ([sites/vimeo.md](sites/vimeo.md)), SoundCloud sets
+([sites/soundcloud.md](sites/soundcloud.md)), and Twitch collections
+([sites/twitch.md](sites/twitch.md)). A list is read into the same `Listing`
+whatever the site, so `--playlist-items`, the directory rule, the
 `03 - Title [id]` names and the per-entry independence are written once.
+
+A listing also says when it is **short**: a site whose page names a count —
+SoundCloud's `track_count` is the one that does — leaves `Listing::incomplete`
+set when fewer entries could be read than the count promised, and the run says
+so on stderr before the first entry. A set of forty with twelve readable tracks
+is a capture, not a failure; printing “12 of 12” over it would be the quiet lie
+this build refuses everywhere else.
 
 Nothing about this is a promise about a *release*: the published archives are
 built with all seven, and a one-site binary is something a user builds for
@@ -109,7 +117,7 @@ Routes, what is selected, and every refusal with the sentence it produces: **[si
 
 ## 8. SoundCloud
 
-Page hydration, then the transcoding document it names: an MP3 copied verbatim, the only non-ISO-BMFF media this program writes. Sets, Go+ tracks and opus-only renditions are refusals by name.
+Page hydration, then the transcoding document it names: an MP3 copied verbatim, the only non-ISO-BMFF media this program writes. A **set** is a list page — the set's entry in the same hydration document, then `api-v2.soundcloud.com/playlists/<id>` for the tracks the page did not carry, following `next_href`. Go+ tracks and opus-only renditions are refusals by name.
 
 Routes, what is selected, and every refusal with the sentence it produces: **[sites/soundcloud.md](sites/soundcloud.md)**.
 

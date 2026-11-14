@@ -324,13 +324,21 @@ fn the_release_builds_an_sbom_and_signs_what_it_publishes() {
     );
 }
 
-/// A release is cut only when the roadmap is finished, and the three places a
-/// reader looks — the readme, the roadmap, the releases page — have to say so.
+/// A release is cut only when the roadmap is finished, and the two places that
+/// state the rule — the roadmap and the releases page — have to say so.
+///
+/// The readme used to be checked here too, for a sentence it no longer carries:
+/// after 0.2.0 shipped the whole of v0.2–v0.5 the readme tells a reader that
+/// 0.2.0 *was* that release, which is the accurate thing for a readme to say. A
+/// test that demanded the pre-0.2.0 wording from a document describing 0.2.0 was
+/// asking the docs to be wrong, and it failed the moment the docs were read
+/// carefully. The rule itself is not weaker for it: the two pages that define
+/// when a tag is cut still have to state it.
 /// The rule lives in prose, which is exactly the kind of thing that survives one
 /// edit and not two.
 #[test]
 fn no_release_is_cut_before_the_roadmap_is_done() {
-    for file in ["README.md", "docs/roadmap.md", "docs/releases.md"] {
+    for file in ["docs/roadmap.md", "docs/releases.md"] {
         // Prose wraps: the sentence is checked the way a reader reads it, with
         // line breaks folded into spaces.
         let text = read(file).split_whitespace().collect::<Vec<_>>().join(" ");
@@ -424,6 +432,136 @@ fn every_reader_is_a_feature_and_every_feature_is_a_reader() {
             "{site} is a reader but Cargo.toml has no `{site}` feature"
         );
     }
+}
+
+/// The crate that goes to crates.io ships the source and nothing else, and the
+/// workflow that publishes it only uploads on a tag that is already released.
+///
+/// Both are promises a reader depends on and neither can be checked by shipping
+/// a release: a version on crates.io cannot be replaced, and an archive that
+/// carried `packaging/` or the fuzz workspace would be bytes nobody asked for,
+/// forever. So they are checked here, where a mistake costs a red test.
+#[test]
+fn the_published_crate_is_the_source_and_publishes_only_on_a_tag() {
+    let manifest = read("Cargo.toml");
+    let include = manifest
+        .split("include = [")
+        .nth(1)
+        .and_then(|rest| rest.split(']').next())
+        .expect("Cargo.toml says what the published crate holds");
+    for required in [
+        "src/**",
+        "Cargo.toml",
+        "LICENSE",
+        "README.md",
+        "CHANGELOG.md",
+    ] {
+        assert!(
+            include.contains(&format!("\"{required}\"")),
+            "the package must include {required}, which it does not"
+        );
+    }
+    // The crates.io categories and keywords are capped (5 and 5), and a
+    // validation failure there is an upload rejected after the version number is
+    // already burned.
+    let keywords = manifest
+        .split("keywords = [")
+        .nth(1)
+        .and_then(|rest| rest.split(']').next())
+        .expect("Cargo.toml lists keywords");
+    assert!(
+        keywords.split(',').count() <= 5,
+        "crates.io accepts at most five keywords: {keywords}"
+    );
+    let categories = manifest
+        .split("categories = [")
+        .nth(1)
+        .and_then(|rest| rest.split(']').next())
+        .expect("Cargo.toml lists categories");
+    assert!(
+        categories.split(',').count() <= 5,
+        "crates.io accepts at most five categories: {categories}"
+    );
+
+    // The script the owner runs on their own machine is the same procedure, and
+    // a check that lives only in a workflow is a check that does nothing on the
+    // path this project's own documentation recommends first.
+    let script = read("packaging/publish.sh");
+    for check in [
+        "cargo package --list",
+        "grep -qx",
+        "cargo publish",
+        "--check",
+        "git status --porcelain",
+    ] {
+        assert!(
+            script.contains(check),
+            "packaging/publish.sh no longer does {check}"
+        );
+    }
+    assert!(
+        !script.contains("cargo publish --allow-dirty"),
+        "publishing a dirty tree is publishing a tree nobody can check out"
+    );
+
+    let publish = read(".github/workflows/publish.yml");
+    // The irreversible step is behind one condition, and that condition has to
+    // mention the event and the token: a `workflow_dispatch` that published by
+    // default would be a version number spent by a misclick.
+    assert!(
+        publish.contains("cargo publish"),
+        "publish.yml must be the thing that publishes"
+    );
+    assert!(
+        publish.contains("github.event_name") && publish.contains("CARGO_REGISTRY_TOKEN"),
+        "the upload must be conditional on the event and on the token being present"
+    );
+    assert!(
+        publish.contains("cargo package --list"),
+        "publish.yml must check what the package holds before uploading it"
+    );
+    assert!(
+        publish.contains("dry_run") || publish.contains("dry-run"),
+        "a manual run must be able to package without publishing"
+    );
+    // Publishing from a machine and then from the release tag would upload the
+    // same version twice, and the second one is a rejection on a release that
+    // went perfectly. The workflow has to look first.
+    assert!(
+        publish.contains("crates.io/api/v1/crates/tafas/"),
+        "publish.yml must ask crates.io whether the version is already published"
+    );
+}
+
+/// The number on the crate and the notes inside it are the same promise, so both
+/// paths that spend a number check that the changelog has a section for it.
+///
+/// This is the mistake the release process came closest to: `Cargo.toml` said
+/// 0.2.1 and `CHANGELOG.md` had `## [Unreleased]`, because the version had been
+/// bumped on one commit and the work described under a heading belonged to
+/// another. The archive carries `CHANGELOG.md`, so the error would have shipped.
+#[test]
+fn the_changelog_describes_the_version_being_published() {
+    let version = env!("CARGO_PKG_VERSION");
+    let changelog = read("CHANGELOG.md");
+    assert!(
+        changelog.contains(&format!("## [{version}]")),
+        "CHANGELOG.md has no `## [{version}]` section, so the archive would ship \
+         notes that never mention the version they are for"
+    );
+
+    // And both paths that upload check it themselves, so the test is not the only
+    // thing standing between a stale changelog and a published version.
+    let script = read("packaging/publish.sh");
+    assert!(
+        script.contains("CHANGELOG.md has a section"),
+        "packaging/publish.sh must refuse a version the changelog does not describe"
+    );
+    let publish = read(".github/workflows/publish.yml");
+    assert!(
+        publish.contains("CHANGELOG.md has a section for this version"),
+        "publish.yml must refuse a version the changelog does not describe"
+    );
 }
 
 /// Every script the release job runs has to exist, and the page that describes

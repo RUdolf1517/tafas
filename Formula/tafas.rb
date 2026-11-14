@@ -13,7 +13,7 @@
 class Tafas < Formula
   desc "Capture a video from YouTube, TikTok, X, Vimeo, Reddit, SoundCloud or Twitch as one playable MP4"
   homepage "https://github.com/RUdolf1517/tafas"
-  version "0.2.1"
+  version "0.3.0"
   license "MIT"
 
   on_macos do

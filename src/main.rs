@@ -138,7 +138,10 @@ fn capabilities() -> String {
                 "cookies": "user-supplied (--cookies FILE)"
             },
             "soundcloud": {
-                "routes": ["page hydration, then the transcoding document"],
+                "routes": [
+                    "page hydration, then the transcoding document",
+                    "set page and api-v2 playlists (lists)"
+                ],
                 "container": "mp3, copied verbatim",
                 "hls_opus": false,
                 "cookies": "user-supplied (--cookies FILE)"
@@ -160,7 +163,7 @@ fn capabilities() -> String {
         "listings": {
             "pages": [
                 "youtube playlist", "youtube channel", "vimeo album", "vimeo showcase",
-                "twitch collection"
+                "soundcloud set", "twitch collection"
             ],
             "selection": "--playlist-items, 1-based; one dead entry does not stop the others",
             "depth": 1,

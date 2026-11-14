@@ -317,6 +317,16 @@ pub struct Listing {
     pub entries: Vec<Entry>,
     /// The URL the list was read from.
     pub page_url: String,
+    /// What the page itself says the list holds, when it says, and when that is
+    /// more than [`entries`](Self::entries). `None` means the two agree or the
+    /// page never said; `Some(n)` means this listing is short of `n` entries and
+    /// the run has to say so rather than print “12 of 12” over a set of forty.
+    ///
+    /// It is a field rather than a refusal because a set of forty tracks with
+    /// twelve readable ones is worth capturing — as long as nobody is told it is
+    /// whole. `download.rs` says it on stderr, in the one place both routes
+    /// pass through.
+    pub incomplete: Option<usize>,
 }
 
 /// One entry of a [`Listing`].
@@ -341,6 +351,7 @@ impl Listing {
             uploader: None,
             entries: Vec::new(),
             page_url,
+            incomplete: None,
         }
     }
 }

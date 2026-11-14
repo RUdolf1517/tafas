@@ -2,7 +2,7 @@
 .\" .rpm, the Homebrew formula and the release archives. `tests/packaging.rs`
 .\" fails when an option in `tafas --help` is missing here, so this page cannot
 .\" drift into describing a different program.
-.TH TAFAS 1 "2026-11-10" "tafas 0.2.1" "User Commands"
+.TH TAFAS 1 "2026-11-12" "tafas 0.3.0" "User Commands"
 .SH NAME
 tafas \- capture a video from YouTube, TikTok, X, Vimeo, Reddit, SoundCloud or Twitch as one playable MP4
 .SH SYNOPSIS
@@ -60,7 +60,10 @@ written as an MP4 in process; a progressive MP4 is preferred when both exist.
 endpoint. Progressive MP4s are preferred; a video that offers only an HLS
 playlist is fetched, demuxed and written in process. DASH is not read and the
 refusal says so, and an unlisted video without its hash is the same 404 a deleted
-one gets, which the refusal also says.
+one gets, which the refusal also says. A password\-protected video or album is
+unlocked with the password in \fBTAFAS_VIDEO_PASSWORD\fR, or in the first line of
+the file \fBTAFAS_VIDEO_PASSWORD_FILE\fR names \- never with an argument, because
+an argument is in \fBps\fR and in every pasted \fB\-\-help\fR.
 .TP
 .B Reddit
 Posts whose `secure_media.reddit_video` lists a playlist, and bare
@@ -74,15 +77,19 @@ playable names \fB\-\-cookies\fR.
 Track URLs (\fBsoundcloud.com/<artist>/<track>\fR) and \fBon.soundcloud.com\fR
 short links, read from the page's own hydration document. The track is written as
 an \fBMP3\fR, copied byte for byte from the CDN address the site's transcoding
-names. A set, a Go+ track, an opus-only rendition and a consent wall are refusals
-that name themselves; a set is a list, and one URL is one file.
+names. A set (\fB/<artist>/sets/<slug>\fR) is a list: its tracks are paged out of
+the site's own API and captured one at a time, and a set shorter than the page
+says is captured with a note rather than reported as whole. A Go+ track, an
+opus-only rendition and a consent wall are refusals that name themselves.
 .TP
 .B Twitch
 \fBtwitch.tv/videos/<id>\fR, through one batched GraphQL request: the playback
 token, and the title, length and poster that name the file. The playlist the
-token unlocks is assembled into an MP4 like any other HLS list. A channel, a clip
-and a subscriber\-only recording are refusals that name themselves; the client id
-is public and is not a credential.
+token unlocks is assembled into an MP4 like any other HLS list. A clip
+(\fBclips.twitch.tv/<slug>\fR, \fB/clip/<slug>\fR) is one GraphQL request and a
+complete MP4 copied verbatim, never remuxed. A channel and a subscriber\-only
+recording are refusals that name themselves; the client id is public and is not a
+credential.
 .SH OPTIONS
 .SS Destination
 .TP

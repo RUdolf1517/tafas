@@ -222,10 +222,28 @@ fn normalise_path(path: &str) -> String {
     out
 }
 
+/// Encodes everything outside `[A-Za-z0-9-._~]`, which is what a query value
+/// has to be when it carries a URL, a signature or a JSON document.
+///
+/// The counterpart of [`percent_decode`], and the same rule: no tables, no
+/// allocation unless something actually needs escaping.
+pub fn percent_encode(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for byte in value.as_bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(*byte, b'-' | b'.' | b'_' | b'~') {
+            out.push(*byte as char);
+        } else {
+            out.push('%');
+            out.push_str(&format!("{byte:02X}"));
+        }
+    }
+    out
+}
+
 /// Decodes `%XX` and `+`. Deliberately total: a malformed escape is passed
 /// through unchanged, because a wrong id is caught by the id check that
 /// follows, while an error here would reject a page URL for no reason.
-fn percent_decode(value: &str) -> String {
+pub(crate) fn percent_decode(value: &str) -> String {
     let bytes = value.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
     let mut i = 0;
@@ -277,6 +295,23 @@ mod tests {
         assert_eq!(u.query_param("v").as_deref(), Some("abc"));
         assert_eq!(u.query_param("t").as_deref(), Some("10"));
         assert_eq!(u.query_param("missing"), None);
+    }
+
+    #[test]
+    fn an_encoded_value_survives_the_round_trip() {
+        // The pair is used for one thing: putting a URL or a token in a query
+        // string so that the site's own parser reads it back unchanged.
+        for value in [
+            "https://api.soundcloud.com/tracks/1",
+            "a b&c=d?e#f",
+            "{\"a\":\"b\"}",
+            "already-encoded-._~",
+        ] {
+            assert_eq!(percent_decode(&percent_encode(value)), value);
+        }
+        assert_eq!(percent_encode("a b"), "a%20b");
+        assert_eq!(percent_encode("a&b"), "a%26b", "and not a second parameter");
+        assert_eq!(percent_encode("é"), "%C3%A9", "bytes, not characters");
     }
 
     #[test]

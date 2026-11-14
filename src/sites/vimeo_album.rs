@@ -9,9 +9,12 @@
 //!    read a public album, and it is asked for rather than invented — there is
 //!    no app secret in this binary.
 //! 2. `https://api.vimeo.com/albums/<id>?fields=name,description,privacy`
-//!    names the album. A password-protected album is refused *here*, before a
-//!    single entry is listed, because the entry URLs it would produce cannot be
-//!    read either.
+//!    names the album. A password-protected album is proved against
+//!    `https://vimeo.com/showcase/<id>/auth` — the endpoint its own page calls —
+//!    and the `hashed_pass` that answers with is carried into every following
+//!    request as `_hashed_pass`. Without a password that is a refusal *before* a
+//!    single entry is listed, because the entry URLs it would produce could not
+//!    be read either.
 //! 3. `https://api.vimeo.com/albums/<id>/videos?per_page=…&page=…` pages
 //!    through the entries. Two pages, one hundred each, the same bound the
 //!    YouTube list reader uses and for the same reason: a showcase with ten
@@ -85,18 +88,33 @@ pub fn listing(http: &Http, url: &Url, raw: &str) -> Option<Result<Listing>> {
 /// Reads an album into a [`Listing`].
 pub fn extract(http: &Http, url: &Url, kind: &Kind, raw: &str) -> Result<Listing> {
     let Kind::Album(id) = kind;
-    let jwt = viewer_jwt(http, raw)?;
+    let (jwt, xsrft) = viewer_tokens(http, raw)?;
     let album_id = if looks_numeric(id) {
         id.clone()
     } else {
         resolve_slug(http, id, raw)?
     };
     let album = album_document(http, &album_id, &jwt, raw)?;
+    let mut hashed_pass: Option<String> = None;
     if at(&album, &["privacy", "view"]).and_then(Value::as_str) == Some("password") {
-        return Err(Error::Refused(format!(
-            "vimeo: album {album_id}: it is protected by a password, and this build has no way \
-             to enter one; the videos are readable one at a time if their own URLs are public"
-        )));
+        let Some(password) = crate::vimeo_password::from_environment()? else {
+            return Err(Error::Refused(format!(
+                "vimeo: album {album_id}: it is protected by a password, and none was given; set \
+                 {} (or {} to a file holding one) — a password is not a command-line argument",
+                crate::vimeo_password::PASSWORD_ENV,
+                crate::vimeo_password::PASSWORD_FILE_ENV
+            )));
+        };
+        hashed_pass = Some(
+            crate::vimeo_password::unlock_album(http, &album_id, &password, xsrft.as_deref())?
+                .ok_or_else(|| {
+                    Error::Refused(format!(
+                        "vimeo: album {album_id}: the password was not accepted (the album \
+                         endpoint answers 401 for a wrong one); nothing was retried and nothing \
+                         was guessed"
+                    ))
+                })?,
+        );
     }
 
     let mut listing = Listing::new(
@@ -120,7 +138,14 @@ pub fn extract(http: &Http, url: &Url, kind: &Kind, raw: &str) -> Result<Listing
             )));
         }
         let before = entries.len();
-        let page = videos_page(http, &album_id, &jwt, pages + 1, raw)?;
+        let page = videos_page(
+            http,
+            &album_id,
+            &jwt,
+            pages + 1,
+            raw,
+            hashed_pass.as_deref(),
+        )?;
         pages += 1;
         collect(&page, &mut entries);
         if !another_page(&page, before, entries.len()) {
@@ -140,9 +165,10 @@ pub fn extract(http: &Http, url: &Url, kind: &Kind, raw: &str) -> Result<Listing
     Ok(listing)
 }
 
-/// The `jwt` the web player sends. `xsrft` is asked for in the same request
-/// only because Vimeo returns both; nothing here logs in.
-fn viewer_jwt(http: &Http, raw: &str) -> Result<String> {
+/// The `jwt` the web player sends, and the `xsrft` that comes with it. The token
+/// is only used by a password-protected album, which is why it is optional here
+/// and asked for in the same request: Vimeo returns both whatever is wanted.
+fn viewer_tokens(http: &Http, raw: &str) -> Result<(String, Option<String>)> {
     let headers = [("accept", "application/json")];
     let viewer = http
         .get_json("vimeo-viewer", VIEWER, &headers)
@@ -152,12 +178,13 @@ fn viewer_jwt(http: &Http, raw: &str) -> Result<String> {
                  vimeo.com/_next/viewer did not answer one: {error}"
             ))
         })?;
-    text(&viewer, &["jwt"]).ok_or_else(|| {
+    let jwt = text(&viewer, &["jwt"]).ok_or_else(|| {
         Error::Refused(format!(
             "vimeo: {raw}: vimeo.com/_next/viewer answered without a jwt, so the album cannot be \
              read without a session"
         ))
-    })
+    })?;
+    Ok((jwt, text(&viewer, &["xsrft"])))
 }
 
 /// `/showcase/<slug>` → the numeric album id, through the endpoint the page
@@ -203,12 +230,33 @@ fn album_document(http: &Http, album_id: &str, jwt: &str, raw: &str) -> Result<V
     }
 }
 
-/// The album id and the page number name this request; the URL the user typed
-/// would only be repeated.
-fn videos_page(http: &Http, album_id: &str, jwt: &str, page: u32, _raw: &str) -> Result<Value> {
-    let endpoint = format!(
+/// The address of one page of an album's videos.
+///
+/// The album's own password proof travels as a query parameter, on every page:
+/// it is what the site's own page sends, and a page fetched without it is a 400
+/// that looks like the end of the album.
+fn videos_endpoint(album_id: &str, page: u32, hashed_pass: Option<&str>) -> String {
+    let mut endpoint = format!(
         "https://api.vimeo.com/albums/{album_id}/videos?fields=link,uri,name,duration&per_page={PER_PAGE}&page={page}"
     );
+    if let Some(hashed) = hashed_pass {
+        endpoint.push_str("&_hashed_pass=");
+        endpoint.push_str(&crate::url::percent_encode(hashed));
+    }
+    endpoint
+}
+
+/// The album id and the page number name this request; the URL the user typed
+/// would only be repeated.
+fn videos_page(
+    http: &Http,
+    album_id: &str,
+    jwt: &str,
+    page: u32,
+    _raw: &str,
+    hashed_pass: Option<&str>,
+) -> Result<Value> {
+    let endpoint = videos_endpoint(album_id, page, hashed_pass);
     let authorization = format!("jwt {jwt}");
     let headers = [
         ("accept", "application/json"),
@@ -380,6 +428,19 @@ mod tests {
         let document = json!({ "paging": { "page": 1, "per_page": 100, "total": 500 } });
         assert!(!another_page(&document, 100, 100));
         assert!(another_page(&document, 100, 200));
+    }
+
+    #[test]
+    fn a_password_proof_travels_as_a_query_parameter_on_every_page() {
+        let with = videos_endpoint("4110309", 2, Some("abc+/="));
+        assert!(
+            with.contains("&_hashed_pass=abc%2B%2F%3D"),
+            "the proof is percent-encoded: {with}"
+        );
+        assert!(with.contains("page=2"), "{with}");
+        let without = videos_endpoint("4110309", 1, None);
+        assert!(!without.contains("_hashed_pass"), "{without}");
+        assert!(without.contains("page=1"), "{without}");
     }
 
     #[test]

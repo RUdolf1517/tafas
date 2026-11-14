@@ -13,9 +13,9 @@ Two rules keep this list honest:
 - an item that stays unsupported gets a refusal text in
   [extractors](extractors.md), because "not yet" is a feature only if it says so.
 
-**One rule decided when anything is tagged.** No version was released until the
-whole roadmap was done — v0.2 through v0.5 — so the first tag after 0.1.0
-carried all of it: **0.2.0, 2026-11-08**. This is the project owner's decision,
+**One rule decided when anything is tagged.** No version is released until the
+whole roadmap is done — v0.2 through v0.5 — so the first tag after 0.1.0 carried
+all of it: **0.2.0, 2026-11-08**. This is the project owner's decision,
 and it is a decision about *releases*, not about the work: commits land on
 `main` continuously and CI builds them, but a version number is a promise about
 a published archive, and the archive appears once. The consequence worth knowing
@@ -23,6 +23,12 @@ as a user: everything in §2–§5 is in that archive, `main` is ahead of it aga
 as soon as the next item lands, and `cargo install --git` is how to get what is
 not released yet. [releases §1](releases.md#1-versioning) states the rule, and
 what 0.2.0 does not contain.
+
+**The roadmap is done**, so the rule now withholds nothing: every version after
+0.2.0 — 0.2.1, the defect release, then 0.3.0 — is an ordinary release of the
+work that landed since the last one. New items do not enter §2–§5 again; they
+arrive as a sentence in [§6](#6-ideas-that-are-parked-not-planned) and leave it
+by the process in §8.
 
 ## 1. v0.1.0 — shipped
 
@@ -50,7 +56,7 @@ thumbnails, live streams, more than four sites.
 
 | Item | Why |
 | --- | --- |
-| **More sites** — *done: Vimeo, Reddit, SoundCloud (MP3), Twitch VODs* | Vimeo: the player config, progressive MP4 plus HLS, DASH and password-protected videos refused by name. Reddit: `/comments/<id>.json` and one route only — `hls_url` — because `fallback_url` is a video-only MP4 and `dash_url` is `SegmentBase`. SoundCloud: page hydration, then the transcoding, then the bytes, as an MP3 copied verbatim. Twitch: one batched GraphQL request for the playback token and the metadata, then the usher playlist. What is still out is named per site in [extractors](extractors.md): clips, live channels, Go+ tracks, subscriber-only recordings. |
+| **More sites** — *done: Vimeo, Reddit, SoundCloud (MP3), Twitch VODs* | Vimeo: the player config, progressive MP4 plus HLS, DASH and password-protected videos refused by name. Reddit: `/comments/<id>.json` and one route only — `hls_url` — because `fallback_url` is a video-only MP4 and `dash_url` is `SegmentBase`. SoundCloud: page hydration, then the transcoding, then the bytes, as an MP3 copied verbatim. Twitch: one batched GraphQL request for the playback token and the metadata, then the usher playlist. SoundCloud sets: the set's own entry in the page, then `api-v2` for the tracks the page did not carry. Twitch clips: one GraphQL request, because a clip is already a complete MP4. What is still out is named per site in [extractors](extractors.md): live channels, Go+ tracks, subscriber-only recordings, a live stream's missing end. |
 | **Fragmented MP4** — *done: `EXT-X-MAP` headers, `moof`/`trun`/`tfhd`/`tfdt` parsing into the writer's own tracks, HEVC and `SAMPLE-AES` refused by name* | DASH `SegmentBase` and live recordings arrive as `moof`/`mdat` fragments. The HLS flavour is read ([hls §2.1](hls.md#21-fragmented-mp4)); a progressive file that is *itself* fragmented is refused by name by the sample-table reader, which is the same answer the remuxer gave and now says which `moof` it found. |
 | **A progressive MP4 read back** — *done: `mp4read::plain`, `stsz`/`stts`/`ctts`/`stss`/`stco`/`co64`/`stsc` walked into tracks, every sample bounds-checked* | Reading what the writer wrote is the only way to add to a finished file, and it is what verifies a round trip. It does not replace `mux::verify`: one answers "is this file sane", the other "what is in it". |
 | **Subtitle tracks inside MP4** — *done: `--embed-subs`, one `wvtt` track (`subt`/`sthd`/`wvtt`/`vttC`, a `vttc`→`payl` per cue, timescale 1000, each sample stating its duration); `stpp`/TTML refused by name* | Sidecars shipped first because they cannot break a video; the track now goes in through the same builder the muxer uses, on a file that is read back first. `stpp` is the branch that was not taken: TTML has no cue text the container can hold without a second parser, so it is a refusal rather than a conversion. |
@@ -105,7 +111,7 @@ signature. See [releases](releases.md#reproducibility-signatures-and-the-sbom).
 | shipping an external binary (yt-dlp, ffmpeg, a headless browser) | the binary must work on a machine with no package manager |
 | a dependency in a language other than Rust unless it can be neither written here nor replaced by a Rust crate | [dependencies §0](dependencies.md#0-the-rule); `ring` is the one exception, and it is argued, not inherited |
 | an update check or telemetry | a downloader that phones home is not a downloader |
-| a config file or `TAFAS_*` variables | every decision is an argument, so a command that worked yesterday works today |
+| a config file or `TAFAS_*` variables | every decision is an argument, so a command that worked yesterday works today. The one exception is `TAFAS_VIDEO_PASSWORD`/`TAFAS_VIDEO_PASSWORD_FILE`, and it is the argument's fault: a password on a command line is in `ps` and in every pasted `--help` |
 | writing a file that failed verification | exit 4 and a bug report instead |
 | silently skipping something | a refusal is a failure with a name |
 
