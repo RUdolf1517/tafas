@@ -608,7 +608,8 @@ fn the_homebrew_formula_names_hashes_the_release_published() {
     for hash in &hashes {
         assert_eq!(hash.len(), 64, "{hash} is not a sha256");
         assert!(
-            hash.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
+            hash.chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
             "{hash} is not lowercase hex"
         );
     }
