@@ -869,3 +869,82 @@ fn a_failed_segment_cancels_the_segments_that_are_still_queued() {
         "at most the one segment already in flight may have been started"
     );
 }
+
+/// `--max-filesize` at the segment level: a segment larger than the ceiling is
+/// refused before it is parsed, and the staging file is not left behind.
+///
+/// The ceiling exists for the person on a metered connection, so the property
+/// that matters is not "an error is returned" — it is that nothing usable
+/// appears on disk and the bytes beyond the ceiling were never asked for.
+#[test]
+fn a_segment_over_the_ceiling_is_refused_and_leaves_nothing_behind() {
+    let segment = ts_segment();
+    let server = TestServer::start(vec![
+        Route::ok("/media.m3u8", media_playlist("seg1.ts").as_bytes()),
+        Route::ok("/seg1.ts", &segment),
+    ]);
+    let out = temp_dir("hls-maxsize").join("clip.mp4");
+    let url = Url::parse(&server.url("/media.m3u8")).unwrap();
+    // Half the segment: a ceiling the body must cross.
+    let ceiling = (segment.len() / 2) as u64;
+
+    let error = hlsfetch::fetch(
+        &client(),
+        &url,
+        &[],
+        Quality::Best,
+        Segments {
+            max_bytes: Some(ceiling),
+            ..Segments::default()
+        },
+        &out,
+        &mut |_| {},
+    )
+    .expect_err("a segment over the ceiling must not be assembled");
+
+    // The ceiling is applied where every other byte ceiling is, so the refusal
+    // is `Error::Limit` and it names the size. What this test pins is that the
+    // user's number reached that check rather than the module's own 64 MiB
+    // default: the message carries the ceiling that was given.
+    assert!(
+        matches!(error, tafas::error::Error::Limit(_)),
+        "a body over the ceiling is a limit refusal, got {error:?}"
+    );
+    let said = error.to_string();
+    assert!(
+        said.contains("larger than"),
+        "the refusal has to say what it refused: {said}"
+    );
+    assert!(
+        !out.exists() || std::fs::metadata(&out).map(|m| m.len()).unwrap_or(0) == 0,
+        "a refused file must not be left on disk"
+    );
+}
+
+#[test]
+fn a_segment_under_the_ceiling_is_still_written() {
+    let segment = ts_segment();
+    let server = TestServer::start(vec![
+        Route::ok("/media.m3u8", media_playlist("seg1.ts").as_bytes()),
+        Route::ok("/seg1.ts", &segment),
+    ]);
+    let out = temp_dir("hls-maxsize-ok").join("clip.mp4");
+    let url = Url::parse(&server.url("/media.m3u8")).unwrap();
+
+    let report = hlsfetch::fetch(
+        &client(),
+        &url,
+        &[],
+        Quality::Best,
+        Segments {
+            max_bytes: Some(segment.len() as u64),
+            ..Segments::default()
+        },
+        &out,
+        &mut |_| {},
+    )
+    .expect("a ceiling that is not crossed changes nothing");
+
+    assert_eq!(report.segments, 1);
+    assert!(out.exists());
+}

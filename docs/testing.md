@@ -71,6 +71,9 @@ survived the remux and are findable in the output.
 | an `EXT-X-MAP` body that is not ISO-BMFF | refused with the box that failed, not with a panic |
 | a path past 260 characters, on Windows | written, renamed and read back through `paths::verbatim`, which is the identity everywhere else |
 | `--limit-rate 0`, `1`, `5G`, `fast` | exit 2 before any request, and the message shows the spelling that would have worked |
+| `--max-filesize 0`, `1`, `1.5G`, `2000T`, `fast` | `0` and `1` are legal (a size, unlike a rate, may be tiny), `2000T` is refused for being past the petabyte ceiling, and only the message for the flag that was used names that flag |
+| a segment larger than `--max-filesize` | refused, nothing assembled, nothing left on disk; a segment at exactly the ceiling is written |
+| a `Retry-After` of `120`, of `Fri, 31 Dec 1999 23:59:59 GMT`, of an invalid date, and of `3600` | 120 s, a wait of zero for the past, the schedule for the invalid one, and 60 s for the capped one |
 | `--extractor-args youtube:client=flash` (and five other shapes) | exit 2 before any request, and the message lists the values that would have worked |
 | two `--extractor-args` flags, one per site | both are accepted; the same key named twice is exit 2, not a silent last-one-wins |
 

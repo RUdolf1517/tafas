@@ -94,6 +94,9 @@ pub struct Segments<'a> {
     /// rather than in it: the file is an MP4 written once at the end, and a
     /// half-written one has no offset worth continuing from.
     pub resume: Option<&'a Path>,
+    /// `--max-filesize`: no segment may be larger than this. `None` leaves the
+    /// memory bound of `SEGMENT_LIMIT` as the only ceiling.
+    pub max_bytes: Option<u64>,
 }
 
 impl<'a> Default for Segments<'a> {
@@ -102,6 +105,7 @@ impl<'a> Default for Segments<'a> {
             items: None,
             concurrent: 1,
             resume: None,
+            max_bytes: None,
         }
     }
 }
@@ -129,6 +133,10 @@ pub fn fetch(
     let items = segments.items;
     let resume = segments.resume;
     let concurrency = segments.concurrent.clamp(1, CONCURRENCY_LIMIT);
+    // The ceiling a single segment is read under, settled once here rather than
+    // recomputed per segment: it is the user's limit when there is one, and the
+    // module's memory bound otherwise.
+    let ceiling = segments.max_bytes.unwrap_or(SEGMENT_LIMIT);
     let borrowed: Vec<(&str, &str)> = headers
         .iter()
         .map(|(name, value)| (name.as_str(), value.as_str()))
@@ -176,6 +184,7 @@ pub fn fetch(
         on_bytes,
         &mut segments,
         &mut video_cache,
+        ceiling,
     )?;
     let mut tracks = tracks_of(&video_bytes, video_map.as_deref())?;
     let mut duration = video_media.total_duration();
@@ -225,6 +234,7 @@ pub fn fetch(
             on_bytes,
             &mut segments,
             &mut audio_cache,
+            ceiling,
         )?;
         if let Some(warning) = audio_cache.warning.clone() {
             warnings.push(warning);
@@ -462,19 +472,28 @@ fn tracks_of(bytes: &[u8], init: Option<&[u8]>) -> Result<Vec<Track>> {
 }
 
 /// One segment, fetched and — if the playlist says so — decrypted.
+///
+/// `ceiling` is `--max-filesize` when it is set, and `SEGMENT_LIMIT` otherwise.
+/// No segment can be larger than the file it is a piece of, so applying the
+/// user's ceiling here is exact rather than conservative: a segment past it is
+/// a file that will be refused later, and refusing it before it is read is the
+/// cheaper half of the same answer. Taking the smaller of the two keeps a
+/// `--max-filesize 2G` from lifting the memory bound.
 fn fetch_segment(
     http: &Http,
     segment: &Segment,
     headers: &[(&str, &str)],
     key: Option<([u8; KEY_BYTES], [u8; 16])>,
+    ceiling: u64,
 ) -> Result<Vec<u8>> {
     let range = segment.range.map(|range| (range.offset, range.length));
+    let limit = SEGMENT_LIMIT.min(ceiling.max(1));
     let mut bytes = http.get_bytes(
         "hls-segment",
         &segment.uri.to_string(),
         headers,
         range,
-        SEGMENT_LIMIT,
+        limit,
     )?;
     if let Some((key_bytes, iv)) = key {
         bytes = decrypt(&bytes, key_bytes, iv)?;
@@ -705,6 +724,7 @@ fn fetch_media(
     on_bytes: &mut dyn FnMut(u64),
     segments: &mut usize,
     cache: &mut Cache,
+    ceiling: u64,
 ) -> Result<Vec<u8>> {
     // Everything before `skip` is already in the cache: it was fetched by the
     // run this one is continuing.
@@ -744,7 +764,7 @@ fn fetch_media(
 
     if workers == 1 {
         for index in skip..chosen.len() {
-            let bytes = fetch_segment(http, chosen[index], headers, keys[index])?;
+            let bytes = fetch_segment(http, chosen[index], headers, keys[index], ceiling)?;
             on_bytes(bytes.len() as u64);
             cache.push(&bytes);
         }
@@ -769,7 +789,7 @@ fn fetch_media(
                     if index >= chosen.len() {
                         break;
                     }
-                    let outcome = fetch_segment(http, chosen[index], headers, keys[index]);
+                    let outcome = fetch_segment(http, chosen[index], headers, keys[index], ceiling);
                     if outcome.is_err() {
                         cancelled.store(true, Ordering::SeqCst);
                     }

@@ -62,6 +62,12 @@ pub struct Options {
     pub overwrite: bool,
     pub resume: bool,
     pub name: Option<String>,
+    /// `--restrict-filenames`: reduce a name to ASCII, so it survives a
+    /// filesystem or an archival script that is not UTF-8.
+    pub restrict_filenames: bool,
+    /// `--max-filesize`: refuse a file larger than this, in bytes, before the
+    /// transfer is allowed to run to its end. `None` means no ceiling.
+    pub max_filesize: Option<u64>,
     pub dry_run: bool,
     pub list_formats: bool,
     pub json: bool,
@@ -102,6 +108,8 @@ impl Default for Options {
             overwrite: false,
             resume: true,
             name: None,
+            restrict_filenames: false,
+            max_filesize: None,
             dry_run: false,
             list_formats: false,
             json: false,
@@ -206,7 +214,9 @@ pub fn run(urls: &[String], options: &Options) -> u8 {
             }
         },
     };
-    let http = http.with_limit_rate(options.limit_rate);
+    let http = http
+        .with_limit_rate(options.limit_rate)
+        .with_max_filesize(options.max_filesize);
     let printer = Printer::new(options);
 
     // With one worker the item is announced as soon as it is done, which is what
@@ -409,7 +419,13 @@ fn process_list(
         // answers about *one* file, so they do not survive into a list.
         let mut entry_options = options.clone();
         entry_options.output = Some(directory.clone());
-        entry_options.name = Some(listing::stem(position, &entry));
+        // `--restrict-filenames` survives into a list: it is a statement about
+        // the machine the files land on, not about one file.
+        entry_options.name = Some(listing::stem(
+            position,
+            &entry,
+            options.restrict_filenames,
+        ));
         entry_options.multiple = true;
         entry_options.playlist_items = None;
         // `--format` and `--name` describe *one* file; a list renames each entry
@@ -917,7 +933,7 @@ fn target_path(options: &Options, media: &Media, plan: &Plan) -> Result<PathBuf>
     match &options.output {
         None => Ok(PathBuf::from(format!(
             "{}.{}",
-            names::stem(media, options.name.as_deref()),
+            names::stem(media, options.name.as_deref(), options.restrict_filenames),
             plan.extension()
         ))),
         Some(output) => {
@@ -934,7 +950,7 @@ fn target_path(options: &Options, media: &Media, plan: &Plan) -> Result<PathBuf>
                 })?;
                 Ok(output.join(format!(
                     "{}.{}",
-                    names::stem(media, options.name.as_deref()),
+                    names::stem(media, options.name.as_deref(), options.restrict_filenames),
                     plan.extension()
                 )))
             } else {
@@ -1081,11 +1097,30 @@ fn fetch_hls(
             items: options.playlist_items.as_ref(),
             concurrent: options.concurrent_fragments,
             resume: options.resume.then_some(part.as_path()),
+            // A segment is a piece of the file, so the largest piece cannot be
+            // larger than the file the user allowed.
+            max_bytes: options.max_filesize,
         },
         &part,
         &mut |bytes| progress.add(bytes),
     );
     progress.clear();
+
+    // A segment ceiling bounds each piece, not their sum: a list whose pieces
+    // are individually allowed can still add up to a file the user refused. The
+    // total is known only now, and it is checked before the verify-and-rename,
+    // so a refused file never acquires its final name.
+    if let (Some(max), Ok(report)) = (options.max_filesize, &result) {
+        if report.bytes > max {
+            let _ = fs::remove_file(&part);
+            hlsfetch::forget(&part);
+            return Err(Error::Refused(format!(
+                "{}: {} bytes is over the --max-filesize ceiling of {max}; nothing was kept",
+                part.display(),
+                report.bytes
+            )));
+        }
+    }
 
     let report = match result {
         Ok(report) => report,

@@ -73,7 +73,13 @@ A page title is attacker-controlled input that becomes a path. The reduction:
   construction — no title can add a separator;
 - Windows device names (`con`, `nul`, `com1`, …) are prefixed with `_`;
 - the stem is bounded at 150 **bytes**, cut at a character boundary, so a
-  Cyrillic or CJK title is truncated by characters and never mid-codepoint.
+  Cyrillic or CJK title is truncated by characters and never mid-codepoint;
+- the result keeps the title's own script by default. `--restrict-filenames`
+  applies the same reduction and then drops everything above ASCII, folding the
+  characters that have a plain letter underneath (`é` → `e`, `ß` → `ss`) and
+  replacing the rest with `_`. It is a statement about the filesystem the name
+  will live on, not about trust: a title is equally attacker-controlled in
+  either mode, and neither mode lets it escape the directory.
 
 The directory part of the name never comes from the page: it comes from `-o`,
 `--name` or the current directory. There is no way for a title to place a file

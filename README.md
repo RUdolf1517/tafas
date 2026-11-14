@@ -244,3 +244,7 @@ Written by AI. Directed by [RUdolf1517](https://github.com/RUdolf1517) ·
 [`deny.toml`](deny.toml) in CI, on every commit; the reasoning for each
 dependency, and the rule for adding one, is in
 [docs/dependencies.md](docs/dependencies.md).
+
+Found something that is a vulnerability rather than a bug? [SECURITY.md](SECURITY.md)
+says how to report it privately, and what counts as one — a site changing its
+pages is a defect with a patch release, not a disclosure.

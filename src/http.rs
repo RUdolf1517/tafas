@@ -2,6 +2,7 @@ use std::io::{Read, Write};
 use std::time::Duration;
 
 use reqwest::blocking::{Client, Response};
+use reqwest::header::HeaderMap;
 use reqwest::{Method, StatusCode};
 use serde_json::Value;
 
@@ -63,6 +64,11 @@ pub struct Http {
     /// `None` means the flag was not given, which is not the same as a very
     /// large number: an unbounded transfer never touches the clock.
     limit: Option<std::sync::Mutex<crate::ratelimit::Budget>>,
+    /// `--max-filesize`: the largest body this client will write. `None` means
+    /// no ceiling. It lives here rather than at the call sites because every
+    /// media byte in the process passes through `download`, so a ceiling
+    /// applied here cannot be forgotten by one extractor.
+    max_filesize: Option<u64>,
 }
 
 /// rustls refuses to guess between crypto providers, and reqwest is built with
@@ -101,6 +107,7 @@ impl Http {
             verbose,
             cookies: None,
             limit: None,
+            max_filesize: None,
         })
     }
 
@@ -115,6 +122,16 @@ impl Http {
     /// The budget is one per client, so `--jobs` and `--concurrent-fragments`
     /// divide the rate rather than multiply it. Metadata is not charged: it is
     /// read in full and bounded by its own limits, not streamed.
+    /// `--max-filesize`, applied by [`Http::download`] to every body it writes.
+    ///
+    /// It is a builder rather than an argument of `download` for the same reason
+    /// the rate is: one run has one ceiling, and a caller that had to remember
+    /// to pass it is a caller that can forget.
+    pub fn with_max_filesize(mut self, bytes: Option<u64>) -> Http {
+        self.max_filesize = bytes;
+        self
+    }
+
     pub fn with_limit_rate(mut self, bytes_per_second: Option<u64>) -> Http {
         self.limit =
             bytes_per_second.map(|rate| std::sync::Mutex::new(crate::ratelimit::Budget::new(rate)));
@@ -180,7 +197,12 @@ impl Http {
                 Ok(response) => {
                     let status = response.status();
                     if retryable_status(status) && attempt < self.retries {
-                        let wait = backoff(attempt);
+                        // A `429` that names its own wait is a site telling us
+                        // how long to stay away; guessing 400 ms instead spends
+                        // the retry budget arriving early, which is the one
+                        // thing a rate limiter is counting. The header wins
+                        // when it parses, and the schedule is the fallback.
+                        let wait = retry_after(response.headers(), attempt);
                         self.log(&format!(
                             "{label}: HTTP {} — retrying in {:.1}s ({}/{})",
                             status.as_u16(),
@@ -459,6 +481,20 @@ impl Http {
             content_length(&response).map(|len| len + resume_from)
         };
 
+        // The ceiling is checked here, before any byte of this body is written,
+        // when the server stated its length; a chunked body that did not state
+        // one is caught in the loop below, which is the only way to catch it.
+        if let Some(max) = self.max_filesize {
+            if let Some(total) = total {
+                if total > max {
+                    return Err(Error::Refused(format!(
+                        "{label}: {total} bytes is over the --max-filesize ceiling of {max}; \
+                         nothing was written"
+                    )));
+                }
+            }
+        }
+
         let mut reader = response;
         let mut buffer = vec![0u8; 64 * 1024];
         let mut written = 0u64;
@@ -466,6 +502,18 @@ impl Http {
             let read = reader.read(&mut buffer)?;
             if read == 0 {
                 break;
+            }
+            // A body with no `Content-Length` can only be measured as it
+            // arrives. Falling past the ceiling is a refusal rather than a
+            // truncation: the caller deletes what this call wrote, and a short
+            // file that looks complete is the one outcome worse than an error.
+            if let Some(max) = self.max_filesize {
+                if written + read as u64 > max {
+                    return Err(Error::Refused(format!(
+                        "{label}: the body passed the --max-filesize ceiling of {max} bytes; \
+                         stopped after {written} bytes"
+                    )));
+                }
             }
             sink.write_all(&buffer[..read])?;
             written += read as u64;
@@ -544,6 +592,92 @@ fn backoff(attempt: u32) -> Duration {
     Duration::from_millis(millis.min(5_000))
 }
 
+/// The longest a `Retry-After` is obeyed. A site asking for an hour is telling
+/// us not to come back in this run; sleeping through it would look like a hang,
+/// and the refusal is more useful than either.
+const RETRY_AFTER_CAP: Duration = Duration::from_secs(60);
+
+/// How long to wait before retrying, from the site when it says so.
+///
+/// `Retry-After` is either a number of seconds (`Retry-After: 120`) or an HTTP
+/// date (`Retry-After: Fri, 31 Dec 1999 23:59:59 GMT`). Both are read: a site
+/// that sends the date form is not more compliant, and a header nobody parses
+/// is the same as no header. Anything unreadable, or in the past, falls back to
+/// the schedule — the header is an improvement on the guess, not a contract
+/// that can cancel the retry.
+fn retry_after(headers: &HeaderMap, attempt: u32) -> Duration {
+    match headers
+        .get(reqwest::header::RETRY_AFTER)
+        .and_then(|value| value.to_str().ok())
+        .and_then(parse_retry_after)
+    {
+        Some(wait) => wait.min(RETRY_AFTER_CAP),
+        None => backoff(attempt),
+    }
+}
+
+/// The two spellings of `Retry-After`, in the one place both are tested.
+fn parse_retry_after(text: &str) -> Option<Duration> {
+    let text = text.trim();
+    if let Ok(seconds) = text.parse::<u64>() {
+        return Some(Duration::from_secs(seconds));
+    }
+    let when = httpdate_seconds(text)?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_secs();
+    // A date that has already passed means "now", which is a wait of zero; it is
+    // not a reason to fall back to 400 ms.
+    Some(Duration::from_secs(when.saturating_sub(now)))
+}
+
+/// Parses an IMF-fixdate (`Fri, 31 Dec 1999 23:59:59 GMT`) into Unix seconds.
+///
+/// Hand-written rather than a new dependency: this is the only date this
+/// program ever reads, the format is fixed, and the alternative is a crate that
+/// pulls in a calendar for one header. Returns `None` for anything that is not
+/// that exact shape, which is then handled by the fallback schedule.
+fn httpdate_seconds(text: &str) -> Option<u64> {
+    const MONTHS: [&str; 12] = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+    // `Sun, 06 Nov 1994 08:49:37 GMT` — the day name is skipped, and its length
+    // is not assumed: `Ry, 06 Nov 1994 ...` is still this shape.
+    let (_, rest) = text.split_once(", ")?;
+    let mut parts = rest.split(' ');
+    let day: u64 = parts.next()?.parse().ok()?;
+    let month_name = parts.next()?;
+    let month = MONTHS.iter().position(|name| *name == month_name)? as u64 + 1;
+    let year: u64 = parts.next()?.parse().ok()?;
+    let clock = parts.next()?;
+    let mut clock_parts = clock.split(':');
+    let hour: u64 = clock_parts.next()?.parse().ok()?;
+    let minute: u64 = clock_parts.next()?.parse().ok()?;
+    let second: u64 = clock_parts.next()?.parse().ok()?;
+    if parts.next()? != "GMT" || parts.next().is_some() {
+        return None;
+    }
+    if !(1..=31).contains(&day) || hour > 23 || minute > 59 || second > 60 {
+        return None;
+    }
+    Some(days_from_civil(year, month, day) * 86_400 + hour * 3_600 + minute * 60 + second)
+}
+
+/// Days since 1970-01-01 for a proleptic Gregorian date, without a dependency.
+///
+/// Howard Hinnant's `days_from_civil`, which is exact for every year this can
+/// receive and is four lines of arithmetic instead of a calendar crate.
+fn days_from_civil(year: u64, month: u64, day: u64) -> u64 {
+    let year = if month <= 2 { year - 1 } else { year };
+    let era = year / 400;
+    let year_of_era = year - era * 400;
+    let shifted_month = (month + 9) % 12;
+    let day_of_year = (153 * shifted_month + 2) / 5 + day - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    era * 146_097 + day_of_era - 719_468
+}
+
 fn first_line(body: &str) -> String {
     body.lines()
         .next()
@@ -563,6 +697,61 @@ mod tests {
         assert_eq!(backoff(0), Duration::from_millis(400));
         assert_eq!(backoff(1), Duration::from_millis(800));
         assert_eq!(backoff(9), Duration::from_millis(5_000));
+    }
+
+    #[test]
+    fn a_retry_after_in_seconds_is_obeyed() {
+        assert_eq!(parse_retry_after("120"), Some(Duration::from_secs(120)));
+        assert_eq!(parse_retry_after("0"), Some(Duration::ZERO));
+        assert_eq!(parse_retry_after(" 7 "), Some(Duration::from_secs(7)));
+        // Not a number and not a date: the caller falls back to the schedule.
+        assert_eq!(parse_retry_after("soon"), None);
+        assert_eq!(parse_retry_after(""), None);
+    }
+
+    #[test]
+    fn a_retry_after_date_is_read_as_a_date() {
+        // 1970-01-01T00:00:00Z is zero, which is the arithmetic underneath.
+        assert_eq!(days_from_civil(1970, 1, 1), 0);
+        assert_eq!(days_from_civil(1999, 12, 31), 10_956);
+        // 2000-03-01 is the day after the leap day of a century year, which is
+        // where a hand-written calendar usually breaks.
+        assert_eq!(days_from_civil(2000, 3, 1) - days_from_civil(2000, 2, 29), 1);
+        assert_eq!(
+            httpdate_seconds("Fri, 31 Dec 1999 23:59:59 GMT"),
+            Some(10_956 * 86_400 + 23 * 3_600 + 59 * 60 + 59)
+        );
+        // The day name is skipped, not validated: a site that sends the wrong
+        // one still told us when.
+        assert_eq!(
+            httpdate_seconds("Mon, 31 Dec 1999 23:59:59 GMT"),
+            httpdate_seconds("Fri, 31 Dec 1999 23:59:59 GMT")
+        );
+        for wrong in [
+            "31 Dec 1999 23:59:59 GMT",   // no day name
+            "Fri, 31 Dec 1999 23:59:59",  // no GMT
+            "Fri, 31 Foo 1999 23:59:59 GMT",
+            "Fri, 32 Dec 1999 23:59:59 GMT",
+            "Fri, 31 Dec 1999 24:00:00 GMT",
+        ] {
+            assert_eq!(httpdate_seconds(wrong), None, "{wrong:?} parsed");
+        }
+    }
+
+    #[test]
+    fn a_date_in_the_past_waits_no_time_at_all() {
+        // The header is an instruction, and a date that has passed means
+        // "now" — not a reason to fall back to 400 ms.
+        assert_eq!(parse_retry_after("Fri, 31 Dec 1999 23:59:59 GMT"), Some(Duration::ZERO));
+    }
+
+    #[test]
+    fn a_retry_after_longer_than_a_minute_is_capped() {
+        let mut headers = HeaderMap::new();
+        headers.insert(reqwest::header::RETRY_AFTER, "3600".parse().unwrap());
+        assert_eq!(retry_after(&headers, 0), RETRY_AFTER_CAP);
+        // And with no header at all the schedule decides, as before.
+        assert_eq!(retry_after(&HeaderMap::new(), 1), backoff(1));
     }
 
     #[test]

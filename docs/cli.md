@@ -164,10 +164,15 @@ by name rather than converted.
 | `--playlist-items ITEMS` | take only these entries of a list: `3`, `1-5`, `2-`, mixed with commas |
 | `--concurrent-fragments N` | fetch this many HLS segments at once (`1`–`16`, default `1`) |
 | `--limit-rate RATE` | cap a transfer at `RATE` bytes per second (`500K`, `2M`, `1.5M`; default no limit) |
+| `--max-filesize SIZE` | refuse any single file larger than `SIZE` (`500K`, `2M`, `1.5G`; default no ceiling) |
+| `--restrict-filenames` | make written names ASCII: fold what has a plain letter, drop the rest |
 | `--extractor-args SITE:KEY=VALUE` | narrow an extractor's route by hand (repeatable; see below) |
 
 Retried: transport failures, `429`, and `5xx`, with a growing delay (0.4 s,
-0.8 s, 1.6 s, 3.2 s, capped at 5 s). Not retried: `400`, `401`, `403`, `404`,
+0.8 s, 1.6 s, 3.2 s, capped at 5 s). When the site sends `Retry-After` — in
+seconds or as an HTTP date — that number is used instead, capped at 60 s: a site
+that names its own wait is telling us when to come back, and arriving early
+spends a retry to be told so again. Not retried: `400`, `401`, `403`, `404`,
 `410`, `416` — those are answers, not weather. A `403` from a CDN is classified
 as a refusal, because in practice it is a page check rather than a broken URL.
 
@@ -246,6 +251,27 @@ and not a sleep per chunk: each chunk reserves the time it is worth, the worker
 waits until its turn, and the wait happens with no lock held so several segments
 still overlap. One chunk of slack is deliberate — the first read is never
 delayed — so a run can overshoot by a buffer and converges from there.
+
+`--max-filesize SIZE` is the ceiling for one written file, in the same grammar
+as `RATE` (`500K`, `2M`, `1.5G`, `1T`). It is enforced twice, because a download
+arrives in two shapes: a progressive body is measured against its
+`Content-Length` before the first byte is written and again as it streams, so a
+server that understates the length is still stopped; a segment list is checked
+per segment — no segment can be larger than the file it is part of — and the
+assembled total is checked before the file is verified and renamed. A file that
+is over the ceiling is refused, deleted and not renamed: nothing is kept, and
+the exit code says the run failed rather than wrote something short. A size of
+`0` is a legal request and refuses every file; a rate of `0` is not, and the two
+flags differ on purpose.
+
+`--restrict-filenames` reduces every written name to ASCII: the characters a
+European title carries keep their plain letter (`café` → `cafe`, `Über` →
+`Uber`), and everything else becomes `_` rather than an invented transliteration
+you could not predict. The default keeps the title's own script, which is right
+on your own machine and wrong on a filesystem or an archival script that is not
+UTF-8 — where a Cyrillic title becomes a row of `?` and the file is no longer
+findable. It applies to list entries too (`03 - Title [id]`), because it is a
+statement about the machine the files land on, not about one file.
 
 `--concurrent-fragments N` decides how many segments of one HLS list are in
 flight at once; the default, `1`, fetches them one after another, so the flag is
