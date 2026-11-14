@@ -786,3 +786,55 @@ fn every_script_the_release_runs_exists() {
         "docs/releases.md must say which script builds the .apk"
     );
 }
+/// `cargo audit` is not per-commit, and the reason is the database rather than
+/// the code: RustSec moves while this repository does not. The arrangement is
+/// therefore a schedule and a tag, and it has to be an arrangement that *says*
+/// something — a job that fails every Monday in silence is a job nobody has.
+///
+/// This test exists in the same spirit as the one above it: the previous version
+/// of this project said the licence check ran "when a release is cut" and it ran
+/// nowhere, so what a page claims about a workflow is now checked against the
+/// workflow.
+#[test]
+fn the_advisory_check_runs_on_a_clock_and_says_so() {
+    let audit = read(".github/workflows/audit.yml");
+    assert!(
+        audit.contains("schedule:"),
+        "`cargo audit` has to run without anybody touching the repository"
+    );
+    assert!(
+        audit.contains("cargo audit"),
+        "audit.yml must actually invoke cargo audit"
+    );
+    assert!(
+        audit.contains("tags:"),
+        "a tag is the last moment before archives go out; audit there too"
+    );
+    // A scheduled run has no pull request to comment on, so silence is the
+    // failure mode to design against.
+    assert!(
+        audit.contains("gh issue create") && audit.contains("gh issue close"),
+        "a scheduled failure must open an issue and close it when clean"
+    );
+
+    // And the pages that describe the cadence have to describe this one. The
+    // sentence they used to carry — that it is "not wired into a workflow" — was
+    // true until this job existed and is now the exact kind of claim this test
+    // is for.
+    for page in [
+        "docs/dependencies.md",
+        "docs/testing.md",
+        "CONTRIBUTING.md",
+        "docs/releases.md",
+    ] {
+        let text = read(page).split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(
+            text.contains("audit.yml"),
+            "{page} does not name the workflow that runs `cargo audit`"
+        );
+        assert!(
+            !text.contains("not wired into a workflow"),
+            "{page} still says the advisory check runs nowhere"
+        );
+    }
+}

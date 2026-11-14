@@ -368,6 +368,8 @@ jobs:
   # for the checks that matter here: it is licences, banned crates and sources,
   # all of which are decided by the tree. A minute of runner time on every commit
   # is a cheaper thing to spend than an argument about when to remember.
+  # Advisories are the moving part, so they live in `audit.yml` on a schedule
+  # instead; see docs/dependencies.md §0.
   licenses:
     name: licenses
     runs-on: ubuntu-latest

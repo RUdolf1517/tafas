@@ -27,13 +27,20 @@ dependency reached only from one site's code is checked by the build a reader
 actually compiles. It used to say it ran "when a release is cut" — and it ran
 nowhere: `release.yml` has never invoked it, and neither had anything else.
 
-`cargo audit` is the one that is deliberately not per-commit: the advisory
-database moves independently of this repository, so a build that was perfect on
-Friday is red on Monday for a reason nobody here caused, and a badge that turns
-red at 03:00 is not a test. `cargo audit` is run by hand when a dependency moves,
-and it is the step `CONTRIBUTING.md` names for a change to the graph; it is not
-wired into a workflow, and these pages do not claim otherwise. Wiring it in is a
-decision about red branches, not a missing line.
+`cargo audit` is deliberately not per-commit. The advisory database moves
+independently of this repository, so a build that was perfect on Friday is red on
+Monday for a reason nobody here caused — and if that red landed on whichever pull
+request happened to be open, it would teach people to ignore the check. It runs
+on a clock instead: `audit.yml` every Monday, and on a tag, which is the last
+moment before a release is published. When it fails it opens one issue rather
+than failing quietly, and closes it the first time a run is clean. It is also
+still the step `CONTRIBUTING.md` names for a change to the graph, and it still
+runs by hand when a dependency moves.
+
+The distinction with `cargo deny` is what each one depends on. Licences, banned
+crates and sources are decided by the tree, so they are checked on every commit;
+advisories are decided by a database that changes while the tree does not, so
+they are checked on a schedule.
 
 ---
 

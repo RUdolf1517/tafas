@@ -11,6 +11,17 @@ version; adding a site, a flag or a container is minor. The policy is in
 
 ## [Unreleased]
 
+### Added
+
+- **`cargo audit` runs on a clock, because the database is not this repository.**
+  It is `.github/workflows/audit.yml`: every Monday at 06:17 UTC and on a tag, one
+  step before a release is published. Not per-commit — an advisory is published
+  by somebody else, and a red pull request for it teaches people to ignore the
+  check — and not silent either, which is the failure mode of every scheduled
+  job: a red run opens one issue and a clean run closes it. Licences, bans and
+  sources stay on every commit in `licenses`, because those are decided by the
+  tree.
+
 ### Fixed
 
 - **The licence check's first run, and the report it wrote.** Turning on

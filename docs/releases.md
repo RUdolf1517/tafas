@@ -191,6 +191,13 @@ result cannot be undone.
    the repository's secrets — whichever runs second does nothing. See
    [§4.1](#41-cratesio).
 
+Step 3 also starts `audit.yml`, which runs `cargo audit` on the tag: the last
+moment before the archives go out at which an advisory against a crate in the
+lock file is still a reason to stop. It is not a gate on the release — that would
+require the release to wait on a database it does not control — but a red run on
+a tag is read before the release notes are written, not after. Everything else
+about the graph is checked per commit, by `licenses`.
+
 Nothing is built on a developer machine. The workflow is the only place a
 shipped binary is produced, which is what makes "the archive contains what the
 tag contains" a property rather than a hope.

@@ -186,11 +186,12 @@ The declared floor, `rust-version = "1.82"` in `Cargo.toml`, *is* a per-commit
 job: `msrv (1.82)` builds every target at the floor, because a transitive
 dependency can raise it without a line of this repository changing.
 
-`cargo audit` is the one that is not. Its database moves independently of this
+`cargo audit` is the other case. Its database moves independently of this
 repository, so a build that was perfect on Friday is red on Monday for a reason
-nobody here caused; it is run by hand when a dependency moves and by the person
-cutting a release, and `CONTRIBUTING.md` is where it is written down. `cargo
-deny` is the opposite case: what it checks — licences, banned crates, sources — is
-decided by the tree, so it runs on every commit as the `licenses` job. It did not,
-for three releases, while three pages said it ran "when a release is cut"; see
-[dependencies](dependencies.md) §0.
+nobody here caused, and a red pull request for that is a lesson in ignoring the
+check. It runs in `audit.yml` instead — every Monday, and on a tag, one step
+before a release is published — and a failure there opens an issue rather than
+passing quietly. `cargo deny` is the opposite case: what it checks — licences,
+banned crates, sources — is decided by the tree, so it runs on every commit as the
+`licenses` job. It did not, for three releases, while three pages said it ran
+"when a release is cut"; see [dependencies](dependencies.md) §0.

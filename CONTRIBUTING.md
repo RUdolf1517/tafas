@@ -51,6 +51,13 @@ cargo deny check
 cargo audit
 ```
 
+`cargo deny check` is what the `licenses` job runs on every commit, so a change
+that fails it fails CI too — run it first rather than learning it from a comment.
+`cargo audit` is not per-commit: it is `.github/workflows/audit.yml`, every Monday
+and on a tag, because the advisory database moves while this repository does not.
+Run it when you change the dependency graph, which is what keeps a CVE from
+waiting for Monday.
+
 The build needs a C compiler for `ring` (see
 [docs/dependencies.md §3](docs/dependencies.md#3-where-the-c-is)); it does not
 need `pkg-config`, OpenSSL, `ffmpeg` or Python.
