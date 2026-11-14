@@ -184,7 +184,12 @@ fn file_with_metadata() -> (Vec<u8>, usize) {
     let mdhd = full(
         b"mdhd",
         0,
-        &join(&[&be(1_700_000_000), &be(1_700_000_100), &be(90_000), &be(3000)]),
+        &join(&[
+            &be(1_700_000_000),
+            &be(1_700_000_100),
+            &be(90_000),
+            &be(3000),
+        ]),
     );
 
     let mut hdlr_payload = vec![0u8; 4];
