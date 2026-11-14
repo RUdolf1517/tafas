@@ -181,7 +181,11 @@ fn file_with_metadata() -> (Vec<u8>, usize) {
         0,
         &join(&[&be(1_700_000_000), &be(1_700_000_100), &be(1000), &be(40)]),
     );
-    let mdhd = full(b"mdhd", 0, &join(&[&be(0), &be(0), &be(90_000), &be(3000)]));
+    let mdhd = full(
+        b"mdhd",
+        0,
+        &join(&[&be(1_700_000_000), &be(1_700_000_100), &be(90_000), &be(3000)]),
+    );
 
     let mut hdlr_payload = vec![0u8; 4];
     hdlr_payload.extend_from_slice(b"vide");
@@ -201,7 +205,11 @@ fn file_with_metadata() -> (Vec<u8>, usize) {
     let stbl = bx(b"stbl", &cat(&[stsd, stts, stsc, stsz, stco]));
     let minf = bx(b"minf", &stbl);
     let mdia = bx(b"mdia", &cat(&[mdhd, hdlr, minf]));
-    let tkhd = full(b"tkhd", 0, &[0u8; 80]);
+    let tkhd = full(
+        b"tkhd",
+        0,
+        &join(&[&be(1_700_000_000), &be(1_700_000_100), &[0u8; 72][..]]),
+    );
     let trak = bx(b"trak", &cat(&[tkhd, udta_trak, mdia]));
     let moov = bx(b"moov", &cat(&[mvhd, trak, udta_top]));
 
@@ -238,10 +246,11 @@ fn stripping_empties_the_metadata_and_leaves_the_media_alone() {
         report.removed
     );
     assert!(report.bytes_blanked > 0);
-    // At least `mvhd` and `mdhd`; the fixture also has a `tkhd`.
-    assert!(
-        report.zeroed >= 2,
-        "the movie and media timestamps should both be cleared, got {}",
+    // `mvhd`, `tkhd` and `mdhd` all carry a stamp in this fixture, so a count
+    // that is not three means one of them was walked past.
+    assert_eq!(
+        report.zeroed, 3,
+        "every time header should be cleared, not {}",
         report.zeroed
     );
 
