@@ -101,6 +101,14 @@ is refused for anything that needs a remux.
 .B \-\-name \fINAME\fR
 Use this name stem instead of \fI<title> [<id>]\fR.
 .TP
+.B \-\-restrict\-filenames
+Reduce every written name to ASCII: an accented letter loses its accent and
+keeps the letter underneath, so \fBcaf\fR with an acute accent on the \fBe\fR
+becomes \fBcafe\fR, and a character with no plain form becomes an underscore
+rather than an invented transliteration. The default keeps the title's own
+script, which is right on your own machine and wrong on a filesystem or an
+archival script that is not UTF\-8. List entries are renamed the same way.
+.TP
 .B \-\-overwrite
 Replace an existing file. Without it an existing destination is an error, and
 nothing is fetched.
@@ -171,6 +179,8 @@ continued with a range request.
 .B \-\-retries \fIN\fR
 Retries for one failed request (default 3). Transport errors, \fB429\fR and
 \fB5xx\fR are retried with a growing delay; other \fB4xx\fR responses are not.
+A \fBRetry\-After\fR header \- in seconds or as an HTTP date \- replaces the
+delay for that attempt, capped at 60 seconds.
 .TP
 .B \-\-timeout \fISECS\fR
 Deadline for one metadata request (default 60). A media transfer has no total
@@ -199,6 +209,43 @@ and every segment in flight, so
 .B \-\-concurrent\-fragments
 divides the rate rather than multiplying it. Below 1K the run is refused rather
 than clamped; metadata requests are not charged. The default is no limit.
+.TP
+.B \-\-max\-filesize \fISIZE\fR
+Refuse any single file larger than
+.IR SIZE ,
+written with the same optional
+.BR K , M , G
+or
+.B T
+suffix
+.B \-\-limit\-rate
+takes. A progressive body is measured against its stated length before the
+first byte is written and again as it streams; a segment list is checked per
+segment and then as an assembled total, before the file is verified and
+renamed. A file over the ceiling is refused and removed rather than kept short,
+and the exit code says the run failed. A size of zero is a legal request that
+refuses every file. The default is no ceiling.
+.TP
+.B \-\-strip\-meta
+Empty the metadata a downloaded file carries about itself: the user-data boxes
+(\fBudta\fR and the \fBilst\fR inside it, which is where a title, an artist or
+the name of the program that wrote the file lives), the \fBmeta\fR and
+\fBchpl\fR boxes, and the creation and modification times in the movie, track
+and media headers. It applies to MP4 and M4A, which are the files this program
+edits; an MP3 is copied as it arrived and keeps its tags, and
+.B \-\-capabilities
+says so rather than leaving the flag to imply more than it does.
+.PP
+The boxes are emptied in place, not deleted: each becomes a box of padding of
+exactly the same length. A chunk offset table stores absolute byte positions, so
+removing a box that sits before the media would silently corrupt every sample
+after it, and the file's length is the one thing this program will not change
+behind a player's back. What is left holds no trace of the metadata, and the
+stripped copy is verified before it replaces the original. A file with nothing
+to strip is left exactly as it was, and a file this reader cannot open at all
+\- a fragmented MP4 \- is kept as it arrived with a warning rather than
+discarded. Files tafas assembles itself are written
+without metadata in the first place, so the flag is a no-op on them.
 .TP
 .B \-\-cookies \fIFILE\fR
 Send the cookies in a Netscape cookie file, in the format curl writes and every

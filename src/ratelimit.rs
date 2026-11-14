@@ -20,31 +20,19 @@ pub const MIN_BYTES_PER_SECOND: u64 = 1024;
 /// "unlimited" for one connection. Bounded so the arithmetic cannot overflow.
 pub const MAX_BYTES_PER_SECOND: u64 = 1024 * 1024 * 1024;
 
-/// `--limit-rate RATE`: bytes per second, with an optional `K`, `M` or `G`
-/// suffix in powers of 1024 (`500K`, `2M`, `1.5M`, `500KB`).
+/// The ceiling for `--max-filesize`: a petabyte, which is far past any real
+/// file and well inside `u64`.
+pub const MAX_SIZE: u64 = 1024 * 1024 * 1024 * 1024 * 1024;
+
+/// `--limit-rate RATE`: bytes per second, with an optional `K`, `M`, `G` or `T`
+/// suffix in powers of 1024 (`500K`, `2M`, `1.5M`, `500KB`). A terabyte per
+/// second parses and is then refused by the ceiling below, which is a clearer
+/// answer than "that suffix is not allowed".
 ///
 /// Parsed and bounded before the first request, because a rate the program
 /// quietly changed would be a lie about what it did.
 pub fn parse(text: &str) -> Result<u64, String> {
-    let trimmed = text.trim();
-    let digits = match trimmed.as_bytes().last().copied() {
-        Some(b'b') | Some(b'B') => &trimmed[..trimmed.len() - 1],
-        _ => trimmed,
-    };
-    let (number, scale) = match digits.as_bytes().last().copied() {
-        Some(b'k') | Some(b'K') => (&digits[..digits.len() - 1], 1024u64),
-        Some(b'm') | Some(b'M') => (&digits[..digits.len() - 1], 1024u64 * 1024),
-        Some(b'g') | Some(b'G') => (&digits[..digits.len() - 1], 1024u64 * 1024 * 1024),
-        _ => (digits, 1u64),
-    };
-    let number = number.trim();
-    let value: f64 = match number.parse::<f64>() {
-        // Zero is allowed here and caught by the floor below, so that a rate of
-        // zero is told about the floor rather than about the syntax.
-        Ok(value) if value.is_finite() && value >= 0.0 => value,
-        _ => return Err(wrong_shape(text)),
-    };
-    let bytes = (value * scale as f64).round();
+    let bytes = scaled(text, "--limit-rate", "bytes per second")?;
     if bytes < MIN_BYTES_PER_SECOND as f64 {
         return Err(format!(
             "--limit-rate is at least {MIN_BYTES_PER_SECOND} bytes per second (1K), \
@@ -60,10 +48,59 @@ pub fn parse(text: &str) -> Result<u64, String> {
     Ok(bytes as u64)
 }
 
-fn wrong_shape(text: &str) -> String {
+/// `--max-filesize SIZE`: bytes, with the same suffixes and the same grammar.
+///
+/// The one difference from a rate is what zero means. A rate of zero is a typo,
+/// so it is refused by the floor; a size of zero is a coherent request — it
+/// refuses every file — and inventing a floor for it would be the program
+/// deciding what the user meant. The ceiling is a petabyte, which is far past
+/// any real file and well inside `u64`, so an absurd number is refused rather
+/// than wrapped.
+pub fn parse_size(text: &str, flag: &str) -> Result<u64, String> {
+    let bytes = scaled(text, flag, "a size")?;
+    if bytes > MAX_SIZE as f64 {
+        return Err(format!(
+            "{flag} is at most 1P ({MAX_SIZE} bytes), not {text:?}"
+        ));
+    }
+    Ok(bytes as u64)
+}
+
+/// The number-and-suffix grammar, shared so the two flags cannot drift.
+///
+/// `flag` and `what` are in the message rather than in a `match` at the call
+/// site: one grammar, two spellings of what it is measuring, and the number in
+/// the error is the number the user typed.
+fn scaled(text: &str, flag: &str, what: &str) -> Result<f64, String> {
+    let trimmed = text.trim();
+    let digits = match trimmed.as_bytes().last().copied() {
+        Some(b'b') | Some(b'B') => &trimmed[..trimmed.len() - 1],
+        _ => trimmed,
+    };
+    let (number, scale) = match digits.as_bytes().last().copied() {
+        Some(b'k') | Some(b'K') => (&digits[..digits.len() - 1], 1024u64),
+        Some(b'm') | Some(b'M') => (&digits[..digits.len() - 1], 1024u64 * 1024),
+        Some(b'g') | Some(b'G') => (&digits[..digits.len() - 1], 1024u64 * 1024 * 1024),
+        // `T` is here for `--max-filesize`, where a terabyte is a real answer.
+        // Through `--limit-rate` it is a number the rate ceiling refuses, which
+        // is the same answer in fewer words than a second grammar would give.
+        Some(b't') | Some(b'T') => (&digits[..digits.len() - 1], 1024u64 * 1024 * 1024 * 1024),
+        _ => (digits, 1u64),
+    };
+    let number = number.trim();
+    let value: f64 = match number.parse::<f64>() {
+        // Zero is allowed here and judged by the caller, so that a rate of zero
+        // is told about the floor rather than about the syntax.
+        Ok(value) if value.is_finite() && value >= 0.0 => value,
+        _ => return Err(wrong_shape(text, flag, what)),
+    };
+    Ok((value * scale as f64).round())
+}
+
+fn wrong_shape(text: &str, flag: &str, what: &str) -> String {
     format!(
-        "--limit-rate takes bytes per second with an optional K, M or G suffix \
-         (500K, 2M, 1.5M), not {text:?}"
+        "{flag} takes {what} with an optional K, M, G or T suffix (500K, 2M, 1.5G), \
+         not {text:?}"
     )
 }
 
@@ -111,6 +148,24 @@ impl Budget {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_size_shares_the_grammar_and_differs_only_in_what_zero_means() {
+        assert_eq!(parse_size("0", "--max-filesize"), Ok(0));
+        assert_eq!(parse_size("500K", "--max-filesize"), Ok(512_000));
+        assert_eq!(parse_size("1.5G", "--max-filesize"), Ok(1_610_612_736));
+        // The same number through the rate parser is refused, because a rate of
+        // half a kilobyte a second is a typo and a size of it is not.
+        assert!(parse("1").is_err());
+        assert_eq!(parse_size("1", "--max-filesize"), Ok(1));
+        // Above the petabyte ceiling it is refused rather than wrapped.
+        let error = parse_size("2000T", "--max-filesize").expect_err("too large");
+        assert!(error.contains("1P"), "{error}");
+        // And the message names the flag that was actually used.
+        let error = parse_size("fast", "--max-filesize").expect_err("not a size");
+        assert!(error.contains("--max-filesize"), "{error}");
+        assert!(!error.contains("--limit-rate"), "{error}");
+    }
 
     #[test]
     fn a_rate_is_bytes_with_an_optional_suffix() {

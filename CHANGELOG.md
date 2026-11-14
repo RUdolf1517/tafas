@@ -13,6 +13,43 @@ version; adding a site, a flag or a container is minor. The policy is in
 
 ### Added
 
+- **`--strip-meta`.** Empties what an MP4 says about itself: `udta` and the
+  `ilst` inside it — title, artist, encoder, the serial number a phone writes —
+  plus `meta`, `chpl`, and the creation and modification times in `mvhd`, `tkhd`
+  and `mdhd`. The boxes are emptied rather than deleted: each becomes a `free`
+  box of the same length, because `stco`/`co64` store absolute byte offsets and
+  shrinking the header would move every sample after it without moving the
+  index. In-place emptying makes the copied index correct by construction, in
+  any layout, and the file's length never changes behind a player's back. The
+  stripped copy goes through `mux::verify` before it replaces the original; a
+  file with no metadata is left alone and `--verbose` says so. Scope is MP4/M4A
+  — an MP3 is written verbatim and keeps its ID3 tags, which `--capabilities`
+  reports instead of leaving it to be discovered.
+- **A procedure for releasing the signing key**, in `docs/releases.md`. The
+  roadmap's one open sub-item was the key, and the page said it exists without
+  saying how to make one — the exact gap that leaves a step undone for three
+  releases. The commands, the reason the key has no passphrase, and what happens
+  to old signatures after a rotation are now written down next to the step that
+  uses them.
+
+- **`--max-filesize SIZE`.** A ceiling for one written file, in the same grammar
+  `--limit-rate` takes (`500K`, `2M`, `1.5G`, `1T`). Enforced twice, because a
+  download arrives in two shapes: a progressive body is measured against its
+  `Content-Length` before the first byte and again as it streams, and a segment
+  list is checked per segment — no segment is larger than the file it is part of
+  — then as an assembled total before the file is verified and renamed. Over the
+  ceiling is a refusal: the file is deleted, not kept short, because a short file
+  that looks complete is the one outcome worse than an error.
+- **`--restrict-filenames`.** ASCII names for people whose files travel: an
+  accented letter keeps the letter underneath (`café` → `cafe`), everything else
+  becomes `_` rather than an invented transliteration. Applies to list entries
+  too. The default still keeps the title's own script.
+- **`Retry-After` is obeyed.** A site that names its own wait — in seconds or as
+  an HTTP date — is believed, capped at 60 s, instead of being retried on the
+  0.4/0.8/1.6 s schedule that arrives too early by definition. The date is parsed
+  here rather than by a new dependency, and the arithmetic is checked against
+  known dates including a century leap day.
+
 - **`cargo audit` runs on a clock, because the database is not this repository.**
   It is `.github/workflows/audit.yml`: every Monday at 06:17 UTC and on a tag, one
   step before a release is published. Not per-commit — an advisory is published
@@ -23,6 +60,14 @@ version; adding a site, a flag or a container is minor. The policy is in
   tree.
 
 ### Fixed
+
+- **The host a link claims is now tested as a host.** `site()` was tested against
+  `notyoutube.com` alone, which passes whether or not the comparison is a
+  substring; it is compared whole, and six lookalikes that contain the real name
+  are now in the test — `youtube.com.evil.example`, `youtube.com@evil.example`,
+  a path carrying the name, and the `www.`/`m.`/port forms that must still work.
+- **A duplicated table header in `docs/roadmap.md` §4.** The second `| Item |
+  Why |` rendered as a data row, so the first item read as part of the heading.
 
 - **The licence check's first run, and the report it wrote.** Turning on
   `cargo deny` in CI immediately failed on `webpki-roots`, which ships the

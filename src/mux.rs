@@ -53,6 +53,20 @@ struct Source {
     mdats: Vec<(u64, u64)>,
     /// File length, for bounds checks in verification.
     len: u64,
+    /// Every top-level box in file order. [`strip`] walks it to rewrite the file
+    /// in place; [`remux`] ignores it.
+    top: Vec<TopBox>,
+}
+
+/// A top-level box, located in the file rather than copied into memory.
+#[derive(Debug, Clone, Copy)]
+struct TopBox {
+    start: u64,
+    /// First byte after the header — 8 or 16 bytes in, depending on the size
+    /// field, which is what makes this worth recording.
+    payload: u64,
+    end: u64,
+    kind: [u8; 4],
 }
 
 /// A table of absolute chunk offsets that has to be rewritten.
@@ -232,6 +246,7 @@ fn scan(path: &Path) -> Result<Source> {
     let mut ftyp = Vec::new();
     let mut moov: Option<Vec<u8>> = None;
     let mut mdats = Vec::new();
+    let mut top = Vec::new();
     let mut pos = 0u64;
 
     while pos + 8 <= len {
@@ -269,6 +284,12 @@ fn scan(path: &Path) -> Result<Source> {
             )));
         }
 
+        top.push(TopBox {
+            start: pos,
+            payload: pos + header_len,
+            end: pos + size,
+            kind,
+        });
         match &kind {
             b"ftyp" => {
                 // The header has already been consumed; rewind so the stored
@@ -318,6 +339,7 @@ fn scan(path: &Path) -> Result<Source> {
         moov,
         mdats,
         len,
+        top,
     })
 }
 
@@ -1104,6 +1126,103 @@ mod tests {
         assert_eq!(scale(u64::MAX, 1, u32::MAX), u64::MAX);
     }
 
+    fn box_of(kind: &[u8; 4], payload: &[u8]) -> Vec<u8> {
+        let mut out = ((payload.len() + 8) as u32).to_be_bytes().to_vec();
+        out.extend_from_slice(kind);
+        out.extend_from_slice(payload);
+        out
+    }
+
+    #[test]
+    fn metadata_is_emptied_without_moving_a_byte() {
+        let mut payload = Vec::new();
+        // A well-formed `trak`, because `strip_moov` recurses into it and would
+        // rightly refuse to walk boxes that are not boxes.
+        let tkhd = box_of(b"tkhd", &[0u8; 92]);
+        payload.extend_from_slice(&box_of(b"trak", &tkhd));
+        let udta = box_of(b"udta", b"iTunes said hello");
+        let udta_len = udta.len();
+        payload.extend_from_slice(&udta);
+        let before = payload.clone();
+
+        let mut removed = Vec::new();
+        let mut blanked = 0u64;
+        let mut zeroed = 0usize;
+        strip_moov(&mut payload, &mut removed, &mut blanked, &mut zeroed).unwrap();
+
+        assert_eq!(removed, vec!["udta".to_string()]);
+        assert_eq!(payload.len(), before.len(), "the header must not shrink");
+        // The box is now `free` of the identical size, and holds no trace of
+        // what it used to say.
+        assert_eq!(
+            &payload[before.len() - udta_len + 4..before.len() - udta_len + 8],
+            b"free"
+        );
+        assert_eq!(
+            u32::from_be_bytes([
+                payload[before.len() - udta_len],
+                payload[before.len() - udta_len + 1],
+                payload[before.len() - udta_len + 2],
+                payload[before.len() - udta_len + 3],
+            ]) as usize,
+            udta_len
+        );
+        assert!(!payload.windows(4).any(|window| window == &b"iTun"[..]));
+    }
+
+    #[test]
+    fn a_track_keeps_its_identity_while_losing_its_timestamp() {
+        // mvhd version 0: creation and modification are the two u32 after the
+        // version/flags word.
+        let mut mvhd_body = vec![0u8; 100];
+        mvhd_body[4..8].copy_from_slice(&1_700_000_000u32.to_be_bytes());
+        mvhd_body[8..12].copy_from_slice(&1_700_000_100u32.to_be_bytes());
+        let mut payload = box_of(b"mvhd", &mvhd_body);
+
+        let mut removed = Vec::new();
+        let mut blanked = 0u64;
+        let mut zeroed = 0usize;
+        strip_moov(&mut payload, &mut removed, &mut blanked, &mut zeroed).unwrap();
+
+        let body = 8 + 4;
+        assert_eq!(&payload[body..body + 4], &[0, 0, 0, 0]);
+        assert_eq!(&payload[body + 4..body + 8], &[0, 0, 0, 0]);
+        assert!(removed.is_empty(), "zeroing a time is not a removal");
+        assert_eq!(zeroed, 1, "but it is still work worth reporting");
+    }
+
+    #[test]
+    fn udta_inside_a_track_is_found_one_level_down() {
+        let mut trak_body = box_of(b"tkhd", &[0u8; 92]);
+        trak_body.extend_from_slice(&box_of(b"udta", b"recorded on a phone"));
+        let mut payload = box_of(b"trak", &trak_body);
+
+        let mut removed = Vec::new();
+        let mut blanked = 0u64;
+        let mut zeroed = 0usize;
+        strip_moov(&mut payload, &mut removed, &mut blanked, &mut zeroed).unwrap();
+
+        assert_eq!(removed, vec!["udta".to_string()]);
+    }
+
+    #[test]
+    fn an_unknown_box_is_kept() {
+        // The default has to be "keep": a box this build does not know could be
+        // the one a player needs.
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&box_of(b"mvex", b"payload"));
+        let before = payload.clone();
+
+        let mut removed = Vec::new();
+        let mut blanked = 0u64;
+        let mut zeroed = 0usize;
+        strip_moov(&mut payload, &mut removed, &mut blanked, &mut zeroed).unwrap();
+
+        assert!(removed.is_empty());
+        assert_eq!(blanked, 0);
+        assert_eq!(payload, before);
+    }
+
     #[test]
     fn mdat_header_grows_past_four_gibibytes() {
         assert_eq!(mdat_header_len(100), 8);
@@ -1118,11 +1237,305 @@ mod tests {
             moov: Vec::new(),
             mdats: vec![(100, 200)],
             len: 200,
+            top: Vec::new(),
         };
         assert_eq!(map_offset(150, &source, &[1000]).unwrap(), 1050);
         assert!(matches!(
             map_offset(50, &source, &[1000]).unwrap_err(),
             Error::Refused(_)
         ));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// --strip-meta
+// ---------------------------------------------------------------------------
+
+/// Box types that carry what a file says about *itself* rather than the media
+/// in it: `udta` (a container, so everything inside it goes — `ilst`, `©nam`,
+/// `©too`, the lot), `meta`, `ilst` when it appears without a parent `udta`,
+/// `chpl` (chapters, which name scenes), `Xtra`, and `uuid`, whose contents are
+/// a vendor's business and frequently include a device identity.
+///
+/// Everything not on this list is kept, including every box this module does not
+/// otherwise know. That direction matters: keeping an unrecognised box is safe,
+/// and dropping the wrong one could cost a player the thing that makes the file
+/// play. `stsd`, `stts`, `stco` and the codec configuration boxes are never
+/// touched.
+const META_BOXES: [&[u8; 4]; 6] = [b"udta", b"meta", b"ilst", b"chpl", b"Xtra", b"uuid"];
+
+fn is_metadata(kind: &[u8; 4]) -> bool {
+    META_BOXES.contains(&kind)
+}
+
+/// Empties the metadata in a plain ISO-BMFF file, keeping the media byte for
+/// byte and the file the same length.
+///
+/// The length is the point. A chunk offset is an absolute byte position, so
+/// removing a box that sits before the payload it refers to would leave every
+/// sample after it pointed at by an index that had quietly become wrong —
+/// unless the tables were rewritten, which is what [`remux`] does and what this
+/// function exists to avoid. Every box here is therefore replaced by padding of
+/// its own size rather than deleted: `moov` comes out exactly as long as it went
+/// in, `mdat` is copied untouched, and the index is copied rather than
+/// understood. There is no layout in which that can misplace a sample.
+///
+/// What remains is bytes: a `free` box holds nothing, so no reader finds a title
+/// or a timestamp where one used to be. The file does not get smaller; the part
+/// of it that described the file rather than the media stops describing anything.
+///
+/// A file with no metadata is left as it is, byte for byte, rather than being
+/// rewritten into an identical file: the caller can then say "nothing to strip"
+/// instead of claiming work it did not do.
+pub fn strip(source: &Path, out: &Path) -> Result<StripReport> {
+    let scanned = scan(source).map_err(|e| add_path(e, source))?;
+    let span = moov_span(&scanned);
+    let bytes_before = scanned.len;
+
+    // `moov` is copied whole and then edited in place, so its length never
+    // changes and nothing after it moves. What changes is only what the boxes
+    // inside it say.
+    let mut payload = scanned.moov[span.payload..span.end].to_vec();
+    let mut removed: Vec<String> = Vec::new();
+    let mut bytes_blanked = 0u64;
+    let mut zeroed = 0usize;
+    strip_moov(&mut payload, &mut removed, &mut bytes_blanked, &mut zeroed)?;
+
+    // A top-level metadata box is only blanked when it can be: an 8-byte header
+    // and a 32-bit size field. A 64-bit one is left in place and not claimed.
+    let blankable_top = scanned
+        .top
+        .iter()
+        .filter(|b| {
+            is_metadata(&b.kind) && b.payload - b.start == 8 && b.end - b.start <= u32::MAX as u64
+        })
+        .count();
+
+    // Nothing found, nothing to write — no second file, and the caller can say
+    // so. Clearing a timestamp counts as finding something, which is why this
+    // looks at `zeroed` and not only at the boxes.
+    if removed.is_empty() && blankable_top == 0 && zeroed == 0 {
+        return Ok(StripReport {
+            bytes_before,
+            bytes_after: bytes_before,
+            removed,
+            bytes_blanked: 0,
+            zeroed,
+        });
+    }
+
+    let file = File::create(out)?;
+    let mut writer = BufWriter::with_capacity(1 << 20, file);
+    let mut reader = File::open(source)?;
+    let mut buffer = vec![0u8; 1 << 20];
+    for top in &scanned.top {
+        match &top.kind {
+            b"moov" => {
+                // The length is derived from the edited payload, but it is the
+                // source's own length that the file's offsets were built
+                // against, so the two are checked against each other rather than
+                // assumed to agree. The check at the end of the function would
+                // catch a disagreement too; this one names the box.
+                let size = 8 + payload.len() as u64;
+                if size != top.end - top.start {
+                    return Err(Error::Internal(format!(
+                        "mp4: stripping changed the size of moov from {} to {size}",
+                        top.end - top.start
+                    )));
+                }
+                writer.write_all(&(size as u32).to_be_bytes())?;
+                writer.write_all(b"moov")?;
+                writer.write_all(&payload)?;
+            }
+            kind if is_metadata(kind) => {
+                let size = top.end - top.start;
+                if top.payload - top.start != 8 || size > u32::MAX as u64 {
+                    // Not blanked, and not claimed: see `blank_in_place`.
+                    copy_range(&mut reader, &mut writer, &mut buffer, top.start, top.end)?;
+                    continue;
+                }
+                removed.push(name_of(kind));
+                bytes_blanked += size;
+                blank_range(&mut writer, &mut buffer, size)?;
+            }
+            // `mdat` lands here, and it has to: `copy_mdats` writes a header of
+            // its own choosing, and an `mdat` whose header changed width would
+            // move its payload — the one thing this function must never do.
+            _ => copy_range(&mut reader, &mut writer, &mut buffer, top.start, top.end)?,
+        }
+    }
+    writer.flush()?;
+
+    let file = writer.into_inner().map_err(|e| Error::Io(e.into_error()))?;
+    file.sync_all()?;
+    let bytes_after = file.metadata()?.len();
+    if bytes_after != bytes_before {
+        return Err(Error::Internal(format!(
+            "mp4: stripping changed the file length from {bytes_before} to {bytes_after}; the \
+             chunk offsets would no longer hold"
+        )));
+    }
+
+    Ok(StripReport {
+        bytes_before,
+        bytes_after,
+        removed,
+        bytes_blanked,
+        zeroed,
+    })
+}
+
+/// Empties the metadata inside a `moov` payload, in place, and reports both what
+/// it emptied and how many bytes became padding.
+fn strip_moov(
+    payload: &mut [u8],
+    removed: &mut Vec<String>,
+    blanked: &mut u64,
+    zeroed: &mut usize,
+) -> Result<()> {
+    for span in children(payload, 0, payload.len())? {
+        if is_metadata(&span.kind) {
+            if blank_in_place(payload, span) {
+                removed.push(name_of(&span.kind));
+                *blanked += (span.end - span.start) as u64;
+            }
+            continue;
+        }
+        match &span.kind {
+            b"mvhd" | b"tkhd" | b"mdhd" => {
+                if zero_times(payload, span)? {
+                    *zeroed += 1;
+                }
+            }
+            // Only the containers a `udta` can be hiding in. Sample tables are
+            // never entered: there is nothing to find below them, and walking
+            // them would mean understanding them.
+            b"trak" | b"mdia" | b"minf" => {
+                let mut inner = payload[span.payload..span.end].to_vec();
+                let mut nested = Vec::new();
+                strip_moov(&mut inner, &mut nested, blanked, zeroed)?;
+                payload[span.payload..span.end].copy_from_slice(&inner);
+                removed.append(&mut nested);
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+/// Writes a zeroed creation and modification time into `mvhd`, `tkhd` or `mdhd`.
+///
+/// A file tafas assembled already has zeros here; one that was copied from a
+/// site usually does not, and those two fields are the most identifying thing a
+/// media file carries — a timestamp to the second, with no frames involved. The
+/// fields are fixed width, so zeroing them cannot move a byte. Durations and
+/// timescales are left untouched: they are what makes the file play.
+/// Returns whether either field was non-zero, so a file whose times are already
+/// cleared is not reported as changed.
+fn zero_times(data: &mut [u8], span: Span) -> Result<bool> {
+    let version = *data
+        .get(span.payload)
+        .ok_or_else(|| Error::Parse("mp4: truncated time header".into()))?;
+    let (first, width) = match version {
+        0 => (span.payload + 4, 4),
+        1 => (span.payload + 4, 8),
+        v => {
+            return Err(Error::Parse(format!(
+                "mp4: {} version {v} is not known",
+                show(&span.kind)
+            )))
+        }
+    };
+    let second = first + width;
+    if second + width > span.end {
+        return Err(Error::Parse(format!(
+            "mp4: {} is too short for its version {version} times",
+            show(&span.kind)
+        )));
+    }
+    let touched = data[first..first + width].iter().any(|b| *b != 0)
+        || data[second..second + width].iter().any(|b| *b != 0);
+    data[first..first + width].fill(0);
+    data[second..second + width].fill(0);
+    Ok(touched)
+}
+
+/// Empties a box inside a buffer without changing its length.
+///
+/// Returns `false` for a box whose header is 64-bit, which cannot be replaced by
+/// an 8-byte `free` header without changing what the size field means. Such a
+/// box is left alone and the caller does not count it as removed: a `udta` past
+/// four gigabytes is not a case to guess at, and silently producing a file whose
+/// header disagrees with its length is the one outcome worth ruling out.
+fn blank_in_place(data: &mut [u8], span: Span) -> bool {
+    let size = span.end - span.start;
+    let header = span.payload - span.start;
+    if header != 8 || size > u32::MAX as usize {
+        return false;
+    }
+    data[span.start..span.start + 4].copy_from_slice(&(size as u32).to_be_bytes());
+    data[span.start + 4..span.start + 8].copy_from_slice(b"free");
+    data[span.payload..span.end].fill(0);
+    true
+}
+
+/// The same, for a top-level box that lives in the file rather than in memory.
+fn blank_range(writer: &mut BufWriter<File>, buffer: &mut [u8], size: u64) -> Result<()> {
+    let mut header = [0u8; 8];
+    header[..4].copy_from_slice(&(size as u32).to_be_bytes());
+    header[4..].copy_from_slice(b"free");
+    writer.write_all(&header)?;
+    let mut left = size - 8;
+    while left > 0 {
+        let want = buffer.len().min(left as usize);
+        buffer[..want].fill(0);
+        writer.write_all(&buffer[..want])?;
+        left -= want as u64;
+    }
+    Ok(())
+}
+
+fn copy_range(
+    reader: &mut File,
+    writer: &mut BufWriter<File>,
+    buffer: &mut [u8],
+    start: u64,
+    end: u64,
+) -> Result<()> {
+    reader.seek(SeekFrom::Start(start))?;
+    let mut left = end - start;
+    while left > 0 {
+        let want = buffer.len().min(left as usize);
+        reader.read_exact(&mut buffer[..want])?;
+        writer.write_all(&buffer[..want])?;
+        left -= want as u64;
+    }
+    Ok(())
+}
+
+fn name_of(kind: &[u8; 4]) -> String {
+    show(kind).trim_matches('"').to_string()
+}
+
+/// What [`strip`] did, so the caller can say it rather than imply it.
+#[derive(Debug, Clone)]
+pub struct StripReport {
+    pub bytes_before: u64,
+    pub bytes_after: u64,
+    /// The box types that were emptied, in the order they appeared.
+    pub removed: Vec<String>,
+    /// How many bytes of the file are now padding. The file is the same length
+    /// as before; this is how much of it no longer says anything.
+    pub bytes_blanked: u64,
+    /// How many creation/modification timestamp pairs were zeroed.
+    pub zeroed: usize,
+}
+
+impl StripReport {
+    /// Whether the source had metadata at all — removed or zeroed. A `false`
+    /// here is what makes `--strip-meta` on a file tafas wrote a no-op instead
+    /// of a rewrite.
+    pub fn changed(&self) -> bool {
+        !self.removed.is_empty() || self.zeroed > 0
     }
 }

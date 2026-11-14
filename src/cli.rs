@@ -109,6 +109,18 @@ pub struct Args {
     #[arg(long, value_name = "NAME")]
     pub name: Option<String>,
 
+    /// Make file names ASCII: fold what has a plain letter, and drop the rest
+    #[arg(long)]
+    pub restrict_filenames: bool,
+
+    /// Refuse any single file larger than this (500K, 2M, 1.5G)
+    #[arg(long, value_name = "SIZE", value_parser = parse_size)]
+    pub max_filesize: Option<u64>,
+
+    /// Empty the file's own metadata (udta, meta, ilst, timestamps), keeping the media
+    #[arg(long)]
+    pub strip_meta: bool,
+
     /// Print what would be fetched and where, then stop
     #[arg(short = 'n', long)]
     pub dry_run: bool,
@@ -227,6 +239,16 @@ fn parse_limit_rate(text: &str) -> Result<u64, String> {
     crate::ratelimit::parse(text)
 }
 
+/// `--max-filesize SIZE`: the same suffixes a rate takes, but no floor.
+///
+/// A rate of zero means "stop", which is a typo; a size of zero is a coherent
+/// request — "do not write anything" — and is left to fail where it means
+/// something. The syntax is shared with `--limit-rate` so there is one grammar
+/// for `500K`, `2M` and `1.5G` in this program, not two.
+fn parse_size(text: &str) -> Result<u64, String> {
+    crate::ratelimit::parse_size(text, "--max-filesize")
+}
+
 fn parse_color(text: &str) -> Result<Choice, String> {
     Choice::parse(text)
 }
@@ -303,6 +325,9 @@ impl Args {
             overwrite: self.overwrite,
             resume: !self.no_resume,
             name: self.name.clone(),
+            restrict_filenames: self.restrict_filenames,
+            max_filesize: self.max_filesize,
+            strip_meta: self.strip_meta,
             dry_run: self.dry_run,
             list_formats: self.list_formats,
             json: self.json,
@@ -363,6 +388,38 @@ mod tests {
         ]);
         assert_eq!(args.options().unwrap().quality, Quality::Height(720));
         assert_eq!(args.color(), Choice::Never);
+    }
+
+    #[test]
+    fn the_two_new_flags_reach_the_options() {
+        let args = Args::parse_from([
+            "tafas",
+            "--restrict-filenames",
+            "--max-filesize",
+            "50M",
+            "https://youtu.be/dQw4w9WgXcQ",
+        ]);
+        let options = args.options().unwrap();
+        assert!(options.restrict_filenames);
+        assert_eq!(options.max_filesize, Some(50 * 1024 * 1024));
+        // Absent, both mean "off" — not a default ceiling nobody asked for.
+        let plain = Args::parse_from(["tafas", "https://youtu.be/dQw4w9WgXcQ"]);
+        let plain = plain.options().unwrap();
+        assert!(!plain.restrict_filenames);
+        assert_eq!(plain.max_filesize, None);
+    }
+
+    #[test]
+    fn a_bad_size_is_a_usage_error_that_names_the_flag() {
+        let error = Args::try_parse_from([
+            "tafas",
+            "--max-filesize",
+            "some",
+            "https://youtu.be/dQw4w9WgXcQ",
+        ])
+        .expect_err("not a size");
+        let said = error.to_string();
+        assert!(said.contains("--max-filesize"), "{said}");
     }
 
     #[test]

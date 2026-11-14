@@ -94,6 +94,9 @@ pub struct Segments<'a> {
     /// rather than in it: the file is an MP4 written once at the end, and a
     /// half-written one has no offset worth continuing from.
     pub resume: Option<&'a Path>,
+    /// `--max-filesize`: no segment may be larger than this. `None` leaves the
+    /// memory bound of `SEGMENT_LIMIT` as the only ceiling.
+    pub max_bytes: Option<u64>,
 }
 
 impl<'a> Default for Segments<'a> {
@@ -102,6 +105,7 @@ impl<'a> Default for Segments<'a> {
             items: None,
             concurrent: 1,
             resume: None,
+            max_bytes: None,
         }
     }
 }
@@ -129,6 +133,10 @@ pub fn fetch(
     let items = segments.items;
     let resume = segments.resume;
     let concurrency = segments.concurrent.clamp(1, CONCURRENCY_LIMIT);
+    // The ceiling a single segment is read under, settled once here rather than
+    // recomputed per segment: it is the user's limit when there is one, and the
+    // module's memory bound otherwise.
+    let ceiling = segments.max_bytes.unwrap_or(SEGMENT_LIMIT);
     let borrowed: Vec<(&str, &str)> = headers
         .iter()
         .map(|(name, value)| (name.as_str(), value.as_str()))
@@ -171,9 +179,12 @@ pub fn fetch(
     let video_bytes = fetch_media(
         http,
         &video_segments,
-        &borrowed,
-        concurrency,
-        on_bytes,
+        &mut Walk {
+            headers: &borrowed,
+            concurrency,
+            ceiling,
+            on_bytes,
+        },
         &mut segments,
         &mut video_cache,
     )?;
@@ -220,9 +231,12 @@ pub fn fetch(
         let audio_bytes = fetch_media(
             http,
             &audio_segments,
-            &borrowed,
-            concurrency,
-            on_bytes,
+            &mut Walk {
+                headers: &borrowed,
+                concurrency,
+                ceiling,
+                on_bytes,
+            },
             &mut segments,
             &mut audio_cache,
         )?;
@@ -462,19 +476,28 @@ fn tracks_of(bytes: &[u8], init: Option<&[u8]>) -> Result<Vec<Track>> {
 }
 
 /// One segment, fetched and — if the playlist says so — decrypted.
+///
+/// `ceiling` is `--max-filesize` when it is set, and `SEGMENT_LIMIT` otherwise.
+/// No segment can be larger than the file it is a piece of, so applying the
+/// user's ceiling here is exact rather than conservative: a segment past it is
+/// a file that will be refused later, and refusing it before it is read is the
+/// cheaper half of the same answer. Taking the smaller of the two keeps a
+/// `--max-filesize 2G` from lifting the memory bound.
 fn fetch_segment(
     http: &Http,
     segment: &Segment,
     headers: &[(&str, &str)],
     key: Option<([u8; KEY_BYTES], [u8; 16])>,
+    ceiling: u64,
 ) -> Result<Vec<u8>> {
     let range = segment.range.map(|range| (range.offset, range.length));
+    let limit = SEGMENT_LIMIT.min(ceiling.max(1));
     let mut bytes = http.get_bytes(
         "hls-segment",
         &segment.uri.to_string(),
         headers,
         range,
-        SEGMENT_LIMIT,
+        limit,
     )?;
     if let Some((key_bytes, iv)) = key {
         bytes = decrypt(&bytes, key_bytes, iv)?;
@@ -690,6 +713,20 @@ fn write_segment(
     journal.flush()
 }
 
+/// The answers every segment fetch in one run shares: how many workers, how
+/// large a body may be, and where progress is reported.
+///
+/// Named rather than passed as four positional arguments because the two calls
+/// that reach `fetch_media` — video, then audio — were eight arguments of which
+/// six were identical, which is a shape where a transposed pair compiles and
+/// lies. The compiler sees one argument now, and clippy's argument count agrees.
+struct Walk<'a> {
+    headers: &'a [(&'a str, &'a str)],
+    concurrency: usize,
+    ceiling: u64,
+    on_bytes: &'a mut dyn FnMut(u64),
+}
+
 /// One list of segments, fetched in order into a cache that may already hold
 /// the beginning of it.
 ///
@@ -700,12 +737,17 @@ fn write_segment(
 fn fetch_media(
     http: &Http,
     chosen: &[&Segment],
-    headers: &[(&str, &str)],
-    concurrency: usize,
-    on_bytes: &mut dyn FnMut(u64),
+    walk: &mut Walk<'_>,
     segments: &mut usize,
     cache: &mut Cache,
 ) -> Result<Vec<u8>> {
+    let ceiling = walk.ceiling;
+    let concurrency = walk.concurrency;
+    // Reborrowed, not moved: the caller passes `&mut Walk`, and taking the
+    // closure by value here would consume it on the first call and make the
+    // audio walk a second borrow of something already gone.
+    let on_bytes = &mut *walk.on_bytes;
+    let headers = walk.headers;
     // Everything before `skip` is already in the cache: it was fetched by the
     // run this one is continuing.
     let skip = cache.done;
@@ -744,7 +786,7 @@ fn fetch_media(
 
     if workers == 1 {
         for index in skip..chosen.len() {
-            let bytes = fetch_segment(http, chosen[index], headers, keys[index])?;
+            let bytes = fetch_segment(http, chosen[index], headers, keys[index], ceiling)?;
             on_bytes(bytes.len() as u64);
             cache.push(&bytes);
         }
@@ -769,7 +811,7 @@ fn fetch_media(
                     if index >= chosen.len() {
                         break;
                     }
-                    let outcome = fetch_segment(http, chosen[index], headers, keys[index]);
+                    let outcome = fetch_segment(http, chosen[index], headers, keys[index], ceiling);
                     if outcome.is_err() {
                         cancelled.store(true, Ordering::SeqCst);
                     }

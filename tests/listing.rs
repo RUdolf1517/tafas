@@ -58,9 +58,27 @@ fn an_entry_is_named_for_its_position_and_findable_by_its_id() {
     let items = Items::parse("2").expect("one entry");
     let chosen = listing::choose(&listing(3), Some(&items)).expect("one");
     assert_eq!(
-        listing::stem(chosen[0].0, &chosen[0].1),
+        listing::stem(chosen[0].0, &chosen[0].1, false),
         "02 - Some _ title_ 2 [id000000002]"
     );
+}
+
+/// `--restrict-filenames` is about the machine the files land on, so it has to
+/// reach the names a list writes as well as a single video's. The position and
+/// the id are the parts that keep a list navigable; only the title changes.
+#[test]
+fn a_restricted_list_entry_keeps_its_number_and_id_and_loses_the_script() {
+    let items = Items::parse("2").expect("one entry");
+    let mut page = listing(3);
+    page.entries[1].title = "Привет, мир".into();
+    let chosen = listing::choose(&page, Some(&items)).expect("one");
+    let name = listing::stem(chosen[0].0, &chosen[0].1, true);
+    assert!(name.is_ascii(), "{name:?} is not ASCII");
+    assert!(name.starts_with("02 - "), "{name:?}");
+    assert!(name.ends_with("[id000000002]"), "{name:?}");
+    // And without the flag the title keeps its own script.
+    let kept = listing::stem(chosen[0].0, &chosen[0].1, false);
+    assert!(kept.starts_with("02 - Привет"), "{kept:?}");
 }
 
 #[test]
@@ -157,7 +175,7 @@ fn the_naming_and_selection_rules_do_not_belong_to_one_site() {
         "the number on disk is the number in the browser"
     );
     assert_eq!(
-        listing::stem(chosen[0].0, &chosen[0].1),
+        listing::stem(chosen[0].0, &chosen[0].1, false),
         "02 - Video 2 [76979872]"
     );
     let text = listing::describe(&album, &chosen);

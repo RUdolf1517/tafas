@@ -61,6 +61,126 @@ pub fn sanitize(text: &str) -> String {
     cleaned
 }
 
+/// The same reduction as [`sanitize`], and then only ASCII survives.
+///
+/// The default keeps the title's own script, which is the right answer for a
+/// person on their own machine. It is the wrong answer for a file that outlives
+/// the machine it was written on: a title in Greek, Cyrillic or Japanese is
+/// legible here and a row of `?` on a filesystem or an archival script that is
+/// not UTF-8, and the name is then not findable again. `--restrict-filenames`
+/// is the opt-in to a name that survives that trip.
+///
+/// It composes with [`sanitize`] rather than replacing it, so the path
+/// separators and the Windows device names are still handled: the two rules are
+/// about different things and both apply.
+pub fn restrict(text: &str) -> String {
+    sanitize(&ascii_fold(text))
+}
+
+/// Replaces the characters that have an ASCII reading and drops the rest.
+///
+/// Folding rather than transliterating: "Привет" has no ASCII spelling worth
+/// inventing, so its letters become `_` like any other character a plain-text
+/// name cannot hold — while "café" keeps its `e` and "naïve" its `i`, because
+/// the letter underneath the accent is one a plain name can carry.
+fn ascii_fold(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for ch in text.chars() {
+        if ch.is_ascii() {
+            out.push(ch);
+            continue;
+        }
+        // A decomposition would turn `é` into `e` + U+0301 and drop the mark;
+        // the standard library has no `decompose`, so the characters that carry
+        // a plain letter for European titles are spelled out rather than pulling
+        // in `unicode-normalization` for a filename.
+        match ascii_of(ch) {
+            Some(replacement) => out.push_str(replacement),
+            None => out.push('_'),
+        }
+    }
+    out
+}
+
+/// The ASCII a character is read as, for the cases a decomposition covers.
+///
+/// Deliberately a table and not a transliteration engine: every entry is a
+/// character that a European title actually carries, and a character that is
+/// not here becomes `_` rather than an invented spelling.
+fn ascii_of(ch: char) -> Option<&'static str> {
+    // `static`, not `const`: a `const` is inlined at every use, so the reference
+    // returned below would point into a temporary. Inside a `static` the lifetime
+    // is already `'static`, which is why the item type does not repeat it —
+    // clippy refuses the repetition, and it is right to.
+    static TABLE: [(char, &str); 61] = [
+        ('À', "A"),
+        ('Á', "A"),
+        ('Â', "A"),
+        ('Ã', "A"),
+        ('Ä', "A"),
+        ('Å', "A"),
+        ('Æ', "AE"),
+        ('Ç', "C"),
+        ('È', "E"),
+        ('É', "E"),
+        ('Ê', "E"),
+        ('Ë', "E"),
+        ('Ì', "I"),
+        ('Í', "I"),
+        ('Î', "I"),
+        ('Ï', "I"),
+        ('Ð', "D"),
+        ('Ñ', "N"),
+        ('Ò', "O"),
+        ('Ó', "O"),
+        ('Ô', "O"),
+        ('Õ', "O"),
+        ('Ö', "O"),
+        ('Ø', "O"),
+        ('Ù', "U"),
+        ('Ú', "U"),
+        ('Û', "U"),
+        ('Ü', "U"),
+        ('Ý', "Y"),
+        ('Þ', "Th"),
+        ('ß', "ss"),
+        ('à', "a"),
+        ('á', "a"),
+        ('â', "a"),
+        ('ã', "a"),
+        ('ä', "a"),
+        ('å', "a"),
+        ('æ', "ae"),
+        ('ç', "c"),
+        ('è', "e"),
+        ('é', "e"),
+        ('ê', "e"),
+        ('ë', "e"),
+        ('ì', "i"),
+        ('í', "i"),
+        ('î', "i"),
+        ('ï', "i"),
+        ('ð', "d"),
+        ('ñ', "n"),
+        ('ò', "o"),
+        ('ó', "o"),
+        ('ô', "o"),
+        ('õ', "o"),
+        ('ö', "o"),
+        ('ø', "o"),
+        ('ù', "u"),
+        ('ú', "u"),
+        ('û', "u"),
+        ('ü', "u"),
+        ('ý', "y"),
+        ('þ', "th"),
+    ];
+    TABLE
+        .iter()
+        .find(|(source, _)| *source == ch)
+        .map(|(_, ascii)| *ascii)
+}
+
 /// Truncates at a character boundary, never mid-codepoint.
 pub fn truncate(text: String, max_bytes: usize) -> String {
     if text.len() <= max_bytes {
@@ -78,12 +198,22 @@ pub fn truncate(text: String, max_bytes: usize) -> String {
 /// The id is part of the default stem on purpose: two videos called "Live"
 /// would otherwise overwrite each other, and the id is the only stable handle a
 /// user has for finding the page again.
-pub fn stem(media: &Media, override_name: Option<&str>) -> String {
+pub fn stem(media: &Media, override_name: Option<&str>, restrict_to_ascii: bool) -> String {
+    // One place decides which reduction applies, so a caller cannot pass a name
+    // through one and a title through the other and get two different rules in
+    // one run.
+    let reduce = |text: &str| {
+        if restrict_to_ascii {
+            restrict(text)
+        } else {
+            sanitize(text)
+        }
+    };
     match override_name {
-        Some(name) => sanitize(name),
+        Some(name) => reduce(name),
         None => {
-            let title = sanitize(media.display_title());
-            let id = sanitize(&media.id);
+            let title = reduce(media.display_title());
+            let id = reduce(&media.id);
             if id.is_empty() || id == title {
                 title
             } else {
@@ -146,14 +276,53 @@ mod tests {
             "https://example".into(),
         );
         media.title = "A Video".into();
-        assert_eq!(stem(&media, None), "A Video [dQw4w9WgXcQ]");
-        assert_eq!(stem(&media, Some("mine")), "mine");
+        assert_eq!(stem(&media, None, false), "A Video [dQw4w9WgXcQ]");
+        assert_eq!(stem(&media, Some("mine"), false), "mine");
     }
 
     #[test]
     fn a_title_that_is_the_id_is_not_repeated() {
         let media = Media::new(Site::X, "20".into(), "https://example".into());
-        assert_eq!(stem(&media, None), "20");
+        assert_eq!(stem(&media, None, false), "20");
+    }
+
+    #[test]
+    fn restrict_folds_what_has_a_plain_letter_and_drops_the_rest() {
+        // What a European title actually carries keeps its letter.
+        assert_eq!(restrict("café"), "cafe");
+        assert_eq!(restrict("naïve"), "naive");
+        assert_eq!(restrict("Über Straße"), "Uber Strasse");
+        assert_eq!(restrict("Æon Øya"), "AEon Oya");
+        // What has no plain letter becomes `_` rather than an invented spelling:
+        // a made-up transliteration would be a name the user cannot predict.
+        assert_eq!(restrict("Привет"), "______");
+        assert_eq!(restrict("日本語"), "___");
+        // ASCII passes through untouched, and the sanitizer still applies after.
+        assert_eq!(restrict("a/b"), "a_b");
+    }
+
+    #[test]
+    fn restrict_is_ascii_even_when_the_title_is_not() {
+        let mut media = Media::new(
+            Site::YouTube,
+            "dQw4w9WgXcQ".into(),
+            "https://example".into(),
+        );
+        media.title = "Привет, мир".into();
+        let name = stem(&media, None, true);
+        assert!(name.is_ascii(), "{name:?} is not ASCII");
+        assert!(name.ends_with("[dQw4w9WgXcQ]"), "{name:?}");
+        // And the default still keeps the title's own script.
+        let kept = stem(&media, None, false);
+        assert_eq!(kept, "Привет, мир [dQw4w9WgXcQ]");
+    }
+
+    #[test]
+    fn restrict_respects_the_windows_device_names() {
+        // Folding happens before the reservation check, so a title that folds
+        // onto a device name is still prefixed.
+        assert_eq!(restrict("con"), "_con");
+        assert_eq!(restrict("NUL"), "_NUL");
     }
 
     #[test]
@@ -164,7 +333,7 @@ mod tests {
             "https://example".into(),
         );
         media.title = "я".repeat(400);
-        let name = stem(&media, None);
+        let name = stem(&media, None, false);
         assert!(name.len() <= MAX_STEM_BYTES + 20, "{} bytes", name.len());
         assert!(name.ends_with("[dQw4w9WgXcQ]"));
     }

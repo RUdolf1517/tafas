@@ -62,6 +62,16 @@ pub struct Options {
     pub overwrite: bool,
     pub resume: bool,
     pub name: Option<String>,
+    /// `--restrict-filenames`: reduce a name to ASCII, so it survives a
+    /// filesystem or an archival script that is not UTF-8.
+    pub restrict_filenames: bool,
+    /// `--max-filesize`: refuse a file larger than this, in bytes, before the
+    /// transfer is allowed to run to its end. `None` means no ceiling.
+    pub max_filesize: Option<u64>,
+    /// `--strip-meta`: empty the file's own metadata boxes and timestamps before
+    /// it is named. Only ISO-BMFF has them to empty; an MP3 is copied as it
+    /// arrived, and `--capabilities` says so.
+    pub strip_meta: bool,
     pub dry_run: bool,
     pub list_formats: bool,
     pub json: bool,
@@ -102,6 +112,9 @@ impl Default for Options {
             overwrite: false,
             resume: true,
             name: None,
+            restrict_filenames: false,
+            max_filesize: None,
+            strip_meta: false,
             dry_run: false,
             list_formats: false,
             json: false,
@@ -206,7 +219,9 @@ pub fn run(urls: &[String], options: &Options) -> u8 {
             }
         },
     };
-    let http = http.with_limit_rate(options.limit_rate);
+    let http = http
+        .with_limit_rate(options.limit_rate)
+        .with_max_filesize(options.max_filesize);
     let printer = Printer::new(options);
 
     // With one worker the item is announced as soon as it is done, which is what
@@ -409,7 +424,9 @@ fn process_list(
         // answers about *one* file, so they do not survive into a list.
         let mut entry_options = options.clone();
         entry_options.output = Some(directory.clone());
-        entry_options.name = Some(listing::stem(position, &entry));
+        // `--restrict-filenames` survives into a list: it is a statement about
+        // the machine the files land on, not about one file.
+        entry_options.name = Some(listing::stem(position, &entry, options.restrict_filenames));
         entry_options.multiple = true;
         entry_options.playlist_items = None;
         // `--format` and `--name` describe *one* file; a list renames each entry
@@ -917,7 +934,7 @@ fn target_path(options: &Options, media: &Media, plan: &Plan) -> Result<PathBuf>
     match &options.output {
         None => Ok(PathBuf::from(format!(
             "{}.{}",
-            names::stem(media, options.name.as_deref()),
+            names::stem(media, options.name.as_deref(), options.restrict_filenames),
             plan.extension()
         ))),
         Some(output) => {
@@ -934,7 +951,7 @@ fn target_path(options: &Options, media: &Media, plan: &Plan) -> Result<PathBuf>
                 })?;
                 Ok(output.join(format!(
                     "{}.{}",
-                    names::stem(media, options.name.as_deref()),
+                    names::stem(media, options.name.as_deref(), options.restrict_filenames),
                     plan.extension()
                 )))
             } else {
@@ -957,11 +974,13 @@ fn fetch_plan(
         }
         Plan::Single(format) => {
             let bytes = fetch_stream(http, format, target, options, printer)?;
+            strip_meta(&part_path(target), format.container, options, printer)?;
             commit(&part_path(target), target, options.overwrite)?;
             Ok(bytes)
         }
         Plan::Audio(format) => {
             let bytes = fetch_stream(http, format, target, options, printer)?;
+            strip_meta(&part_path(target), format.container, options, printer)?;
             commit(&part_path(target), target, options.overwrite)?;
             Ok(bytes)
         }
@@ -1012,6 +1031,7 @@ fn fetch_plan(
                 }
             };
 
+            strip_meta(&muxed_part, Container::Mp4, options, printer)?;
             commit(&muxed_part, target, options.overwrite)?;
             let _ = fs::remove_file(&video_part);
             let _ = fs::remove_file(&audio_part);
@@ -1023,6 +1043,7 @@ fn fetch_plan(
                 printer.warn(&format!("note: {why}"));
             }
             let bytes = fetch_stream(http, video, target, options, printer)?;
+            strip_meta(&part_path(target), video.container, options, printer)?;
             commit(&part_path(target), target, options.overwrite)?;
 
             let mut total = bytes;
@@ -1081,11 +1102,30 @@ fn fetch_hls(
             items: options.playlist_items.as_ref(),
             concurrent: options.concurrent_fragments,
             resume: options.resume.then_some(part.as_path()),
+            // A segment is a piece of the file, so the largest piece cannot be
+            // larger than the file the user allowed.
+            max_bytes: options.max_filesize,
         },
         &part,
         &mut |bytes| progress.add(bytes),
     );
     progress.clear();
+
+    // A segment ceiling bounds each piece, not their sum: a list whose pieces
+    // are individually allowed can still add up to a file the user refused. The
+    // total is known only now, and it is checked before the verify-and-rename,
+    // so a refused file never acquires its final name.
+    if let (Some(max), Ok(report)) = (options.max_filesize, &result) {
+        if report.bytes > max {
+            let _ = fs::remove_file(&part);
+            hlsfetch::forget(&part);
+            return Err(Error::Refused(format!(
+                "{}: {} bytes is over the --max-filesize ceiling of {max}; nothing was kept",
+                part.display(),
+                report.bytes
+            )));
+        }
+    }
 
     let report = match result {
         Ok(report) => report,
@@ -1104,6 +1144,7 @@ fn fetch_hls(
         )));
     }
 
+    strip_meta(&part, Container::Mp4, options, printer)?;
     commit(&part, target, options.overwrite)?;
     // The MP4 is the file that was asked for; the cache beside it is debris now.
     hlsfetch::forget(&part);
@@ -1310,6 +1351,117 @@ fn open_part(path: &Path, append: bool) -> Result<File> {
     } else {
         File::create(path).map_err(Error::Io)
     }
+}
+
+/// `--strip-meta`, applied to a finished file just before it is named.
+///
+/// Runs on the temporary, so the file that receives its final name is the one
+/// that was checked: `mux::strip` writes a copy, that copy goes through the same
+/// `mux::verify` every other written MP4 does, and only then does it replace the
+/// temporary. A stripped file that fails verification is a bug in `strip`, and
+/// the answer to that is an error next to a temporary that will not be
+/// committed — never a file that looks finished and is not.
+///
+/// An MP3 is written as it arrived, with its ID3 tags intact. `--capabilities`
+/// reports the flag as MP4-only, so this is a stated limit rather than a
+/// surprise; stripping ID3 is a different parser for a different format, and
+/// half of that flag would be worse than a narrow one.
+fn strip_meta(
+    part: &Path,
+    container: Container,
+    options: &Options,
+    printer: &Printer,
+) -> Result<()> {
+    if !options.strip_meta {
+        return Ok(());
+    }
+    if container != Container::Mp4 {
+        // Said once per file rather than silently skipped: the user asked for
+        // something, and the honest answer is that this format is not covered.
+        if options.verbose > 0 {
+            printer.note(&format!(
+                "--strip-meta: {} is not an MP4, so its metadata is left as it arrived",
+                container.name()
+            ));
+        }
+        return Ok(());
+    }
+    let stripped = suffix_path(part, ".stripped");
+    let report = match mux::strip(part, &stripped) {
+        Ok(report) => report,
+        Err(error) => {
+            let _ = fs::remove_file(&stripped);
+            // A file this build cannot read is not a reason to throw away a
+            // download that succeeded: fragmented MP4 is a shape `scan` refuses,
+            // and the media in it is still the media the user asked for. The
+            // failure is reported and the file is kept as it arrived. Our own
+            // mistakes — a strip that produced something `verify` rejects —
+            // stay fatal, because those mean the output is not trustworthy.
+            match &error {
+                Error::Refused(_) | Error::Parse(_) => {
+                    printer.warn(&format!(
+                        "--strip-meta: could not read {} as plain ISO-BMFF ({error}); kept as it \
+                         arrived",
+                        part.display()
+                    ));
+                    return Ok(());
+                }
+                _ => return Err(error),
+            }
+        }
+    };
+    if !report.changed() {
+        let _ = fs::remove_file(&stripped);
+        if options.verbose > 0 {
+            printer.note("--strip-meta: the file carried no metadata, nothing was changed");
+        }
+        return Ok(());
+    }
+
+    if let Err(error) = mux::verify(&stripped) {
+        let _ = fs::remove_file(&stripped);
+        return Err(Error::Verify(format!(
+            "{}: --strip-meta produced a file that does not verify ({error}); nothing was kept",
+            part.display()
+        )));
+    }
+
+    fs::rename(paths::verbatim(&stripped), paths::verbatim(part)).map_err(|e| {
+        let _ = fs::remove_file(&stripped);
+        Error::Io(io::Error::new(
+            e.kind(),
+            format!(
+                "could not replace {} with its stripped copy: {e}",
+                part.display()
+            ),
+        ))
+    })?;
+    // Two halves of the same job, said separately because they are different
+    // claims: a box emptied, and a timestamp cleared. A file that only had
+    // timestamps would otherwise report an empty list of boxes.
+    let mut said = Vec::new();
+    if !report.removed.is_empty() {
+        said.push(format!(
+            "emptied {} ({})",
+            report.removed.join(", "),
+            human_bytes(report.bytes_blanked)
+        ));
+    }
+    if report.zeroed > 0 {
+        said.push(format!(
+            "cleared {} creation/modification time{}",
+            report.zeroed,
+            if report.zeroed == 1 { "" } else { "s" }
+        ));
+    }
+    printer.note(&format!(
+        "--strip-meta: {} in {}",
+        said.join(", "),
+        part.file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    ));
+    Ok(())
 }
 
 /// Renames a finished temporary into place, after checking that nothing is

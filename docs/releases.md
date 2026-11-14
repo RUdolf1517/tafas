@@ -302,6 +302,32 @@ minisign -Vm tafas-x86_64-unknown-linux-musl.tar.gz \
 python3 -m json.tool tafas-release-0.4.0.spdx.json > /dev/null   # and what is in it
 ```
 
+### Releasing the key
+
+The key is the one thing in the release process that cannot be automated, because
+it is a secret this repository does not hold. It is made once, on a machine that
+is not a runner:
+
+```sh
+minisign -G -p packaging/minisign.pub -s minisign.key   # no passphrase: see below
+gh secret set MINISIGN_SECRET_KEY < minisign.key        # the private half
+git add packaging/minisign.pub && git commit -m "security: publish the release public key"
+shred -u minisign.key                                   # or keep it somewhere offline
+```
+
+No passphrase is deliberate and is the reason the key is worth handling carefully:
+`packaging/sign.sh` runs unattended in the publish job, and minisign cannot read a
+passphrase from a pipe. The private half therefore exists in exactly two places —
+the GitHub secret and whatever offline copy the owner keeps — and the public half
+is in the repository, which is what makes a `.minisig` checkable by someone who
+has never met the maintainer. Rotating it means publishing a new key in the same
+commit that changes the secret; old signatures then verify against the old key and
+stay verifiable, which is the point of a signature.
+
+Until this is done, `release.yml` refuses to sign rather than signing with a key
+nobody has, and a release goes out with checksums and no signatures. That is the
+honest state, and it is why this is the only open sub-item on the roadmap.
+
 Signatures exist when the `MINISIGN_SECRET_KEY` secret is set, and then every
 artifact has one: `tafas-<target>.tar.gz.minisig` beside the archive,
 `SHA256SUMS.minisig` for the collection, and a copy of `minisign.pub` in the

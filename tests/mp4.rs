@@ -164,3 +164,240 @@ fn a_file_without_a_moov_has_no_tracks_to_find() {
     let error = mp4::read(&cat(&[ftyp(), mdat])).expect_err("there is no index");
     assert!(error.contains("moov"), "{error}");
 }
+
+// ---------------------------------------------------------------------------
+// --strip-meta
+// ---------------------------------------------------------------------------
+
+/// `correct_file()`, plus the boxes a camera or a phone would have written:
+/// `udta` at the top level and inside the track, a `meta`, and a real creation
+/// time in `mvhd`. Everything is sized so the chunk offset still points at the
+/// first byte of `mdat`'s payload.
+fn file_with_metadata() -> (Vec<u8>, usize) {
+    let udta_top = bx(b"udta", &cat(&[full(b"meta", 0, b"phone-serial-1234")]));
+    let udta_trak = bx(b"udta", b"recorded on a phone");
+    let mvhd = full(
+        b"mvhd",
+        0,
+        &join(&[&be(1_700_000_000), &be(1_700_000_100), &be(1000), &be(40)]),
+    );
+    let mdhd = full(
+        b"mdhd",
+        0,
+        &join(&[
+            &be(1_700_000_000),
+            &be(1_700_000_100),
+            &be(90_000),
+            &be(3000),
+        ]),
+    );
+
+    let mut hdlr_payload = vec![0u8; 4];
+    hdlr_payload.extend_from_slice(b"vide");
+    hdlr_payload.extend_from_slice(&[0u8; 12]);
+    let hdlr = full(b"hdlr", 0, &hdlr_payload);
+
+    let mut stsd_payload = be(1).to_vec();
+    stsd_payload.extend_from_slice(&bx(b"avc1", &[0u8; 78]));
+    let stsd = full(b"stsd", 0, &stsd_payload);
+
+    let stts = full(b"stts", 0, &join(&[&be(1), &be(2), &be(20)]));
+    let stsc = full(b"stsc", 0, &join(&[&be(1), &be(1), &be(2), &be(1)]));
+    let stsz = full(b"stsz", 0, &join(&[&be(0), &be(2), &be(4), &be(6)]));
+    // The offset is patched in below, once the size of the header is known.
+    let stco = full(b"stco", 0, &join(&[&be(1), &be(0)]));
+
+    let stbl = bx(b"stbl", &cat(&[stsd, stts, stsc, stsz, stco]));
+    let minf = bx(b"minf", &stbl);
+    let mdia = bx(b"mdia", &cat(&[mdhd, hdlr, minf]));
+    let tkhd = full(
+        b"tkhd",
+        0,
+        &join(&[&be(1_700_000_000), &be(1_700_000_100), &[0u8; 72][..]]),
+    );
+    let trak = bx(b"trak", &cat(&[tkhd, udta_trak, mdia]));
+    let moov = bx(b"moov", &cat(&[mvhd, trak, udta_top]));
+
+    let mdat = bx(b"mdat", &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    let bytes = cat(&[ftyp(), moov, mdat]);
+
+    let offset = bytes.len() as u32 - 10;
+    let needle = full(b"stco", 0, &join(&[&be(1), &be(0)]));
+    let at = bytes
+        .windows(needle.len())
+        .position(|window| window == needle)
+        .expect("the chunk offset table is in the file");
+    let mut bytes = bytes;
+    bytes[at + 16..at + 20].copy_from_slice(&be(offset));
+    (bytes, offset as usize)
+}
+
+#[test]
+fn stripping_empties_the_metadata_and_leaves_the_media_alone() {
+    let (bytes, offset) = file_with_metadata();
+    let dir = common::temp_dir("strip-meta");
+    let source = dir.join("with-meta.mp4");
+    let out = dir.join("stripped.mp4");
+    std::fs::write(&source, &bytes).unwrap();
+
+    let report = tafas::mux::strip(&source, &out).expect("a well-formed file strips");
+    assert!(report.changed(), "there was metadata to remove");
+    // The report names boxes that were *reached*, so a `meta` living inside a
+    // `udta` is not a separate entry: the whole `udta` was emptied. What must
+    // hold is that everything emptied was metadata and nothing else was.
+    assert!(
+        report.removed.iter().all(|kind| kind == "udta"),
+        "only the user-data boxes should have been emptied: {:?}",
+        report.removed
+    );
+    assert!(report.bytes_blanked > 0);
+    // `mvhd`, `tkhd` and `mdhd` all carry a stamp in this fixture, so a count
+    // that is not three means one of them was walked past.
+    assert_eq!(
+        report.zeroed, 3,
+        "every time header should be cleared, not {}",
+        report.zeroed
+    );
+
+    let stripped = std::fs::read(&out).unwrap();
+    assert_eq!(
+        stripped.len(),
+        bytes.len(),
+        "stripping must not resize the file: the chunk offsets are absolute"
+    );
+
+    // The data is where it was, byte for byte.
+    assert_eq!(
+        stripped[offset..offset + 10],
+        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    );
+    // And none of what the metadata said survives.
+    for needle in [b"phone-serial".as_slice(), b"recorded on".as_slice()] {
+        assert!(
+            !stripped
+                .windows(needle.len())
+                .any(|window| window == needle),
+            "the metadata is still in the file"
+        );
+    }
+    assert!(
+        !stripped.windows(4).any(|window| window == &b"udta"[..]),
+        "no udta box should remain"
+    );
+    // The creation time in mvhd is gone.
+    assert!(!stripped
+        .windows(4)
+        .any(|window| window == 1_700_000_000u32.to_be_bytes()));
+
+    // The real question: does a player still see the samples?
+    let movie = mp4::read(&stripped).expect("the stripped file still parses");
+    let track = movie.track("vide").expect("the video track is still there");
+    assert_eq!(track.samples.len(), 2);
+    // And every sample still points at its own bytes, which is the claim the
+    // chunk offset table makes and the reason nothing may move.
+    for sample in &track.samples {
+        assert!(
+            movie.inside_mdat(sample),
+            "a sample points outside the mdat"
+        );
+    }
+}
+
+#[test]
+fn a_file_without_metadata_is_left_untouched() {
+    let bytes = correct_file();
+    let dir = common::temp_dir("strip-meta-clean");
+    let source = dir.join("clean.mp4");
+    let out = dir.join("stripped.mp4");
+    std::fs::write(&source, &bytes).unwrap();
+
+    let report = tafas::mux::strip(&source, &out).expect("a clean file strips to nothing");
+    assert!(!report.changed());
+    assert!(report.removed.is_empty());
+    assert_eq!(report.bytes_blanked, 0);
+    assert_eq!(report.bytes_before, report.bytes_after);
+}
+
+#[test]
+fn a_stripped_file_still_passes_the_writers_own_verifier() {
+    let (bytes, _) = file_with_metadata();
+    let dir = common::temp_dir("strip-meta-verify");
+    let source = dir.join("with-meta.mp4");
+    let out = dir.join("stripped.mp4");
+    std::fs::write(&source, &bytes).unwrap();
+
+    // The source has a chunk offset that points where it should, so it verifies
+    // before the strip; if that ever stops being true the test would pass for
+    // the wrong reason.
+    tafas::mux::verify(&source).expect("the fixture verifies before stripping");
+
+    tafas::mux::strip(&source, &out).unwrap();
+    let report = tafas::mux::verify(&out).expect("the stripped file verifies");
+    assert_eq!(report.sample_total(), 2);
+}
+
+/// A one-track file with a `udta` the way a remuxer would pass it on, and a
+/// `moov` placed *after* `mdat` — the layout where a shrunken header would be
+/// most tempting and most damaging.
+fn file_with_metadata_and_moov_last() -> Vec<u8> {
+    let udta = bx(b"udta", b"encoder: some other tool");
+    let mvhd = full(
+        b"mvhd",
+        0,
+        &join(&[&be(1_600_000_000), &be(1_600_000_500), &be(1000), &be(40)]),
+    );
+    let mdhd = full(b"mdhd", 0, &join(&[&be(0), &be(0), &be(90_000), &be(3000)]));
+
+    let mut hdlr_payload = vec![0u8; 4];
+    hdlr_payload.extend_from_slice(b"vide");
+    hdlr_payload.extend_from_slice(&[0u8; 12]);
+    let hdlr = full(b"hdlr", 0, &hdlr_payload);
+
+    let mut stsd_payload = be(1).to_vec();
+    stsd_payload.extend_from_slice(&bx(b"avc1", &[0u8; 78]));
+    let stsd = full(b"stsd", 0, &stsd_payload);
+
+    let stts = full(b"stts", 0, &join(&[&be(1), &be(2), &be(20)]));
+    let stsc = full(b"stsc", 0, &join(&[&be(1), &be(1), &be(2), &be(1)]));
+    let stsz = full(b"stsz", 0, &join(&[&be(0), &be(2), &be(4), &be(6)]));
+    let stco = full(b"stco", 0, &join(&[&be(1), &be(0)]));
+
+    let stbl = bx(b"stbl", &cat(&[stsd, stts, stsc, stsz, stco]));
+    let minf = bx(b"minf", &stbl);
+    let mdia = bx(b"mdia", &cat(&[mdhd, hdlr, minf]));
+    let trak = bx(b"trak", &mdia);
+    let moov = bx(b"moov", &cat(&[mvhd, trak, udta]));
+
+    let mdat = bx(b"mdat", &[9, 8, 7, 6, 5, 4, 3, 2, 1, 0]);
+    let head = ftyp();
+    let offset = (head.len() + 8) as u32;
+    let mut bytes = cat(&[head, mdat, moov]);
+
+    let needle = full(b"stco", 0, &join(&[&be(1), &be(0)]));
+    let at = bytes
+        .windows(needle.len())
+        .position(|window| window == needle)
+        .expect("the table is there");
+    bytes[at + 16..at + 20].copy_from_slice(&be(offset));
+    bytes
+}
+
+#[test]
+fn a_moov_after_the_payload_is_stripped_the_same_way() {
+    let bytes = file_with_metadata_and_moov_last();
+    let dir = common::temp_dir("strip-meta-last");
+    let source = dir.join("moov-last.mp4");
+    let out = dir.join("stripped.mp4");
+    std::fs::write(&source, &bytes).unwrap();
+    tafas::mux::verify(&source).expect("the fixture is a valid file");
+
+    let report = tafas::mux::strip(&source, &out).unwrap();
+    assert!(report.changed());
+    let stripped = std::fs::read(&out).unwrap();
+    assert_eq!(stripped.len(), bytes.len());
+    assert!(
+        !stripped.windows(8).any(|window| window == &b"encoder:"[..]),
+        "the udta text is still in the file"
+    );
+    tafas::mux::verify(&out).expect("the stripped file still verifies");
+}

@@ -194,7 +194,15 @@ fn capabilities() -> String {
             "retries_default": 3,
             "max_redirects": 10,
             "concurrent_fragments": { "default": 1, "max": 16 },
-            "limit_rate": { "default": "unlimited", "min": 1024, "max": 1073741824 }
+            "limit_rate": { "default": "unlimited", "min": 1024, "max": 1073741824 },
+            // `u64` explicitly: `json!` infers an integer literal as `i32`, and a
+            // petabyte does not fit in one.
+            "max_filesize": { "default": "unlimited", "max": 1125899906842624u64 },
+            "retry_after": true,
+            "restrict_filenames": false,
+            // What the flag actually reaches: an MP4 is edited, an MP3 is
+            // copied and therefore keeps whatever its tags say.
+            "strip_meta": { "containers": ["mp4"] }
         },
         "external_binaries": [],
         "tls": "rustls (ring provider)",
@@ -240,6 +248,21 @@ mod tests {
         );
         assert_eq!(value["muxing"]["reencode"], false);
         assert_eq!(value["external_binaries"].as_array().unwrap().len(), 0);
+    }
+
+    /// `--capabilities` is what a script reads instead of parsing `--help`, so a
+    /// transfer limit that exists and is not in the document is a flag a caller
+    /// cannot discover. The two added together are checked here rather than
+    /// trusted to stay in step.
+    #[test]
+    fn capabilities_names_the_transfer_limits_that_exist() {
+        let value: serde_json::Value = serde_json::from_str(&capabilities()).unwrap();
+        let transfers = &value["transfers"];
+        assert_eq!(transfers["limit_rate"]["min"], 1024);
+        assert_eq!(transfers["max_filesize"]["max"], tafas::ratelimit::MAX_SIZE);
+        assert_eq!(transfers["retry_after"], true);
+        assert_eq!(transfers["restrict_filenames"], false);
+        assert_eq!(transfers["strip_meta"]["containers"][0], "mp4");
     }
 
     #[test]

@@ -202,5 +202,28 @@ mod tests {
             None,
             "a lookalike host is not the site it imitates"
         );
+        // The host is compared whole, not as a substring or a suffix. A
+        // lookalike that *contains* the real name, or appends it to a domain of
+        // its own, is the shape a phishing link takes — `notyoutube.com` only
+        // covers the first of those.
+        for lookalike in [
+            "https://youtube.com.evil.example/watch?v=x",
+            "https://youtube.com@evil.example/watch?v=x",
+            "https://evil.example/youtube.com/watch?v=x",
+            "https://evil.example/?u=https://youtube.com/watch?v=x",
+            "https://youtube.co/watch?v=x",
+            "https://youtu.be.evil.example/abc",
+        ] {
+            assert_eq!(site(lookalike), None, "{lookalike} claimed a site");
+        }
+        // And the real host still works, with the decorations a link carries.
+        for real in [
+            "https://www.youtube.com/watch?v=x",
+            "https://WWW.YouTube.com./watch?v=x",
+            "https://m.youtube.com/watch?v=x",
+            "https://youtube.com:443/watch?v=x",
+        ] {
+            assert_eq!(site(real), Some(Site::YouTube), "{real} was not read");
+        }
     }
 }

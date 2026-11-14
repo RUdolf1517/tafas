@@ -86,12 +86,19 @@ fn looks_like_a_file(path: &Path) -> bool {
 /// `names.rs` and `docs/safety.md` §4 — because it is the same
 /// attacker-controlled string. The id is kept so the file can be found again,
 /// and the position so `ls` sorts the way the page does.
-pub fn stem(position: usize, entry: &Entry) -> String {
+pub fn stem(position: usize, entry: &Entry, restrict_to_ascii: bool) -> String {
     // The title is the same attacker-controlled string a video's title is, so
     // it goes through the same reduction — and keeps room for the number and
     // the id, which is what makes the file findable.
-    let title = crate::names::sanitize(&entry.title);
-    let id = crate::names::sanitize(&entry.id);
+    let reduce = |text: &str| {
+        if restrict_to_ascii {
+            crate::names::restrict(text)
+        } else {
+            crate::names::sanitize(text)
+        }
+    };
+    let title = reduce(&entry.title);
+    let id = reduce(&entry.id);
     let room = crate::names::MAX_STEM_BYTES.saturating_sub(id.len() + 4);
     format!(
         "{position:02} - {} [{id}]",
@@ -212,7 +219,7 @@ mod tests {
             title: "A/B: \"test\"?".into(),
             duration: None,
         };
-        let stem = stem(3, &entry);
+        let stem = stem(3, &entry, false);
         assert!(stem.starts_with("03 - "), "{stem}");
         assert!(stem.ends_with("[dQw4w9WgXcQ]"), "{stem}");
         assert!(!stem.contains('/'), "a title never adds a path: {stem}");
@@ -226,7 +233,7 @@ mod tests {
             title: "   ".into(),
             duration: None,
         };
-        assert_eq!(stem(10, &entry), "10 - untitled [abcdefghijk]");
+        assert_eq!(stem(10, &entry, false), "10 - untitled [abcdefghijk]");
     }
 
     #[test]
