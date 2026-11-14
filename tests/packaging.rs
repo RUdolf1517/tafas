@@ -688,17 +688,16 @@ fn the_allow_list_is_one_list() {
         .lines()
         .map(str::trim)
         .filter(|line| !line.is_empty() && !line.starts_with('#'))
-        .map(|line| {
-            line.trim_end_matches(',')
-                .trim_matches('"')
-                .to_string()
-        })
+        .map(|line| line.trim_end_matches(',').trim_matches('"').to_string())
         .collect();
     assert!(
         listed.contains(&"CDLA-Permissive-2.0".to_string()),
         "the certificate bundle's licence has to be allowed, or the check fails"
     );
-    let page = read("docs/dependencies.md").split_whitespace().collect::<Vec<_>>().join(" ");
+    let page = read("docs/dependencies.md")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
     for licence in &listed {
         assert!(
             page.contains(licence.as_str()),
