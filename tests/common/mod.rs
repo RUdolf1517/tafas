@@ -367,9 +367,11 @@ fn write_short(
 ) -> std::io::Result<()> {
     let head =
         format!("HTTP/1.1 200 OK\r\nContent-Length: {declared}\r\nConnection: close\r\n\r\n");
-    stream.write_all(head.as_bytes())?;
-    stream.write_all(&body[..sent])?;
-    stream.flush()
+    let mut frame = head.into_bytes();
+    frame.extend_from_slice(&body[..sent]);
+    stream.write_all(&frame)?;
+    stream.flush()?;
+    finish(stream)
 }
 
 fn write_response(
@@ -388,9 +390,34 @@ fn write_response(
         head.push_str("\r\n");
     }
     head.push_str("\r\n");
-    stream.write_all(head.as_bytes())?;
-    stream.write_all(body)?;
-    stream.flush()
+    // One buffer, one write: two `write_all`s leave a window in which a close
+    // lands between the head and the body.
+    let mut frame = head.into_bytes();
+    frame.extend_from_slice(body);
+    stream.write_all(&frame)?;
+    stream.flush()?;
+    finish(stream)
+}
+
+/// Ends the connection in the order that does not lose the last bytes.
+///
+/// Dropping a `TcpStream` closes it with `closesocket`, and on Windows a
+/// pending receive fails with `ECONNRESET` before the reader has consumed the
+/// body it was promised — the tests saw
+/// `connection closed before message completed` for a response that had been
+/// written in full. A half-close says "no more bytes from me" without
+/// discarding what is still in flight, and draining what is left means the
+/// close cannot turn into a reset underneath the client.
+fn finish(stream: &mut TcpStream) -> std::io::Result<()> {
+    let _ = stream.shutdown(std::net::Shutdown::Write);
+    let _ = stream.set_read_timeout(Some(Duration::from_millis(200)));
+    let mut sink = [0u8; 256];
+    while let Ok(read) = stream.read(&mut sink) {
+        if read == 0 {
+            break;
+        }
+    }
+    Ok(())
 }
 
 fn write_partial(
@@ -406,9 +433,11 @@ fn write_partial(
         total - 1,
         total
     );
-    stream.write_all(head.as_bytes())?;
-    stream.write_all(body)?;
-    stream.flush()
+    let mut frame = head.into_bytes();
+    frame.extend_from_slice(body);
+    stream.write_all(&frame)?;
+    stream.flush()?;
+    finish(stream)
 }
 
 /// Reads a file the test wrote, for the cases where the assertion is about
