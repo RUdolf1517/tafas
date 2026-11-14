@@ -13,6 +13,14 @@ version; adding a site, a flag or a container is minor. The policy is in
 
 ### Added
 
+- **`cargo deny` runs in CI, because it never did.** `deny.toml` has been in this
+  repository since 0.2.0 and three pages said the check happened "when a release
+  is cut" — `release.yml` has never mentioned it, and neither had anything else,
+  so the MIT licence on the front page was a claim nobody applied. It is now the
+  `licenses` job: every commit, `--all-features`, failing on a dependency whose
+  licence is not on the list. A test keeps the workflow and the prose in step,
+  which is the part that was missing rather than the command.
+
 - **What the binary weighs, measured rather than guessed.**
   `docs/dependencies.md` §3.2 now says where the 2.88 MB goes — `tafas` 19.6%,
   `std` 19.0%, `rustls` 14.6%, `ring` 10.3%, `reqwest` 8.2%, `clap` 8.2% — and
@@ -22,6 +30,13 @@ version; adding a site, a flag or a container is minor. The policy is in
   only stops it being reached) nor dropping `reqwest`'s `gzip` (−1.7%, for
   uncompressed transfers) is a trade worth making. No profile changed.
 
+- **A fixture response no longer races its own last bytes.** The parallel-segment
+  HLS test failed on `windows-latest` twice with `connection closed before message
+  completed`, for a response the test server had written in full: the server
+  declared `Connection: close` and then dropped the socket, which on Windows is a
+  reset before the reader has consumed the body. Head and body now leave in one
+  write, and the connection is half-closed and drained. Fixed in the fixture, not
+  in the assertion.
 - **The Homebrew formula is checked against the release.** `Formula/tafas.rb`
   repeats four hashes by hand, once per release, and nothing compared them with
   the archives they name: 0.3.0 was tagged with four zeroes, so `brew install`

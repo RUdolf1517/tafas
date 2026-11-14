@@ -21,10 +21,19 @@ project cannot do it in less code than it costs, what it drags in, which licence
 it carries, what happens when it is wrong, and what it costs in binary size. A
 dependency that cannot answer all six is not added.
 
-`cargo deny` (`deny.toml`: licences, banned crates, sources, advisories) runs when
-a release is cut and whenever the lockfile moves, alongside `cargo audit`. It is
-not a per-commit job: advisory databases move independently of this repository,
-and a badge turning red at 03:00 is not a test.
+`cargo deny` (`deny.toml`: licences, banned crates, sources, advisories) runs in
+CI on every commit, as the `licenses` job, with `--all-features` so that a
+dependency reached only from one site's code is checked by the build a reader
+actually compiles. It used to say it ran "when a release is cut" — and it ran
+nowhere: `release.yml` has never invoked it, and neither had anything else.
+
+`cargo audit` is the one that is deliberately not per-commit: the advisory
+database moves independently of this repository, so a build that was perfect on
+Friday is red on Monday for a reason nobody here caused, and a badge that turns
+red at 03:00 is not a test. `cargo audit` is run by hand when a dependency moves,
+and it is the step `CONTRIBUTING.md` names for a change to the graph; it is not
+wired into a workflow, and these pages do not claim otherwise. Wiring it in is a
+decision about red branches, not a missing line.
 
 ---
 

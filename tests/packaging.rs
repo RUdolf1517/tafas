@@ -634,6 +634,39 @@ fn the_homebrew_formula_names_hashes_the_release_published() {
     );
 }
 
+/// The licence claim in the readme is checked by a job that exists.
+///
+/// `deny.toml` sat in this repository for three releases while three pages said
+/// `cargo deny` ran "when a release is cut" and no workflow mentioned it. A
+/// configuration for a command nobody runs is a claim nobody checks, and the
+/// claim here is the licence on the front page.
+#[test]
+fn the_licence_check_runs_and_says_what_it_is() {
+    let ci = read(".github/workflows/ci.yml");
+    assert!(
+        ci.contains("cargo deny"),
+        "CI must run `cargo deny`: deny.toml is otherwise a policy nobody applies"
+    );
+    assert!(
+        ci.contains("--all-features"),
+        "the licence check must cover the feature builds a reader is told to make"
+    );
+    // And the sentence that made this test necessary: the one that said the
+    // check ran at release time and nowhere else.
+    for page in ["README.md", "docs/dependencies.md", "docs/testing.md"] {
+        let text = read(page).split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(
+            !text.contains("when a release is cut;"),
+            "{page} still says the licence check happens at release time"
+        );
+    }
+    let contributing = read("CONTRIBUTING.md");
+    assert!(
+        contributing.contains("cargo deny check"),
+        "CONTRIBUTING.md must name the command a contributor runs by hand"
+    );
+}
+
 /// Every script the release job runs has to exist, and the page that describes
 /// the process has to name the script that is actually there.
 ///

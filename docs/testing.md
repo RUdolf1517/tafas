@@ -182,9 +182,15 @@ their own because they are ordinary tests.
 a Rust toolchain: a contributor whose environment cannot run `cargo` still gets a
 formatted branch and a resolved lockfile, from CI, on the branch they pushed.
 
-The declared floor, `rust-version = "1.82"` in `Cargo.toml`, is not a per-commit
-job. A transitive dependency can raise the real floor without a line of this
-repository changing, so the floor is re-checked when the lockfile moves and again
-when a release is cut, where `cargo deny check` (see `deny.toml`) and
-`cargo audit` run in the same pass. A red badge on a dependency's release page is
-not something a three-platform matrix should be asked to detect.
+The declared floor, `rust-version = "1.82"` in `Cargo.toml`, *is* a per-commit
+job: `msrv (1.82)` builds every target at the floor, because a transitive
+dependency can raise it without a line of this repository changing.
+
+`cargo audit` is the one that is not. Its database moves independently of this
+repository, so a build that was perfect on Friday is red on Monday for a reason
+nobody here caused; it is run by hand when a dependency moves and by the person
+cutting a release, and `CONTRIBUTING.md` is where it is written down. `cargo
+deny` is the opposite case: what it checks — licences, banned crates, sources — is
+decided by the tree, so it runs on every commit as the `licenses` job. It did not,
+for three releases, while three pages said it ran "when a release is cut"; see
+[dependencies](dependencies.md) §0.
