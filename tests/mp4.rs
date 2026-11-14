@@ -228,12 +228,13 @@ fn stripping_empties_the_metadata_and_leaves_the_media_alone() {
 
     let report = tafas::mux::strip(&source, &out).expect("a well-formed file strips");
     assert!(report.changed(), "there was metadata to remove");
+    // Two `udta` boxes: one beside the tracks, one inside a `trak`. The `meta`
+    // inside the first is not listed separately — the whole `udta` was emptied,
+    // and this report is about boxes that were reached, not about every name
+    // that happened to live inside one.
     let mut kinds = report.removed.clone();
     kinds.sort();
-    assert_eq!(
-        kinds,
-        vec!["meta".to_string(), "udta".to_string(), "udta".to_string()]
-    );
+    assert_eq!(kinds, vec!["udta".to_string(), "udta".to_string()]);
     assert!(report.bytes_blanked > 0);
     // mvhd, tkhd and mdhd: the fixture gives all three a timestamp.
     assert_eq!(report.zeroed, 3, "every time header is cleared");
