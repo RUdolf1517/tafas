@@ -253,7 +253,9 @@ fn stripping_empties_the_metadata_and_leaves_the_media_alone() {
     // And none of what the metadata said survives.
     for needle in [b"phone-serial".as_slice(), b"recorded on".as_slice()] {
         assert!(
-            !stripped.windows(needle.len()).any(|window| window == needle),
+            !stripped
+                .windows(needle.len())
+                .any(|window| window == needle),
             "the metadata is still in the file"
         );
     }
@@ -273,7 +275,10 @@ fn stripping_empties_the_metadata_and_leaves_the_media_alone() {
     // And every sample still points at its own bytes, which is the claim the
     // chunk offset table makes and the reason nothing may move.
     for sample in &track.samples {
-        assert!(movie.inside_mdat(sample), "a sample points outside the mdat");
+        assert!(
+            movie.inside_mdat(sample),
+            "a sample points outside the mdat"
+        );
     }
 }
 

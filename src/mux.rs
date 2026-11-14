@@ -1150,7 +1150,10 @@ mod tests {
         assert_eq!(payload.len(), before.len(), "the header must not shrink");
         // The box is now `free` of the identical size, and holds no trace of
         // what it used to say.
-        assert_eq!(&payload[before.len() - udta_len + 4..before.len() - udta_len + 8], b"free");
+        assert_eq!(
+            &payload[before.len() - udta_len + 4..before.len() - udta_len + 8],
+            b"free"
+        );
         assert_eq!(
             u32::from_be_bytes([
                 payload[before.len() - udta_len],
@@ -1444,9 +1447,8 @@ fn zero_times(data: &mut [u8], span: Span) -> Result<bool> {
             show(&span.kind)
         )));
     }
-    let touched =
-        data[first..first + width].iter().any(|b| *b != 0)
-            || data[second..second + width].iter().any(|b| *b != 0);
+    let touched = data[first..first + width].iter().any(|b| *b != 0)
+        || data[second..second + width].iter().any(|b| *b != 0);
     data[first..first + width].fill(0);
     data[second..second + width].fill(0);
     Ok(touched)

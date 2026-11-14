@@ -1366,7 +1366,12 @@ fn open_part(path: &Path, append: bool) -> Result<File> {
 /// reports the flag as MP4-only, so this is a stated limit rather than a
 /// surprise; stripping ID3 is a different parser for a different format, and
 /// half of that flag would be worse than a narrow one.
-fn strip_meta(part: &Path, container: Container, options: &Options, printer: &Printer) -> Result<()> {
+fn strip_meta(
+    part: &Path,
+    container: Container,
+    options: &Options,
+    printer: &Printer,
+) -> Result<()> {
     if !options.strip_meta {
         return Ok(());
     }
