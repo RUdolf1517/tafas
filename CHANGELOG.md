@@ -128,6 +128,24 @@ Nothing yet.
   unit test that also failed a doc-test reported only the second — both exit
   codes are kept now, without `set -e`, so the second suite still runs.
 
+- **The release's first step died, so everything after it was skipped.** The
+  channel generator was run without `--output-dir`, which means it strips the
+  `packaging/` prefix and writes `aur/`, `scoop/` and `flake/` into the
+  repository root — and the next line tarred `-C packaging aur scoop flake`,
+  three paths that were never there. That step is the first in the publish job,
+  so the `.apk`, the winget manifests, the SBOM, `SHA256SUMS`, the signatures,
+  the formula commit and the upload to the release all reported "skipped". The
+  step names its output directory now and tars that; `tests/packaging.rs` reads
+  the two names out of the workflow and fails when they differ, which is the
+  kind of check that would have caught a step nobody had run since it was
+  written.
+
+- **A formula commit that could not be pushed, and said nothing.** The
+  regeneration step pushed to `${GITHUB_REF_NAME}`, which on a release event is
+  the tag — a commit cannot be pushed to a tag ref, so the push failed every
+  time and the fallback turned it into a green step with a note in the log. It
+  pushes to `main` now, which is the branch holding the next version.
+
 - **The licence check's first run, and the report it wrote.** Turning on
   `cargo deny` in CI immediately failed on `webpki-roots`, which ships the
   Mozilla certificate store under `CDLA-Permissive-2.0`: the allow-list had been
