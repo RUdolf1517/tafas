@@ -641,11 +641,15 @@ fn the_homebrew_formula_names_hashes_the_release_published() {
         );
     }
     // Four different archives have four different hashes; two equal values mean
-    // one was pasted twice.
-    let mut unique = hashes.clone();
-    unique.sort_unstable();
-    unique.dedup();
-    assert_eq!(unique.len(), 4, "the formula repeats a hash: {hashes:?}");
+    // one was pasted twice. Four *placeholders* are equal by definition, and the
+    // declaration above is what says so — a real hash repeated twice is still the
+    // mistake this catches.
+    if !placeholders {
+        let mut unique = hashes.clone();
+        unique.sort_unstable();
+        unique.dedup();
+        assert_eq!(unique.len(), 4, "the formula repeats a hash: {hashes:?}");
+    }
 
     // The formula is what the generator writes. The four hashes cannot be known
     // before the release exists, so this renders against a stand-in `SHA256SUMS`
