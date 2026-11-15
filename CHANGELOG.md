@@ -11,6 +11,10 @@ version; adding a site, a flag or a container is minor. The policy is in
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.4.0] - 2026-11-15
+
 ### Added
 
 - **`--strip-meta`.** Empties what an MP4 says about itself: `udta` and the
@@ -68,6 +72,18 @@ version; adding a site, a flag or a container is minor. The policy is in
   a path carrying the name, and the `www.`/`m.`/port forms that must still work.
 - **A duplicated table header in `docs/roadmap.md` §4.** The second `| Item |
   Why |` rendered as a data row, so the first item read as part of the heading.
+- **The Homebrew formula is generated, so it cannot be stale.** It was the last
+  file in the release process edited by hand, and 0.3.0 was tagged with four
+  zeroes in it: `brew install` downloaded the archive and then refused it on a
+  checksum. `packaging/channels.py` now renders `Formula/tafas.rb` from the
+  release's `SHA256SUMS` alongside the `PKGBUILD`, the Scoop manifest and
+  `flake.nix`, which were already generated — that asymmetry is exactly why only
+  the formula drifted. The release job regenerates it once the archives exist and
+  commits the result, so step 5 of `docs/releases.md` is no longer a hand edit;
+  `tests/packaging.rs` fails if the checked-in file differs from what the
+  generator writes, and `packaging/tests/formula.py` still reads the published
+  release on every pull request, which is the check that would have caught the
+  zeroes.
 
 - **The licence check's first run, and the report it wrote.** Turning on
   `cargo deny` in CI immediately failed on `webpki-roots`, which ships the

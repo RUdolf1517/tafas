@@ -2,7 +2,7 @@
 """Does `Formula/tafas.rb` describe the release it claims to?
 
     python3 packaging/tests/formula.py --sums SHA256SUMS
-    python3 packaging/tests/formula.py --release v0.3.0
+    python3 packaging/tests/formula.py --release v0.4.0
 
 The formula is the one artifact in this repository that repeats a hash by hand.
 Everything else that names an archive — the AUR `PKGBUILD`, the Scoop manifest,
