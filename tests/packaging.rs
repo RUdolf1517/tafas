@@ -937,7 +937,6 @@ fn render_formula(version: &str) -> String {
         .arg(dir.join("out"))
         .output()
         .expect("python3 runs packaging/channels.py");
-    let _ = std::fs::remove_dir_all(&dir);
     assert!(
         output.status.success(),
         "packaging/channels.py failed: {}",
@@ -945,8 +944,14 @@ fn render_formula(version: &str) -> String {
     );
     // `--output-dir` strips the `packaging/` prefix, so the three channel files
     // land at the top of that directory and the formula keeps its own path.
-    std::fs::read_to_string(dir.join("out/Formula/tafas.rb"))
-        .expect("the generator wrote a formula")
+    //
+    // Read before the directory is removed: this used to delete `dir` first and
+    // then read from it, which reported "the generator wrote a formula" on a
+    // miss — a description of what was wanted, not of what happened.
+    let rendered = std::fs::read_to_string(dir.join("out/Formula/tafas.rb"))
+        .expect("the generator wrote a formula at out/Formula/tafas.rb");
+    let _ = std::fs::remove_dir_all(&dir);
+    rendered
 }
 
 /// A file's SHA-256, in the hex form `SHA256SUMS` uses.
