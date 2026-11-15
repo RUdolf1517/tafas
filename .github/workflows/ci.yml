@@ -115,11 +115,23 @@ jobs:
         continue-on-error: true
         shell: bash
         run: |
-          set -o pipefail
-          {
-            cargo test --all-targets
-            cargo test --doc
-          } 2>&1 | tee test.log
+          set -uo pipefail
+          # Not `set -e`, deliberately: a failing `--all-targets` must not stop
+          # the doc-tests from running, because the report is built from one log
+          # and a log that ends at the first failure hides the second. `PIPESTATUS`
+          # is the exit code of `cargo` rather than of `tee`, and the two are
+          # kept separately: the step's outcome answers "did anything fail", not
+          # "did the last thing fail".
+          #
+          # Not a brace group around both runs to save the repetition either: a
+          # group in a pipeline is a subshell, so the status it sets is discarded
+          # and the step reports success while the log shows a panic.
+          status=0
+          { cargo test --all-targets; } 2>&1 | tee test.log | tail -n 40
+          [ "${PIPESTATUS[0]}" -eq 0 ] || status=1
+          { cargo test --doc; } 2>&1 | tee -a test.log | tail -n 40
+          [ "${PIPESTATUS[0]}" -eq 0 ] || status=1
+          exit "$status"
 
       - name: Release build
         id: build
@@ -151,9 +163,29 @@ jobs:
             # Cargo's own progress lines are removed: a log where the errors are
             # buried under 200 "Downloaded" lines is a log nobody reads.
             grep -vE "^ *(Downloading|Downloaded|Compiling|Checking|Updating|Adding|Locking)" "$log" \
-              | tail -n 120 > "failure-$name.txt" || true
+              | tail -n 150 > "failure-$name.txt" || true
+            # The verdict is the line that names the failing test, and it is not
+            # guaranteed to be inside the tail: a run whose failures are reported
+            # in the middle and whose last lines are "error: test failed" would
+            # have its cause cut off. Collected separately so it always survives.
+            # `thread*` rather than `thread *`: cargo indents a panic once it is
+            # inside a test's captured output, and an anchored pattern is how the
+            # earlier version of this report missed it.
+            grep -E "^ *(test .*\.\.\. FAILED|thread.*panicked|error(:|\[)|warning: unused)" "$log" \
+              > "verdict-$name.txt" || true
+            # The panic's own message is on the next line, and it is the sentence
+            # that says what went wrong.
+            grep -A1 "panicked at" "$log" >> "verdict-$name.txt" || true
             {
               echo "### \`${{ matrix.os }}\` — \`$name\`"
+              if [ -s "verdict-$name.txt" ]; then
+                echo
+                echo 'What failed:'
+                echo '```'
+                head -n 12 "verdict-$name.txt"
+                echo '```'
+              fi
+              echo
               echo '```'
               cat "failure-$name.txt"
               echo '```'

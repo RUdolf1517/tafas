@@ -116,6 +116,18 @@ Nothing yet.
   to look at afterwards. The workflow's trigger is deliberate and stays: the
   notes are written before the binaries are attached.
 
+- **The failure report now names the test that failed.** Three defects in the
+  same step, each of which made a red run harder to read than no report at all.
+  The step hid the tail of cargo's output behind `tail -n 40` after `tee`, on
+  the theory that the end of a log is where the errors are — it is not, `cargo
+  test` prints the verdict in the middle and then a summary. The comment
+  collected was the last 120 lines of that same assumption, so the failing test
+  could be outside it; a separate `What failed:` block now carries the lines the
+  patterns in `ci.yml` name, plus the message on the line after a panic. And the
+  test step ran `--all-targets` and then `--doc` under one status, so a failing
+  unit test that also failed a doc-test reported only the second — both exit
+  codes are kept now, without `set -e`, so the second suite still runs.
+
 - **The licence check's first run, and the report it wrote.** Turning on
   `cargo deny` in CI immediately failed on `webpki-roots`, which ships the
   Mozilla certificate store under `CDLA-Permissive-2.0`: the allow-list had been
