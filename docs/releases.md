@@ -166,13 +166,19 @@ promise this repository does not keep.
 
 These steps were run for 0.2.0, which carried the whole roadmap
 ([§1](#1-versioning)), and the same steps are run for every version after it:
-they were run for 0.2.1, for 0.3.0, and for 0.4.0. The procedure still
-waits for the roadmap, and that wait is over — the roadmap is finished — so what
-it produces now is an ordinary minor release rather than a first one.
+they were run for 0.2.1 and for 0.3.0. The roadmap is finished, so what they
+produce now is an ordinary minor release rather than a first one.
 **Step 5 used to be a hand edit and is not any more**; it is the one step of the
-seven that this release changed.
+seven that 0.4.0 changed.
 **Step 7 is the only one that needs a credential**, and the only one whose
 result cannot be undone.
+
+For 0.4.0, steps 1–3 are done — the version is on `main` (`9ba9d48`) and the tag
+exists — and **step 4 has not run**: pushing the tag started `audit.yml` but not
+`release.yml`, because that workflow triggers on a *published* release rather
+than on a tag. So the release does not exist yet, no archive has been attached,
+and the formula on `main` is still in its declared-placeholder state, which is
+the state steps 4 and 5 exist to end. §4.2 is that gap and what closes it.
 
 1. `CHANGELOG.md` gets its section, `Cargo.toml` its version.
 2. The version is committed to `main` with the tag that will carry it.
@@ -218,11 +224,55 @@ result cannot be undone.
    the repository's secrets — whichever runs second does nothing. See
    [§4.1](#41-cratesio).
 
+### 4.2 When step 3 does not start step 4
+
+`release.yml` listens for `release: types: [published]`, not for a tag, so that
+the notes can be written before the binaries are attached. That choice is fine
+and this is its cost: a pushed tag on its own publishes nothing, and the
+artifacts — the archives, the `.deb`/`.rpm`/`.apk`, the winget manifests, the
+SBOM, `SHA256SUMS`, the four channel files, the signatures — are exactly what
+step 4 and step 5 need. Until they exist, the formula's hashes stay
+placeholders, and `packaging/tests/formula.py` says so instead of calling them
+wrong.
+
+**Closing it, without a new tag.** The tag is already pushed and is what the
+release must point at, so the thing to create is the release, not the tag:
+
+```
+# the notes are the CHANGELOG section for this version
+gh release create v0.4.0 --title "0.4.0 — ..." --notes-file /tmp/notes.md --verify-tag
+```
+
+`--verify-tag` makes the release attach to the tag that exists instead of
+inventing one, and `published` then fires `release.yml`, which builds and
+uploads everything and commits the regenerated formula. The alternative,
+`workflow_dispatch` on `release.yml` with `tag: v0.4.0`, builds the same
+artifacts but attaches them to a release that still has to be created.
+
+A draft release is the honest middle: `--draft` creates it without firing
+`release.yml`, so the notes can be reviewed first, and publishing the draft is
+the event that starts the build.
+
+**What to check afterwards**, in the order the failures would show up:
+
+1. `release.yml` completed for all five targets.
+2. `releases/download/v0.4.0/SHA256SUMS` exists, and the formula on `main` no
+   longer says `# unpublished` and no longer carries zeroes — step 5 committed
+   the real hashes back.
+3. `packaging/tests/formula.py --release v0.4.0` passes with no placeholder
+   language in its output.
+4. `audit.yml` is green on the tag, which it has never been before (§4.1 note
+   in `docs/dependencies.md`).
+
 Step 3 also starts `audit.yml`, which runs `cargo audit` on the tag: the last
 moment before the archives go out at which an advisory against a crate in the
-lock file is still a reason to stop. It is not a gate on the release — that would
-require the release to wait on a database it does not control — but a red run on
-a tag is read before the release notes are written, not after. Everything else
+lock file is still a reason to stop. That job was red on every tag until 0.4.0
+for a reason that had nothing to do with the graph — it passed `cargo audit` a
+flag only `cargo deny` has (§4.1 in `docs/dependencies.md`) — so for the first
+time that check is about the tree rather than about its own command line. It is
+not a gate on the release — that would require the release to wait on a database
+it does not control — but a red run on a tag is read before the release notes
+are written, not after. Everything else
 about the graph is checked per commit, by `licenses`.
 
 Nothing is built on a developer machine. The workflow is the only place a

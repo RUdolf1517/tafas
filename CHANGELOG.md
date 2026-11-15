@@ -107,6 +107,15 @@ Nothing yet.
   distinguishes "the graph is clean" from "the tool did not run", printing the
   tail in the second case instead of an empty code block.
 
+- **A tag no longer looks like a release that happened.** `release.yml` listens
+  for a published release, not for a tag, so pushing `v0.4.0` started
+  `audit.yml` and nothing else: no archives, no `SHA256SUMS`, no regenerated
+  formula, and a formula whose declared placeholders were still the truth.
+  `docs/releases.md` §4.2 records that gap and the one command that closes it —
+  `gh release create --verify-tag` on the tag that exists — with the four things
+  to look at afterwards. The workflow's trigger is deliberate and stays: the
+  notes are written before the binaries are attached.
+
 - **The licence check's first run, and the report it wrote.** Turning on
   `cargo deny` in CI immediately failed on `webpki-roots`, which ships the
   Mozilla certificate store under `CDLA-Permissive-2.0`: the allow-list had been
