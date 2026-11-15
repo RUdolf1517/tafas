@@ -51,13 +51,21 @@ jobs:
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked
 
-      # `--all-features` so the graph an ordinary build resolves is the graph that
-      # is checked, not the smallest one.
+      # No flags: `cargo audit` has no `--all-features` — that is `cargo deny` —
+      # and passing it made this job fail on its own argument for as long as it
+      # has existed, which is why the issue it opened blamed the lock file for a
+      # command line. `cargo audit` reads `Cargo.lock`, and a lock file is one
+      # graph: every feature of every crate in it is already in scope.
+      #
+      # `--deny warnings` so an unmaintained or yanked crate fails the run
+      # instead of printing below a success. Those are the advisories this
+      # project has actually had; a check that only fails on `vulnerability` is
+      # a check that reports most of its findings to nobody.
       - name: cargo audit
         id: audit
         continue-on-error: true
         shell: bash
-        run: cargo audit --all-features 2>&1 | tee audit.log
+        run: cargo audit --deny warnings 2>&1 | tee audit.log
 
       # A scheduled run has no pull request to comment on, so the failure is
       # reported the way an unprompted one has to be: one open issue, updated
@@ -73,7 +81,15 @@ jobs:
         run: |
           set -uo pipefail
           {
-            echo '### `cargo audit` — the lock file has an advisory against it'
+            # The title says what was found, because the first version of this
+            # report claimed "the lock file has an advisory against it" when the
+            # truth was "the command does not have that flag", and it left that
+            # sitting under a heading nobody could doubt.
+            if grep -q 'Crate:' audit.log; then
+              echo '### `cargo audit` — the lock file has an advisory against it'
+            else
+              echo '### `cargo audit` did not run cleanly'
+            fi
             echo
             echo "Run: $REPO/actions/runs/$GITHUB_RUN_ID"
             echo
@@ -90,13 +106,20 @@ jobs:
             if [ -z "$blocks" ]; then
               blocks="$(awk 'BEGIN { RS = ""; ORS = "\n\n" } /Crate:/' audit.log)"
             fi
-            printf '%s\n' "$blocks" | head -c 4000
+            if [ -n "$blocks" ]; then
+              printf '%s\n' "$blocks" | head -c 4000
+            else
+              # No `Crate:` block at all: the tool failed before it looked at
+              # anything. The tail is the only thing worth reading, and printing
+              # nothing here is what made the last report unactionable.
+              tail -n 20 audit.log | head -c 4000
+            fi
             echo '```'
             echo
-            echo 'The fix is an upgrade, and the upgrade is a lock-file diff plus'
-            echo 'whatever the changelog of the crate says. If it is not exploitable'
-            echo 'here, an ignore in `deny.toml` with a reason is the recorded answer'
-            echo '— the advisory database itself is not this repository to silence.'
+            echo 'An advisory is fixed by an upgrade: a lock-file diff plus whatever'
+            echo 'the changelog of the crate says. If it is not exploitable here, an'
+            echo 'ignore in `audit.toml` with a reason is the recorded answer — the'
+            echo 'advisory database itself is not this repository to silence.'
           } > audit.md
 
           number="$(gh issue list --repo "$REPO" --state open --search "$TITLE in:title" \

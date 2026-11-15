@@ -37,6 +37,14 @@ than failing quietly, and closes it the first time a run is clean. It is also
 still the step `CONTRIBUTING.md` names for a change to the graph, and it still
 runs by hand when a dependency moves.
 
+It runs `cargo audit --deny warnings`, so a yanked or unmaintained crate fails
+the run: those are the advisories this project has actually had, and a check
+that only failed on `vulnerability` did not report them. It used to pass
+`--all-features`, which belongs to `cargo deny` — `cargo audit` rejects it, so
+from the day the job was added it failed on its own argument, on every tag,
+under an issue title that blamed the lock file. `Cargo.lock` is a single graph,
+so there was no narrower set of features to widen.
+
 The distinction with `cargo deny` is what each one depends on. Licences, banned
 crates and sources are decided by the tree, so they are checked on every commit;
 advisories are decided by a database that changes while the tree does not, so
