@@ -24,13 +24,17 @@ mechanism, checks for nothing and downloads nothing except the URL you gave it.
 **Nothing is tagged until the whole roadmap is done**, and then one archive
 carries all of it. That rule was kept for **0.2.0, 2026-11-08**, which carried
 v0.2 through v0.5 of the [roadmap](roadmap.md) in one archive. The roadmap is now
-done, so the rule permits what follows it: **0.3.0, 2026-11-12** carries the work
+done, so the rule permits what follows it: **0.3.0, 2026-11-12** carried the work
 that landed after 0.2.0 — Twitch clips, SoundCloud sets, Vimeo passwords, and the
-crates.io package with its documented library surface. Nothing in it changes a
-default, an exit code or a JSON field's meaning, so it is a minor release
+crates.io package with its documented library surface. **0.4.0, 2026-11-15**
+carries the transfer controls — `Retry-After`, `--max-filesize`,
+`--restrict-filenames`, `--strip-meta` — and the fix that makes the Homebrew
+formula generated rather than pasted. Nothing in either changes a default, an
+exit code or a JSON field's meaning, so both are minor releases
 ([§2](#2-what-a-release-contains)). A tag is still a promise about an archive that
 cannot be edited afterwards, which is why the two defect fixes of 0.2.1 were
-released as a patch and this, with new routes and a new public API, is not.
+released as a patch and these, with new flags and a new public function, were
+not.
 
 **0.2.0 is not signed, and one of its packages is not either.** Both need a key
 this repository does not hold, and both say so rather than pretending: the
@@ -89,7 +93,7 @@ stable URL, which is what `install.sh` downloads from.
 | AUR | Arch (x86_64, aarch64) | `PKGBUILD` from `tafas-channels-X.Y.Z.tar.gz`, then `makepkg -si` |
 | Scoop | Windows 10/11 x64 | `tafas.json` from `tafas-channels-X.Y.Z.tar.gz` into a bucket, then `scoop install tafas` |
 | Nix | any NixOS or Nix on Linux/macOS | `flake.nix` from `tafas-channels-X.Y.Z.tar.gz`, then `nix profile install .` |
-| cargo | anything with Rust 1.82+ | `cargo install tafas`, or `cargo install --git https://github.com/RUdolf1517/tafas --tag v0.3.0` to build the same code instead of downloading it |
+| cargo | anything with Rust 1.82+ | `cargo install tafas`, or `cargo install --git https://github.com/RUdolf1517/tafas --tag v0.4.0` to build the same code instead of downloading it |
 | PowerShell | Windows 10/11 x64 | download `install.ps1` from the release, then `powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1` |
 | winget (local manifest) | Windows 10/11 x64 | unpack `tafas-winget-local-manifests-vX.Y.Z.zip`, then `winget install --manifest <version>` |
 | archive | everything else | unpack, put `tafas` on `PATH` |
@@ -162,9 +166,11 @@ promise this repository does not keep.
 
 These steps were run for 0.2.0, which carried the whole roadmap
 ([§1](#1-versioning)), and the same steps are run for every version after it:
-they were run for 0.2.1, and they are run for 0.3.0. The procedure still
+they were run for 0.2.1, for 0.3.0, and for 0.4.0. The procedure still
 waits for the roadmap, and that wait is over — the roadmap is finished — so what
 it produces now is an ordinary minor release rather than a first one.
+**Step 5 used to be a hand edit and is not any more**; it is the one step of the
+seven that this release changed.
 **Step 7 is the only one that needs a credential**, and the only one whose
 result cannot be undone.
 
@@ -175,16 +181,37 @@ result cannot be undone.
    page and the completions, builds the `.deb`/`.rpm` from the Linux tarball
    with `nfpm` and the `.apk` from the same tarball with `packaging/apk.py`, copies
    `install.ps1` into the assets, renders the winget manifests from the Windows
-   ZIP, writes the SBOM, writes `SHA256SUMS`, renders the AUR, Scoop and flake
-   files from those checksums, signs every file when the key is present, and
-   attaches everything to the release.
-5. The Homebrew formula gets the new version and the four hashes from
-   `SHA256SUMS`; this is a follow-up commit, and it is the only hand edit in the
-   process. It is not an unexamined one any more: `packaging/tests/formula.py`
-   compares the formula with a release's real checksums, CI runs it against the
-   latest release on every pull request, and a test in `tests/packaging.rs` fails
-   if the formula is left with zeroes. 0.3.0 was tagged with four of them, so
-   `brew install` would have refused the archive it had just downloaded.
+   ZIP, writes the SBOM, writes `SHA256SUMS`, renders the AUR, Scoop, flake and
+   Homebrew files from those checksums, signs every file when the key is present,
+   and attaches everything to the release.
+5. The Homebrew formula is regenerated from `SHA256SUMS` and committed back, by
+   the release job itself. It used to be the one hand edit in this list, and that
+   is exactly what went wrong: 0.3.0 was tagged with four zeroes in the formula,
+   so `brew install` would have refused the archive it had just downloaded.
+   `packaging/channels.py` now renders `Formula/tafas.rb` the way it renders the
+   `PKGBUILD`, the Scoop manifest and `flake.nix`, and the step is that command
+   with `--tag "$TAG" --artifacts artifacts`. If the push is refused — a protected
+   branch and a token that may not push to it — the step says so and the run
+   continues. What is left behind is still visible: `tests/packaging.rs` compares
+   the checked-in file with what the generator writes, and CI runs
+   `packaging/tests/formula.py` against the *published* release on every pull
+   request. Nothing is pasted, so nothing can be pasted wrong.
+
+   Between a version bump and its tag the formula names a release that does not
+   exist yet, so its four hashes are placeholders. That state is declared on a
+   line the generator writes — `# unpublished: vX.Y.Z has not been built` — and
+   the two checks read it rather than guessing:
+
+   | Formula | `tests/packaging.rs` | `formula.py` |
+   | --- | --- | --- |
+   | zeros **and** the declaration | passes; the file is what the generator writes for an unpublished version | passes, and says the hashes are placeholders rather than calling them the release's |
+   | zeros **without** the declaration | fails: a hash is missing, or the explanation was edited out | fails: "the formula carries a placeholder, not a hash" |
+   | the declaration while the release **exists** | — | fails: the release answers with checksums, so the placeholders should have been real |
+
+   The declaration is never taken on trust from the file alone: `formula.py`
+   asks GitHub whether that tag has a release, and a version that claims to be
+   unpublished while its release is live is the exact shape of "the zeros are
+   still there and somebody wrote a comment about it".
 6. `cargo install` works from the tag without any additional publication step.
 7. crates.io: either `./packaging/publish.sh` from the owner's machine, or the
    `publish` workflow on the published release once `CARGO_REGISTRY_TOKEN` is in

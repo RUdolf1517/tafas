@@ -118,11 +118,11 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--lock", type=Path, default=ROOT / "Cargo.lock")
     args = parser.parse_args(argv)
 
-    packages = read_packages(args.lock.read_text())
+    packages = read_packages(args.lock.read_text(encoding="utf-8"))
     version = args.version or next(p["version"] for p in packages if p["name"] == "tafas")
     document_text = json.dumps(document(packages, version), indent=2) + "\n"
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(document_text)
+    args.output.write_text(document_text, encoding="utf-8")
     print(f"{args.output}: {len(packages)} packages")
     return 0
 

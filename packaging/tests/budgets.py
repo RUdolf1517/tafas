@@ -127,7 +127,7 @@ def main(argv: list[str]) -> int:
         raise SystemExit(f"no binary at {args.binary}: build it first")
 
     measured = measure(args.binary)
-    budget = json.loads(BUDGET.read_text()) if BUDGET.is_file() else None
+    budget = json.loads(BUDGET.read_text(encoding="utf-8")) if BUDGET.is_file() else None
 
     if args.write:
         if budget is None:
@@ -141,7 +141,7 @@ def main(argv: list[str]) -> int:
                 "startup_millis": round(measured["startup_millis"]),
             }
         )
-        BUDGET.write_text(json.dumps(budget, indent=2) + "\n")
+        BUDGET.write_text(json.dumps(budget, indent=2) + "\n", encoding="utf-8")
         print(report(measured, None))
         print(f"\nrecorded in {BUDGET}")
         return 0

@@ -82,7 +82,7 @@ def main() -> int:
                 ],
                 f"exactly the three manifest files were written: {names}",
             )
-            installer = (manifest_dir / "RUdolf1517.tafas.installer.yaml").read_text()
+            installer = (manifest_dir / "RUdolf1517.tafas.installer.yaml").read_text(encoding="utf-8")
             check(
                 f"InstallerSha256: {good_sha}" in installer,
                 "the installer manifest carries the archive hash, uppercase",

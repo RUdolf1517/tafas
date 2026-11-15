@@ -11,6 +11,10 @@ version; adding a site, a flag or a container is minor. The policy is in
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.4.0] - 2026-11-15
+
 ### Added
 
 - **`--strip-meta`.** Empties what an MP4 says about itself: `udta` and the
@@ -68,6 +72,29 @@ version; adding a site, a flag or a container is minor. The policy is in
   a path carrying the name, and the `www.`/`m.`/port forms that must still work.
 - **A duplicated table header in `docs/roadmap.md` §4.** The second `| Item |
   Why |` rendered as a data row, so the first item read as part of the heading.
+- **The Homebrew formula is generated, so it cannot be stale.** It was the last
+  file in the release process edited by hand, and 0.3.0 was tagged with four
+  zeroes in it: `brew install` downloaded the archive and then refused it on a
+  checksum. `packaging/channels.py` now renders `Formula/tafas.rb` from the
+  release's `SHA256SUMS` alongside the `PKGBUILD`, the Scoop manifest and
+  `flake.nix`, which were already generated — that asymmetry is exactly why only
+  the formula drifted. The release job regenerates it once the archives exist and
+  commits the result, so step 5 of `docs/releases.md` is no longer a hand edit;
+  `tests/packaging.rs` fails if the checked-in file differs from what the
+  generator writes, and `packaging/tests/formula.py` still reads the published
+  release on every pull request, which is the check that would have caught the
+  zeroes. A version bump lands before its tag, so for that window the four
+  hashes are honest placeholders and the formula says so on a generated line
+  (`# unpublished: vX.Y.Z has not been built`); both checks read that
+  declaration, and `formula.py` confirms it against GitHub rather than
+  believing it — a version that calls itself unpublished while its release is
+  live is exactly the shape of the mistake this replaces.
+
+  The generator and the channel checks now read and write every file as
+  explicitly UTF-8. On Windows the default text encoding is the ANSI code page,
+  so the section sign in the formula's header and the em dash in `flake.nix`
+  were written as bytes nothing else could read; `--self-test` asserts the files
+  encode as UTF-8, which would have failed on the machine that produced them.
 
 - **The licence check's first run, and the report it wrote.** Turning on
   `cargo deny` in CI immediately failed on `webpki-roots`, which ships the

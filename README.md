@@ -53,7 +53,7 @@ $ tafas https://x.com/nasa/status/1732902605501431916 | xargs -r mpv
 curl -fsSL https://raw.githubusercontent.com/RUdolf1517/tafas/main/install.sh | sh   # binary, no Rust
 brew tap RUdolf1517/tafas https://github.com/RUdolf1517/tafas && brew install RUdolf1517/tafas/tafas
 cargo install tafas                                                                 # Rust 1.82+
-cargo install --git https://github.com/RUdolf1517/tafas --tag v0.3.0                # the same code, without the registry
+cargo install --git https://github.com/RUdolf1517/tafas --tag v0.4.0                # the same code, without the registry
 ```
 
 Linux (x86_64 and ARM64), macOS (Apple silicon and Intel), Windows x64. The
@@ -195,7 +195,9 @@ archive; `main` is ahead of it again as soon as the next item lands, and
 0.2.1 was a patch on top of it — two parser fixes and a binary 31% smaller.
 0.3.0 is the first version after the roadmap, and the first one to be published
 to crates.io: Twitch clips, SoundCloud sets, Vimeo passwords, and a library
-surface with examples that compile.
+surface with examples that compile. 0.4.0 adds the transfer controls — a
+`Retry-After` that is obeyed, `--max-filesize`, `--restrict-filenames` and
+`--strip-meta` — and makes the Homebrew formula generated instead of pasted.
 
 | Where it goes | State | What it is |
 | --- | --- | --- |
