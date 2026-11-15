@@ -127,7 +127,7 @@ Nothing yet.
   error. Two tests keep both halves: the allow-list is one list in `deny.toml`
   and in the prose, and the report is built from the error.
 
-### Added
+### Added (continued)
 
 - **`cargo deny` runs in CI, because it never did.** `deny.toml` has been in this
   repository since 0.2.0 and three pages said the check happened "when a release
