@@ -107,6 +107,27 @@ Nothing yet.
   distinguishes "the graph is clean" from "the tool did not run", printing the
   tail in the second case instead of an empty code block.
 
+- **A tag no longer looks like a release that happened.** `release.yml` listens
+  for a published release, not for a tag, so pushing `v0.4.0` started
+  `audit.yml` and nothing else: no archives, no `SHA256SUMS`, no regenerated
+  formula, and a formula whose declared placeholders were still the truth.
+  `docs/releases.md` §4.2 records that gap and the one command that closes it —
+  `gh release create --verify-tag` on the tag that exists — with the four things
+  to look at afterwards. The workflow's trigger is deliberate and stays: the
+  notes are written before the binaries are attached.
+
+- **The failure report now names the test that failed.** Three defects in the
+  same step, each of which made a red run harder to read than no report at all.
+  The step hid the tail of cargo's output behind `tail -n 40` after `tee`, on
+  the theory that the end of a log is where the errors are — it is not, `cargo
+  test` prints the verdict in the middle and then a summary. The comment
+  collected was the last 120 lines of that same assumption, so the failing test
+  could be outside it; a separate `What failed:` block now carries the lines the
+  patterns in `ci.yml` name, plus the message on the line after a panic. And the
+  test step ran `--all-targets` and then `--doc` under one status, so a failing
+  unit test that also failed a doc-test reported only the second — both exit
+  codes are kept now, without `set -e`, so the second suite still runs.
+
 - **The licence check's first run, and the report it wrote.** Turning on
   `cargo deny` in CI immediately failed on `webpki-roots`, which ships the
   Mozilla certificate store under `CDLA-Permissive-2.0`: the allow-list had been
@@ -118,7 +139,7 @@ Nothing yet.
   error. Two tests keep both halves: the allow-list is one list in `deny.toml`
   and in the prose, and the report is built from the error.
 
-### Added
+### Added (continued)
 
 - **`cargo deny` runs in CI, because it never did.** `deny.toml` has been in this
   repository since 0.2.0 and three pages said the check happened "when a release
