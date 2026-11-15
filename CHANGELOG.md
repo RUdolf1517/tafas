@@ -96,6 +96,17 @@ Nothing yet.
   were written as bytes nothing else could read; `--self-test` asserts the files
   encode as UTF-8, which would have failed on the machine that produced them.
 
+- **`audit.yml` failed on its own command line.** It ran
+  `cargo audit --all-features`, and that flag belongs to `cargo deny`;
+  `cargo audit` rejects it. So the job was red on every Monday and every tag for
+  as long as it has existed, and the issue it opened said the lock file had an
+  advisory against it, printing the four words of the argument error under a
+  heading nobody could doubt. It now runs `cargo audit --deny warnings`, which
+  is also what makes a yanked or unmaintained crate fail the run — none of the
+  advisories this project has had were `vulnerability` ones — and the report
+  distinguishes "the graph is clean" from "the tool did not run", printing the
+  tail in the second case instead of an empty code block.
+
 - **The licence check's first run, and the report it wrote.** Turning on
   `cargo deny` in CI immediately failed on `webpki-roots`, which ships the
   Mozilla certificate store under `CDLA-Permissive-2.0`: the allow-list had been
