@@ -693,6 +693,57 @@ fn the_homebrew_formula_names_hashes_the_release_published() {
     );
 }
 
+/// The channel step tars a directory that the generator actually wrote to.
+///
+/// `channels.py` without `--output-dir` strips the `packaging/` prefix and writes
+/// `aur/`, `scoop/` and `flake/` into the repository root. The release step ran
+/// it that way and then tarred `-C packaging aur scoop flake`, which failed on
+/// three paths that were never there — and because that step is the first in the
+/// publish job, everything after it was skipped: no `.apk`, no winget manifests,
+/// no SBOM, no checksums, no formula commit. The first 0.4.0 release run died
+/// exactly here.
+///
+/// A test cannot run the release job, so it checks the one thing that was wrong:
+/// the two directory names in that step agree, and the second is the one the
+/// first was told to write to.
+#[test]
+fn the_channel_step_tars_the_directory_the_generator_wrote_to() {
+    let release = read(".github/workflows/release.yml");
+    let step = release
+        .split("- name: AUR, Scoop and flake")
+        .nth(1)
+        .expect("release.yml has no channel step")
+        .split("- name: Alpine package")
+        .next()
+        .expect("the channel step is the last in the file");
+    // Comments are skipped: the comment above the command quotes the old
+    // `-C packaging`, and a naive search finds that first — which is how the
+    // first version of this test failed against the fixed workflow.
+    let command: Vec<&str> = step
+        .lines()
+        .filter(|line| !line.trim_start().starts_with('#'))
+        .collect();
+    let written = command
+        .iter()
+        .find_map(|line| line.split("--output-dir ").nth(1))
+        .expect("the channel step must tell the generator where to write")
+        .split_whitespace()
+        .next()
+        .expect("`--output-dir` has no value");
+    let tarred = command
+        .iter()
+        .find_map(|line| line.split("-C ").nth(1))
+        .expect("the channel step must say which tree it tars")
+        .split_whitespace()
+        .next()
+        .expect("`-C` has no value");
+    assert_eq!(
+        written, tarred,
+        "the channel step writes to `{written}` and tars `{tarred}`: the tarball then holds \
+         something other than what the generator rendered, or nothing at all"
+    );
+}
+
 /// The licence claim in the readme is checked by a job that exists.
 ///
 /// `deny.toml` sat in this repository for three releases while three pages said

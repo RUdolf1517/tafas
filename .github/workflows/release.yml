@@ -243,10 +243,22 @@ jobs:
         run: |
           set -euo pipefail
           version="${TAG#v}"
-          python3 packaging/channels.py --tag "$TAG" --artifacts artifacts
+          # Without `--output-dir`, which is how this step ran until 0.4.0,
+          # `channels.py` strips the `packaging/` prefix from each path and writes
+          # `aur/`, `scoop/`, `flake.nix` and `Formula/` into the repository root.
+          # The `tar -C packaging` below then failed on three paths that did not
+          # exist there, so this step — and every step after it, including the one
+          # that regenerates the formula — never ran. The generator writes to the
+          # tree it is given; the tree is named now.
+          python3 packaging/channels.py --tag "$TAG" --artifacts artifacts \
+            --output-dir out
           tar czf "artifacts/tafas-channels-${version}.tar.gz" \
-            -C packaging aur scoop flake
+            -C out aur scoop flake
           ls -l "artifacts/tafas-channels-${version}.tar.gz"
+          # The formula is rendered again by the step that commits it, from the
+          # same output directory: copying it here as well would leave the file
+          # modified, and that step would then decide it "already describes the
+          # tag" and never commit it.
           tar tzf "artifacts/tafas-channels-${version}.tar.gz"
 
       # The .apk needs apk-tools 3, which is in Alpine 3.20 and later: hence a
@@ -355,7 +367,11 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add Formula/tafas.rb
           git commit -m "formula: the hashes ${TAG} actually published"
-          git push origin "HEAD:${GITHUB_REF_NAME}" || {
+          # `main`, not `${GITHUB_REF_NAME}`: on a release event that is the tag,
+          # and a commit cannot be pushed to a tag ref, so the push failed every
+          # time and the fallback below turned it into a green step. The formula
+          # is committed to the branch that holds the next version.
+          git push origin "HEAD:main" || {
             echo "could not push the formula commit; regenerate it by hand:" >&2
             echo "  python3 packaging/channels.py --tag $TAG --artifacts artifacts" >&2
             exit 0
