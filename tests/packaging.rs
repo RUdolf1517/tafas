@@ -931,7 +931,8 @@ fn sha256(path: std::path::PathBuf) -> String {
 
     let mut file = std::fs::File::open(&path).expect("open the stand-in asset");
     let mut bytes = Vec::new();
-    file.read_to_end(&mut bytes).expect("read the stand-in asset");
+    file.read_to_end(&mut bytes)
+        .expect("read the stand-in asset");
     sha256_hex(&bytes)
 }
 
