@@ -948,8 +948,13 @@ fn render_formula(version: &str) -> String {
     // Read before the directory is removed: this used to delete `dir` first and
     // then read from it, which reported "the generator wrote a formula" on a
     // miss — a description of what was wanted, not of what happened.
+    //
+    // `read_to_string` and not `read_to_end`: the generator writes UTF-8, and a
+    // formula read back as invalid UTF-8 means it was written in the machine's
+    // ANSI code page. That is a real failure on Windows, where the default text
+    // encoding is not UTF-8, and the header's section sign is outside ASCII.
     let rendered = std::fs::read_to_string(dir.join("out/Formula/tafas.rb"))
-        .expect("the generator wrote a formula at out/Formula/tafas.rb");
+        .expect("the generator wrote a formula at out/Formula/tafas.rb, in UTF-8");
     let _ = std::fs::remove_dir_all(&dir);
     rendered
 }

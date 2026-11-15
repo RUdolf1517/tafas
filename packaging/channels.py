@@ -98,7 +98,7 @@ def read_sums(artifacts: Path) -> dict[str, str]:
         )
         return present
     out: dict[str, str] = {}
-    for line in sums.read_text().splitlines():
+    for line in sums.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line:
             continue
@@ -452,7 +452,8 @@ def self_test() -> int:
             asset.write_bytes(f"{name} {index}\n".encode())
             sums[name] = sha256_file(asset)
         (artifacts / "SHA256SUMS").write_text(
-            "".join(f"{digest}  ./{name}\n" for name, digest in sums.items())
+            "".join(f"{digest}  ./{name}\n" for name, digest in sums.items()),
+            encoding="utf-8",
         )
 
         files = render(version, read_sums(artifacts))
@@ -462,6 +463,17 @@ def self_test() -> int:
             for name in DEPENDS:
                 if name in text and sums[name] not in text and nix_hash(sums[name]) not in text:
                     problems.append(f"{path} names {name} without its hash")
+
+        # The release job writes these files on Linux, macOS and Windows, and on
+        # Windows the default text encoding is the ANSI code page, not UTF-8. Two
+        # of the five carry a character outside ASCII — a section sign in the
+        # formula, an em dash in the flake — so an unencoded write produces bytes
+        # no Linux build machine can read. Assert the property, not the argument.
+        for path, text in files.items():
+            try:
+                text.encode("utf-8")
+            except UnicodeEncodeError:
+                problems.append(f"{path} is not encodable as UTF-8")
 
         pkgbuild = files["packaging/aur/PKGBUILD"]
         for needle in ("pkgver=9.9.9", "sha256sums_x86_64", "sha256sums_aarch64",
@@ -589,7 +601,7 @@ def main(argv: list[str]) -> int:
             # which is where Homebrew and `tests/packaging.rs` look for it.
             target = Path(path) if path.startswith("Formula/") else Path(path.removeprefix("packaging/"))
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(text)
+        target.write_text(text, encoding="utf-8")
         print(f"channels: wrote {target}")
     return 0
 

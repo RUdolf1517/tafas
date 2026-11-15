@@ -95,7 +95,7 @@ def read_sums(path: Path) -> dict[str, str]:
     if not path.is_file():
         raise SystemExit(f"formula: {path} does not exist")
     sums: dict[str, str] = {}
-    for line in path.read_text().splitlines():
+    for line in path.read_text(encoding="utf-8").splitlines():
         parts = line.split()
         if len(parts) != 2:
             continue
@@ -226,7 +226,7 @@ def main(argv: list[str]) -> int:
     if args.sums is None and args.release is None:
         parser.error("one of --sums or --release is required")
 
-    text = FORMULA.read_text()
+    text = FORMULA.read_text(encoding="utf-8")
     version = args.expect_version or formula_version(text)
 
     # The two ways a formula can legitimately carry placeholders, and both are

@@ -90,6 +90,12 @@ Nothing yet.
   believing it — a version that calls itself unpublished while its release is
   live is exactly the shape of the mistake this replaces.
 
+  The generator and the channel checks now read and write every file as
+  explicitly UTF-8. On Windows the default text encoding is the ANSI code page,
+  so the section sign in the formula's header and the em dash in `flake.nix`
+  were written as bytes nothing else could read; `--self-test` asserts the files
+  encode as UTF-8, which would have failed on the machine that produced them.
+
 - **The licence check's first run, and the report it wrote.** Turning on
   `cargo deny` in CI immediately failed on `webpki-roots`, which ships the
   Mozilla certificate store under `CDLA-Permissive-2.0`: the allow-list had been
