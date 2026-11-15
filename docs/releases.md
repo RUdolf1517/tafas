@@ -166,8 +166,9 @@ promise this repository does not keep.
 
 These steps were run for 0.2.0, which carried the whole roadmap
 ([§1](#1-versioning)), and the same steps are run for every version after it:
-they were run for 0.2.1 and for 0.3.0. The roadmap is finished, so what they
-produce now is an ordinary minor release rather than a first one.
+they were run for 0.2.1 and for 0.3.0. The procedure still
+waits for the roadmap, and that wait is over — the roadmap is finished — so what
+it produces now is an ordinary minor release rather than a first one.
 **Step 5 used to be a hand edit and is not any more**; it is the one step of the
 seven that 0.4.0 changed.
 **Step 7 is the only one that needs a credential**, and the only one whose
