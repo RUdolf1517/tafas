@@ -591,14 +591,34 @@ fn the_homebrew_formula_names_hashes_the_release_published() {
         "Formula/tafas.rb does not say version {version}"
     );
 
-    // A zeroed hash is a placeholder, and a placeholder is an install that
-    // fails with a message about a checksum rather than about an edit somebody
-    // forgot to make.
+    // A zeroed hash is a placeholder, and a placeholder is an install that fails
+    // with a message about a checksum rather than about an edit somebody forgot
+    // to make. The one state in which it is allowed is a version that has not
+    // been built yet, and the file has to say so on the line the generator
+    // writes — a declaration, not a comment somebody added to get a green run.
+    //
+    // That declaration is only believed here because `packaging/tests/formula.py`
+    // is the check that verifies it against GitHub, in CI, on every pull request.
     let zeroes = "0".repeat(64);
-    assert!(
-        !formula.contains(&format!("sha256 \"{zeroes}\"")),
-        "Formula/tafas.rb still carries a zero-filled sha256: the archives exist, so the hashes do"
-    );
+    let placeholders = formula.contains(&format!("sha256 \"{zeroes}\""));
+    let declared = format!("# unpublished: v{version} has not been built");
+    if placeholders {
+        assert!(
+            formula.contains(&declared),
+            "Formula/tafas.rb carries a zero-filled sha256 and does not declare \
+             `{declared}`: either the release exists and the hashes are missing, or the \
+             explanation was edited out"
+        );
+    }
+    // The other direction: a formula with no zeros has nothing to declare, and a
+    // stale declaration would be a lie about a version that is already out.
+    if !placeholders {
+        assert!(
+            !formula.contains("# unpublished:"),
+            "Formula/tafas.rb declares an unpublished version but carries real hashes: \
+             the declaration is stale and should have been removed by a regeneration"
+        );
+    }
 
     let hashes: Vec<&str> = formula
         .match_indices("sha256 \"")

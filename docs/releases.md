@@ -196,6 +196,22 @@ result cannot be undone.
    the checked-in file with what the generator writes, and CI runs
    `packaging/tests/formula.py` against the *published* release on every pull
    request. Nothing is pasted, so nothing can be pasted wrong.
+
+   Between a version bump and its tag the formula names a release that does not
+   exist yet, so its four hashes are placeholders. That state is declared on a
+   line the generator writes — `# unpublished: vX.Y.Z has not been built` — and
+   the two checks read it rather than guessing:
+
+   | Formula | `tests/packaging.rs` | `formula.py` |
+   | --- | --- | --- |
+   | zeros **and** the declaration | passes; the file is what the generator writes for an unpublished version | passes, and says the hashes are placeholders rather than calling them the release's |
+   | zeros **without** the declaration | fails: a hash is missing, or the explanation was edited out | fails: "the formula carries a placeholder, not a hash" |
+   | the declaration while the release **exists** | — | fails: the release answers with checksums, so the placeholders should have been real |
+
+   The declaration is never taken on trust from the file alone: `formula.py`
+   asks GitHub whether that tag has a release, and a version that claims to be
+   unpublished while its release is live is the exact shape of "the zeros are
+   still there and somebody wrote a comment about it".
 6. `cargo install` works from the tag without any additional publication step.
 7. crates.io: either `./packaging/publish.sh` from the owner's machine, or the
    `publish` workflow on the published release once `CARGO_REGISTRY_TOKEN` is in

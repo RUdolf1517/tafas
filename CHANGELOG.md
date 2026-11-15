@@ -83,7 +83,12 @@ Nothing yet.
   `tests/packaging.rs` fails if the checked-in file differs from what the
   generator writes, and `packaging/tests/formula.py` still reads the published
   release on every pull request, which is the check that would have caught the
-  zeroes.
+  zeroes. A version bump lands before its tag, so for that window the four
+  hashes are honest placeholders and the formula says so on a generated line
+  (`# unpublished: vX.Y.Z has not been built`); both checks read that
+  declaration, and `formula.py` confirms it against GitHub rather than
+  believing it — a version that calls itself unpublished while its release is
+  live is exactly the shape of the mistake this replaces.
 
 - **The licence check's first run, and the report it wrote.** Turning on
   `cargo deny` in CI immediately failed on `webpki-roots`, which ships the

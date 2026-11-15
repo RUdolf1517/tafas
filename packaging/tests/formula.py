@@ -52,8 +52,16 @@ EXPECTED = {
 }
 
 VERSION = re.compile(r'^  version "([^"]+)"$', re.MULTILINE)
+# Written by `packaging/channels.py` and by nothing else: it is the one line in
+# the formula that says "these hashes are not real yet, and here is why".
+UNPUBLISHED = re.compile(r'^# unpublished: v([0-9]+\.[0-9]+\.[0-9]+) has not been built', re.MULTILINE)
 URL = re.compile(r'^      url "([^"]+)"$', re.MULTILINE)
 SHA = re.compile(r'^      sha256 "([0-9a-f]{64})"$', re.MULTILINE)
+
+
+def declared_unpublished(text: str) -> str | None:
+    match = UNPUBLISHED.search(text)
+    return match.group(1) if match else None
 
 
 def formula_version(text: str) -> str:
@@ -99,6 +107,27 @@ def read_sums(path: Path) -> dict[str, str]:
     return sums
 
 
+def release_exists(tag: str) -> bool:
+    """Whether a release with this tag is published.
+
+    A version bump lands before its tag does, so for a few hours the formula
+    names a release that does not exist. That is not a wrong hash — there is no
+    hash to be wrong — and treating it as one would put a red check on every
+    version bump, which is how a check stops being read.
+    """
+    url = f"https://github.com/RUdolf1517/tafas/releases/download/{tag}/SHA256SUMS"
+    request = urllib.request.Request(url, method="HEAD")
+    try:
+        urllib.request.urlopen(request, timeout=30)
+    except urllib.error.HTTPError as error:
+        if error.code == 404:
+            return False
+        raise SystemExit(f"formula: cannot read {url}: {error}")
+    except (urllib.error.URLError, TimeoutError) as error:
+        raise SystemExit(f"formula: cannot read {url}: {error}")
+    return True
+
+
 def sums_from_release(tag: str) -> dict[str, str]:
     """The release's `SHA256SUMS`, for the local run of this check.
 
@@ -119,7 +148,20 @@ def sums_from_release(tag: str) -> dict[str, str]:
         tmp.unlink(missing_ok=True)
 
 
-def check(text: str, sums: dict[str, str], expected_version: str | None) -> list[str]:
+def check(
+    text: str,
+    sums: dict[str, str],
+    expected_version: str | None,
+    unpublished: bool = False,
+) -> list[str]:
+    """Every way the formula can disagree with the release it claims.
+
+    `unpublished` is the caller's *verified* statement that this version has no
+    release yet — not the formula's own claim, which is checked against GitHub
+    before it gets here. When it is true the four hashes are allowed to be
+    placeholders and nothing else changes: the version, the URLs, the platforms
+    and the number of hashes are still checked.
+    """
     problems: list[str] = []
 
     version = formula_version(text)
@@ -140,11 +182,15 @@ def check(text: str, sums: dict[str, str], expected_version: str | None) -> list
         if asset not in sums:
             problems.append(f"SHA256SUMS has no {asset}, so the formula cannot be checked")
             continue
-        if by_asset[asset] != sums[asset]:
+        # A placeholder is not a wrong hash: it is the absence of one, already
+        # reported by name below. Comparing it with the release would report the
+        # same line twice and bury the one that says what is missing.
+        placeholder = set(by_asset[asset]) == {"0"}
+        if by_asset[asset] != sums[asset] and not (placeholder and unpublished):
             problems.append(
                 f"{asset}: the formula has {by_asset[asset]}, the release has {sums[asset]}"
             )
-        if set(by_asset[asset]) == {"0"}:
+        if placeholder and not unpublished:
             problems.append(f"{asset}: the formula carries a placeholder, not a hash")
 
     for asset in by_asset:
@@ -182,13 +228,78 @@ def main(argv: list[str]) -> int:
 
     text = FORMULA.read_text()
     version = args.expect_version or formula_version(text)
-    sums = read_sums(args.sums) if args.sums is not None else sums_from_release(args.release)
 
-    problems = check(text, sums, version)
+    # The two ways a formula can legitimately carry placeholders, and both are
+    # verified rather than taken from the file:
+    #
+    # 1. this version has no release yet (a bump lands before its tag);
+    # 2. the caller is checking the formula against *another* release, which is
+    #    what CI does — it compares `main` with the latest published tag, so a
+    #    tree that has moved on is ahead of it rather than wrong about it.
+    declared = declared_unpublished(text)
+    if declared is not None and declared != version:
+        print(
+            f"formula: the file says v{declared} is unpublished but its version is {version}",
+            file=sys.stderr,
+        )
+        return 1
+
+    if args.sums is not None:
+        sums = read_sums(args.sums)
+        # `--sums` names the checksums of the version being checked, so a
+        # declared placeholder is legitimate for that version by definition.
+        unpublished = declared == version
+    else:
+        if not release_exists(args.release):
+            # A tag with no release is not a wrong hash; there is no hash. Say so
+            # and say nothing else, rather than reporting a formula as verified
+            # against something that does not exist.
+            print(
+                f"formula: {args.release} is not published, so there is nothing to compare "
+                f"against; the formula's hashes are unverified, not wrong"
+            )
+            return 0
+        sums = sums_from_release(args.release)
+        unpublished = declared == version
+        if unpublished:
+            # The declaration is checked, not believed. A version that says it has
+            # not been built, while its release tag answers with checksums, is
+            # exactly the shape of "the zeros are still there and somebody wrote
+            # a comment about it".
+            tag = f"v{version}"
+            if release_exists(tag):
+                print(
+                    f"formula: the file says v{version} has not been built, but its release "
+                    f"exists: the hashes are placeholders where they should be real",
+                    file=sys.stderr,
+                )
+                return 1
+            # Nothing to compare against, and the declaration just explained why.
+            print(
+                f"formula: tafas {version} is not published yet; the version, the "
+                f"{len(EXPECTED)} platform URLs and the shape of the file are right, and the "
+                f"four hashes are placeholders until the release exists"
+            )
+            return 0
+        # Otherwise the release being read is the last published one and the
+        # formula names a different version: that is `main` ahead of the tag, not
+        # an error, and the comparison below reports it as it always did.
+
+    problems = check(text, sums, version, unpublished)
     for problem in problems:
         print(f"formula: {problem}", file=sys.stderr)
     if problems:
         return 1
+    if unpublished:
+        # Say exactly what was and was not checked. A green line that claims the
+        # hashes are the release's when they are placeholders is the failure this
+        # whole file exists to prevent, one level up.
+        print(
+            f"formula: tafas {version} is not published yet; the version, the "
+            f"{len(EXPECTED)} platform URLs and the shape of the file are right, and the "
+            f"four hashes are placeholders until the release exists"
+        )
+        return 0
     print(
         f"formula: tafas {version} downloads {len(EXPECTED)} archives "
         f"and every hash is the release's"
