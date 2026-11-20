@@ -1,8 +1,8 @@
 name: release
+run-name: Build ${{ inputs.tag || github.event.release.tag_name }}
 
-# Builds the shipped artifacts. Triggered when a release is published, so the
-# release notes can be written first; the binaries are attached a few minutes
-# later. Nothing here is built by hand.
+# Build and attach assets to a draft when dispatched by packaging/release.py.
+# A manually published release without assets can still trigger the build.
 #
 # Asset names are the Rust target triples and carry no version, which is what
 # makes https://github.com/RUdolf1517/tafas/releases/latest/download/<asset> a
@@ -25,6 +25,7 @@ env:
 
 jobs:
   build:
+    if: github.event_name == 'workflow_dispatch' || !contains(github.event.release.assets.*.name, 'SHA256SUMS')
     name: build (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 40
@@ -58,7 +59,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag || github.event.release.tag_name }}
+          ref: refs/tags/${{ inputs.tag || github.event.release.tag_name }}
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -192,6 +193,8 @@ jobs:
       MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.tag || github.event.release.tag_name }}
 
       - uses: actions/download-artifact@v4
         with:

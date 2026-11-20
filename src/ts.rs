@@ -112,25 +112,57 @@ pub struct Sample {
 /// packet-aligned, so a segment boundary is never mid-packet, and timestamps
 /// continue across it.
 pub fn demux(data: &[u8]) -> Result<Demuxed> {
-    if data.len() < PACKET {
-        return Err(Error::Parse(format!(
-            "transport stream is {} bytes, less than one packet",
-            data.len()
-        )));
-    }
-    if data.len() % PACKET != 0 {
-        return Err(Error::Parse(format!(
-            "transport stream is {} bytes, which is not a whole number of {} byte packets",
-            data.len(),
-            PACKET
-        )));
+    let mut demuxer = Demuxer::default();
+    demuxer.push(data)?;
+    demuxer.finish()
+}
+
+/// A transport stream read in order, across arbitrary chunk boundaries.
+#[derive(Default)]
+pub(crate) struct Demuxer {
+    state: State,
+    packets: usize,
+    tail: Vec<u8>,
+}
+
+impl Demuxer {
+    pub(crate) fn push(&mut self, mut data: &[u8]) -> Result<()> {
+        if !self.tail.is_empty() {
+            let take = (PACKET - self.tail.len()).min(data.len());
+            self.tail.extend_from_slice(&data[..take]);
+            if self.tail.len() < PACKET {
+                return Ok(());
+            }
+            self.state.packet(&self.tail, self.packets)?;
+            self.packets += 1;
+            self.tail.clear();
+            data = &data[take..];
+        }
+        let packets = data.chunks_exact(PACKET);
+        self.tail.extend_from_slice(packets.remainder());
+        for packet in packets {
+            self.state.packet(packet, self.packets)?;
+            self.packets += 1;
+        }
+        Ok(())
     }
 
-    let mut state = State::default();
-    for (index, packet) in data.chunks_exact(PACKET).enumerate() {
-        state.packet(packet, index)?;
+    pub(crate) fn finish(self) -> Result<Demuxed> {
+        if self.packets == 0 {
+            return Err(Error::Parse(format!(
+                "transport stream is {} bytes, less than one packet",
+                self.tail.len()
+            )));
+        }
+        if !self.tail.is_empty() {
+            return Err(Error::Parse(format!(
+                "transport stream is {} bytes, which is not a whole number of {} byte packets",
+                self.packets * PACKET + self.tail.len(),
+                PACKET
+            )));
+        }
+        self.state.finish()
     }
-    state.finish()
 }
 
 #[derive(Default)]
@@ -832,6 +864,29 @@ mod tests {
         assert_eq!(audio.samples.len(), 2);
         assert_eq!(audio.samples[0].data, vec![0x01, 0x02]);
         assert_eq!(audio.samples[1].data, vec![0x03, 0x04]);
+    }
+
+    #[test]
+    fn packet_boundaries_survive_arbitrary_input_chunks() {
+        let data = stream(
+            &pes(0xe0, 0, None, &video_unit()),
+            &pes(0xc0, 0, None, &adts_frame(2, 4, 2, &[0x01])),
+        );
+        let mut split = Demuxer::default();
+        for chunk in data.chunks(101) {
+            split.push(chunk).unwrap();
+        }
+        let split = split.finish().unwrap();
+        let whole = demux(&data).unwrap();
+        for (split, whole) in split.tracks.iter().zip(&whole.tracks) {
+            assert_eq!(split.samples.len(), whole.samples.len());
+            for (split, whole) in split.samples.iter().zip(&whole.samples) {
+                assert_eq!(split.data, whole.data);
+                assert_eq!(split.pts, whole.pts);
+                assert_eq!(split.dts, whole.dts);
+            }
+        }
+        assert_eq!(split.tracks.len(), whole.tracks.len());
     }
 
     #[test]
