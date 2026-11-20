@@ -26,8 +26,7 @@ segment URI under a CDN path is the normal case, not the exception.
 
 ## 2. Two containers, one writer
 
-The segments are fetched, concatenated, and handed to a demuxer. Which demuxer
-is decided by the *playlist*, not by sniffing bytes:
+The playlist selects the demuxer. Segments reach it in playlist order:
 
 | playlist | container | reader |
 | --- | --- | --- |
@@ -108,11 +107,18 @@ verify.
 | one playlist | 20 000 segments | 33 hours at six seconds a segment |
 | one key file | 1024 bytes | a key URL that answers with a megabyte is not a key |
 
-A segment is held in memory while it is parsed, and its samples are held until
-the file is written: this build does not stream HLS to disk as it goes, because
-the sample tables of an MP4 written at the end need every sample's size and
-time. `--concurrent-fragments N` therefore multiplies memory as well as
-throughput, which is why `N` is bounded and documented rather than unbounded.
+MPEG-TS is demuxed as segments arrive. The reader keeps its packet and stream
+state across segment boundaries, including when replaying the resume cache.
+Fragmented MP4 still uses a concatenated buffer for absolute sample offsets.
+Both readers retain media samples until the MP4 writer can build its sample
+tables. At most twice the active worker count of segment bodies can be queued
+behind a slow request.
+
+To reproduce the transport-stream memory check, run
+`cargo test --release --locked --test hls --no-run`, then run the displayed
+test executable with `--ignored --exact long_transport_stream_memory` under
+`/usr/bin/time -l` on macOS or `/usr/bin/time -v` on Linux. The fixture uses
+128 segments of about 1 MiB, mostly null packets, and verifies the resulting MP4.
 
 ## 6. What is resumed
 

@@ -160,6 +160,9 @@ impl TestServer {
             while !stop_flag.load(Ordering::SeqCst) {
                 match listener.accept() {
                     Ok((stream, _)) => {
+                        if stream.set_nonblocking(false).is_err() {
+                            continue;
+                        }
                         counter.fetch_add(1, Ordering::SeqCst);
                         // One thread per connection, so a client that asks for
                         // several things at once is served them at once.

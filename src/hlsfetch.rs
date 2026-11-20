@@ -2,29 +2,26 @@
 //!
 //! `hls` reads the text and says what the segments are; `ts`, `mp4read` and
 //! `mp4write` know what to do with the bytes. This module is the middle: it
-//! fetches the segments, concatenates them, demuxes whichever of the two
-//! containers they carry, and hands the samples to the writer. A playlist with
+//! fetches the segments, demuxes the container they carry, and hands the
+//! samples to the writer. A playlist with
 //! `EXT-X-MAP` is the fragmented-MP4 flavour: its header is fetched once and
 //! every segment is parsed as `moof`+`mdat` against it.
 //!
-//! Two things are done on purpose. The segments are held in memory one at a
-//! time and the concatenation is thrown away as soon as the samples have been
-//! lifted out of it, because a transport stream is a framing that an MP4 does
-//! not need — keeping it would double the memory for nothing. And every gate
-//! between a playlist and a fetch refuses **by name**: an encrypted one, a
-//! breaking one and an unreadable one produce different messages, so the reader
-//! learns what is missing instead of getting a half-written file.
+//! Transport-stream segments are demuxed as they arrive in playlist order.
+//! Fragmented MP4 keeps the concatenated input for offsets across fragments.
+//! In both cases the download window limits how many segment bodies are
+//! waiting for an earlier request.
 //!
-//! Two of those things are also *per segment*: what lands is cached beside the
-//! staging file, so an interrupted list is resumed by replaying the cache and
+//! Segments are cached beside the staging file. An interrupted list resumes
+//! by replaying the cache and
 //! asking the server only for the segments that are missing.
 
 use std::collections::HashMap;
 use std::fs;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::mpsc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Mutex};
 use std::thread;
 
 use crate::error::{Error, Result};
@@ -178,7 +175,7 @@ pub fn fetch(
         ),
     };
     let resumed_video = video_cache.done;
-    let video_bytes = fetch_media(
+    let mut tracks = fetch_tracks(
         http,
         &video_segments,
         &mut Walk {
@@ -189,9 +186,8 @@ pub fn fetch(
         },
         &mut segments,
         &mut video_cache,
+        video_map.as_deref(),
     )?;
-    let mut tracks = tracks_of(&video_bytes, video_map.as_deref())?;
-    drop(video_bytes);
     let mut duration: f64 = video_segments.iter().map(|segment| segment.duration).sum();
     let video_has_audio = tracks.iter().any(|track| track.kind == TrackKind::Audio);
     let mut warnings = Vec::new();
@@ -232,7 +228,7 @@ pub fn fetch(
             ),
         };
         resumed_audio = audio_cache.done;
-        let audio_bytes = fetch_media(
+        let audio = fetch_tracks(
             http,
             &audio_segments,
             &mut Walk {
@@ -243,11 +239,11 @@ pub fn fetch(
             },
             &mut segments,
             &mut audio_cache,
+            audio_map.as_deref(),
         )?;
         if let Some(warning) = audio_cache.warning.take() {
             warnings.push(warning);
         }
-        let audio = tracks_of(&audio_bytes, audio_map.as_deref())?;
         match audio
             .into_iter()
             .find(|track| track.kind == TrackKind::Audio)
@@ -463,15 +459,30 @@ fn init_section(
     Ok(Some(bytes))
 }
 
-/// The tracks of one rendition, whichever container its segments carry.
-///
-/// The two are told apart by the playlist rather than by sniffing the bytes: a
-/// playlist with `EXT-X-MAP` is fragmented MP4 whatever the first bytes look
-/// like, and a playlist without one is a transport stream.
-fn tracks_of(bytes: &[u8], init: Option<&[u8]>) -> Result<Vec<Track>> {
-    match init {
-        Some(init) => mp4read::read(init, bytes),
-        None => Ok(ts::demux(bytes)?.tracks),
+/// Fetches and demuxes one rendition in playlist order.
+fn fetch_tracks(
+    http: &Http,
+    chosen: &[&Segment],
+    walk: &mut Walk<'_>,
+    segments: &mut usize,
+    cache: &mut Cache,
+    init: Option<&[u8]>,
+) -> Result<Vec<Track>> {
+    if let Some(init) = init {
+        let init = mp4read::init(init)?;
+        // Some fragments use offsets relative to the concatenated rendition.
+        let mut media = Vec::new();
+        fetch_media(http, chosen, walk, segments, cache, &mut |bytes| {
+            media.extend_from_slice(bytes);
+            Ok(())
+        })?;
+        mp4read::fragments(&init, &media)
+    } else {
+        let mut demuxer = ts::Demuxer::default();
+        fetch_media(http, chosen, walk, segments, cache, &mut |bytes| {
+            demuxer.push(bytes)
+        })?;
+        Ok(demuxer.finish()?.tracks)
     }
 }
 
@@ -517,10 +528,9 @@ fn fetch_segment(
 struct Cache {
     payload: Option<fs::File>,
     journal: Option<fs::File>,
-    /// The segments the cache held when it was opened, in playlist order. The
-    /// demuxer wants the concatenation anyway, so this is not a copy.
-    data: Vec<u8>,
-    /// How many whole segments `data` is.
+    /// The whole prefix on disk, read once before asking for fresh segments.
+    cached: Option<(fs::File, u64)>,
+    /// How many whole segments the journal describes.
     done: usize,
     /// The first thing that went wrong writing the cache, said once. A cache is
     /// an optimisation: its failure is a note, not a failure of the download.
@@ -534,7 +544,7 @@ impl Cache {
         Cache {
             payload: None,
             journal: None,
-            data: Vec::new(),
+            cached: None,
             done: 0,
             warning: None,
         }
@@ -543,20 +553,25 @@ impl Cache {
     /// Opens the cache for `chosen`, keeping whatever of it a previous run left.
     fn open(payload_path: &Path, journal_path: &Path, chosen: &[&Segment]) -> Cache {
         let header = header_line(chosen);
-        let (data, lengths) = read_cache(payload_path, journal_path, &header).unwrap_or_default();
+        let (file, lengths) = read_cache(payload_path, journal_path, &header, chosen.len())
+            .map_or_else(
+                || (None, Vec::new()),
+                |(file, lengths)| (Some(file), lengths),
+            );
         let kept: u64 = lengths.iter().sum();
+        let cached = file.map(|file| (file, kept));
         match open_files(payload_path, journal_path, kept, &header, &lengths) {
             Ok((payload, journal)) => Cache {
                 payload: Some(payload),
                 journal: Some(journal),
-                data,
+                cached,
                 done: lengths.len(),
                 warning: None,
             },
             Err(error) => Cache {
                 payload: None,
                 journal: None,
-                data,
+                cached,
                 done: lengths.len(),
                 warning: Some(format!(
                     "the segment cache beside the staging file could not be opened ({error}); \
@@ -564,6 +579,21 @@ impl Cache {
                 )),
             },
         }
+    }
+
+    fn replay(&mut self, consume: &mut dyn FnMut(&[u8]) -> Result<()>) -> Result<u64> {
+        let Some((mut file, length)) = self.cached.take() else {
+            return Ok(0);
+        };
+        let mut buffer = [0; 64 * 1024];
+        let mut remaining = length;
+        while remaining > 0 {
+            let size = remaining.min(buffer.len() as u64) as usize;
+            file.read_exact(&mut buffer[..size])?;
+            consume(&buffer[..size])?;
+            remaining -= size as u64;
+        }
+        Ok(length)
     }
 
     /// Appends one segment, in playlist order.
@@ -580,7 +610,6 @@ impl Cache {
                 self.journal = None;
             }
         }
-        self.data.extend_from_slice(bytes);
         self.done += 1;
     }
 }
@@ -629,16 +658,18 @@ fn read_cache(
     payload_path: &Path,
     journal_path: &Path,
     header: &str,
-) -> Option<(Vec<u8>, Vec<u64>)> {
+    count: usize,
+) -> Option<(fs::File, Vec<u64>)> {
     let journal = fs::read_to_string(journal_path).ok()?;
     let mut lines = journal.lines();
     if lines.next()? != header {
         return None;
     }
-    let available = fs::metadata(payload_path).ok()?.len();
+    let payload = fs::File::open(payload_path).ok()?;
+    let available = payload.metadata().ok()?.len();
     let mut lengths = Vec::new();
     let mut total = 0u64;
-    for line in lines {
+    for line in lines.take(count) {
         // A line that does not parse is a write that was interrupted; the
         // segments before it are still whole.
         let Ok(length) = line.trim().parse::<u64>() else {
@@ -650,11 +681,7 @@ fn read_cache(
         total += length;
         lengths.push(length);
     }
-    let payload = fs::read(payload_path).ok()?;
-    if payload.len() as u64 != available || total > payload.len() as u64 {
-        return None;
-    }
-    Some((payload[..total as usize].to_vec(), lengths))
+    Some((payload, lengths))
 }
 
 /// Cuts the payload back to whole segments, rewrites the journal to match, and
@@ -732,15 +759,16 @@ struct Walk<'a> {
 ///
 /// `cache` is charged in playlist order as the pieces become contiguous, so a
 /// run interrupted in the middle of a long list keeps what it had and asks for
-/// the rest next time. The returned bytes are the whole concatenation the
-/// demuxer reads, taken out of the cache.
+/// the rest next time. The consumer sees the cached prefix and new segments
+/// in playlist order.
 fn fetch_media(
     http: &Http,
     chosen: &[&Segment],
     walk: &mut Walk<'_>,
     segments: &mut usize,
     cache: &mut Cache,
-) -> Result<Vec<u8>> {
+    consume: &mut dyn FnMut(&[u8]) -> Result<()>,
+) -> Result<()> {
     let ceiling = walk.ceiling;
     let concurrency = walk.concurrency;
     // Reborrowed, not moved: the caller passes `&mut Walk`, and taking the
@@ -752,7 +780,7 @@ fn fetch_media(
     // run this one is continuing.
     let skip = cache.done;
     if skip > 0 {
-        on_bytes(cache.data.len() as u64);
+        on_bytes(cache.replay(consume)?);
     }
 
     // Keys are resolved before any worker starts, and only for the segments
@@ -781,90 +809,86 @@ fn fetch_media(
 
     let remaining = chosen.len() - skip;
     let workers = concurrency.clamp(1, remaining.max(1));
-    let mut pieces: Vec<Option<Vec<u8>>> = (0..chosen.len()).map(|_| None).collect();
-    let mut failure: Option<Error> = None;
-
     if workers == 1 {
         for index in skip..chosen.len() {
             let bytes = fetch_segment(http, chosen[index], headers, keys[index], ceiling)?;
             on_bytes(bytes.len() as u64);
+            consume(&bytes)?;
             cache.push(&bytes);
         }
-        *segments += chosen.len();
-        return Ok(std::mem::take(&mut cache.data));
     } else {
-        let next = AtomicUsize::new(skip);
         let cancelled = AtomicBool::new(false);
         let mut flushed = skip;
+        let mut next = skip;
+        let window = workers * 2;
+        let mut pieces: Vec<Option<Vec<u8>>> = (0..chosen.len()).map(|_| None).collect();
+        let (jobs, pending) = mpsc::channel();
+        let pending = Mutex::new(pending);
         let (sender, receiver) = mpsc::channel();
-        thread::scope(|scope| {
+        thread::scope(|scope| -> Result<()> {
             for _ in 0..workers {
                 let sender = sender.clone();
-                let next = &next;
+                let pending = &pending;
                 let cancelled = &cancelled;
                 let keys = &keys;
-                scope.spawn(move || loop {
-                    if cancelled.load(Ordering::SeqCst) {
-                        break;
-                    }
-                    let index = next.fetch_add(1, Ordering::SeqCst);
-                    if index >= chosen.len() {
-                        break;
-                    }
-                    let outcome = fetch_segment(http, chosen[index], headers, keys[index], ceiling);
-                    if outcome.is_err() {
-                        cancelled.store(true, Ordering::SeqCst);
-                    }
-                    if sender.send((index, outcome)).is_err() {
-                        break;
+                scope.spawn(move || {
+                    while !cancelled.load(Ordering::Relaxed) {
+                        let Ok(index) = pending.lock().expect("job queue").recv() else {
+                            break;
+                        };
+                        let outcome =
+                            fetch_segment(http, chosen[index], headers, keys[index], ceiling);
+                        if outcome.is_err() {
+                            cancelled.store(true, Ordering::Relaxed);
+                        }
+                        if sender.send((index, outcome)).is_err() {
+                            break;
+                        }
                     }
                 });
             }
-            // The original sender has to go or `iter` below never ends.
             drop(sender);
-            for (index, outcome) in receiver.iter() {
+            let mut jobs = Some(jobs);
+            let mut failure = None;
+            loop {
+                if let Some(queue) = &jobs {
+                    while next < chosen.len() && next < flushed + window {
+                        if queue.send(next).is_err() {
+                            break;
+                        }
+                        next += 1;
+                    }
+                    if next == chosen.len() || cancelled.load(Ordering::Relaxed) {
+                        jobs.take();
+                    }
+                }
+                let Ok((index, outcome)) = receiver.recv() else {
+                    break;
+                };
                 match outcome {
                     Ok(bytes) => {
                         on_bytes(bytes.len() as u64);
                         pieces[index] = Some(bytes);
-                        // The cache is charged in playlist order, so a segment
-                        // that landed early waits for the gap before it. What is
-                        // whole is what a rerun gets to keep.
-                        flush_ready(&mut pieces, &mut flushed, cache);
+                        while let Some(bytes) = pieces.get_mut(flushed).and_then(Option::take) {
+                            if let Err(error) = consume(&bytes) {
+                                cancelled.store(true, Ordering::Relaxed);
+                                return Err(error);
+                            }
+                            cache.push(&bytes);
+                            flushed += 1;
+                        }
                     }
                     Err(error) => {
-                        if failure.is_none() {
-                            failure = Some(error);
-                        }
+                        failure.get_or_insert(error);
                     }
                 }
             }
-        });
-        flush_ready(&mut pieces, &mut flushed, cache);
-    }
-
-    if let Some(error) = failure {
-        return Err(error);
+            failure.map_or(Ok(()), Err)
+        })?;
     }
 
     *segments += chosen.len();
-    Ok(std::mem::take(&mut cache.data))
-}
-
-/// Moves every segment at the front of `pieces` into the cache.
-///
-/// Pieces arrive in whatever order the network gives them; the cache is a
-/// prefix by construction, so only the contiguous run from `flushed` counts.
-fn flush_ready(pieces: &mut [Option<Vec<u8>>], flushed: &mut usize, cache: &mut Cache) {
-    while *flushed < pieces.len() {
-        match pieces[*flushed].take() {
-            Some(bytes) => {
-                cache.push(&bytes);
-                *flushed += 1;
-            }
-            None => break,
-        }
-    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -912,9 +936,19 @@ mod tests {
         cache.push(b"second");
         assert_eq!(cache.done, 2);
 
-        let reopened = Cache::open(&payload, &journal, &chosen);
+        let mut reopened = Cache::open(&payload, &journal, &chosen);
         assert_eq!(reopened.done, 2, "two segments were whole");
-        assert_eq!(reopened.data.as_slice(), &b"firstsecond"[..]);
+        let mut data = Vec::new();
+        assert_eq!(
+            reopened
+                .replay(&mut |bytes| {
+                    data.extend_from_slice(bytes);
+                    Ok(())
+                })
+                .unwrap(),
+            11
+        );
+        assert_eq!(data, b"firstsecond");
         let _ = fs::remove_file(&payload);
         let _ = fs::remove_file(&journal);
     }
@@ -959,13 +993,16 @@ mod tests {
         file.write_all(b"half a seg").unwrap();
         drop(file);
 
-        let reopened = Cache::open(&payload, &journal, &chosen);
+        let mut reopened = Cache::open(&payload, &journal, &chosen);
         assert_eq!(reopened.done, 1);
-        assert_eq!(
-            reopened.data.as_slice(),
-            &b"first"[..],
-            "the tail belongs to a re-fetch"
-        );
+        let mut data = Vec::new();
+        reopened
+            .replay(&mut |bytes| {
+                data.extend_from_slice(bytes);
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(data, b"first", "the tail belongs to a re-fetch");
         let _ = fs::remove_file(&payload);
         let _ = fs::remove_file(&journal);
     }
@@ -1043,7 +1080,7 @@ mod tests {
         // The header decides, not a sniff of the bytes: a fragment with no
         // `EXT-X-MAP` in front of it is read as a transport stream, and the
         // error says so instead of guessing.
-        let error = tracks_of(b"\x00moof", None).unwrap_err();
+        let error = ts::demux(b"\x00moof").unwrap_err();
         let text = error.to_string();
         assert!(text.contains("transport stream"), "{text}");
     }

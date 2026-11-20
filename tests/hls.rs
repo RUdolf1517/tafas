@@ -954,3 +954,43 @@ fn a_segment_under_the_ceiling_is_still_written() {
     assert_eq!(report.segments, 1);
     assert!(out.exists());
 }
+
+/// Run this integration-test executable under a peak-RSS meter with
+/// `--ignored --exact long_transport_stream_memory`.
+#[test]
+#[ignore = "downloads a 128 MiB synthetic playlist for memory measurements"]
+fn long_transport_stream_memory() {
+    let count = 128;
+    let mut segment = ts_segment();
+    let mut padding = [0xff; 188];
+    padding[..4].copy_from_slice(&[0x47, 0x1f, 0xff, 0x10]);
+    while segment.len() < 1024 * 1024 {
+        segment.extend_from_slice(&padding);
+    }
+    let playlist = format!(
+        "#EXTM3U\n#EXT-X-TARGETDURATION:6\n{}#EXT-X-ENDLIST\n",
+        "#EXTINF:6.0,\nsegment.ts\n".repeat(count)
+    );
+    let server = TestServer::start(vec![
+        Route::ok("/media.m3u8", playlist.as_bytes()),
+        Route::ok("/segment.ts", &segment),
+    ]);
+    let dir = temp_dir("hls-memory");
+    let out = dir.join("clip.mp4");
+    let report = hlsfetch::fetch(
+        &client(),
+        &Url::parse(&server.url("/media.m3u8")).unwrap(),
+        &[],
+        Quality::Best,
+        Segments {
+            concurrent: 4,
+            ..Segments::default()
+        },
+        &out,
+        &mut |_| {},
+    )
+    .unwrap();
+    assert_eq!(report.segments, count);
+    assert_eq!(mux::verify(&out).unwrap().sample_total(), 4 * count as u64);
+    std::fs::remove_dir_all(dir).unwrap();
+}

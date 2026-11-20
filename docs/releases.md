@@ -164,114 +164,34 @@ promise this repository does not keep.
 
 ## 4. How a release is cut
 
-These steps were run for 0.2.0, which carried the whole roadmap
-([§1](#1-versioning)), and the same steps are run for every version after it:
-they were run for 0.2.1 and for 0.3.0. The procedure still
-waits for the roadmap, and that wait is over — the roadmap is finished — so what
-it produces now is an ordinary minor release rather than a first one.
-**Step 5 used to be a hand edit and is not any more**; it is the one step of the
-seven that 0.4.0 changed.
-**Step 7 is the only one that needs a credential**, and the only one whose
-result cannot be undone.
+The first release waits for the roadmap. Now that the roadmap is complete,
+the same process applies to each new version.
 
-For 0.4.0, steps 1–3 are done — the version is on `main` (`9ba9d48`) and the tag
-exists — and **step 4 has not run**: pushing the tag started `audit.yml` but not
-`release.yml`, because that workflow triggers on a *published* release rather
-than on a tag. So the release does not exist yet, no archive has been attached,
-and the formula on `main` is still in its declared-placeholder state, which is
-the state steps 4 and 5 exist to end. §4.2 is that gap and what closes it.
+1. Merge the new version in `Cargo.toml`, `Cargo.lock`, the manual and
+   `CHANGELOG.md`. Keep the existing Homebrew formula so installs keep working
+   while the draft builds.
+2. With your personal GitHub CLI session configured (`gh auth login` and
+   `gh auth setup-git`), run `python3 packaging/release.py vX.Y.Z`.
+   The command tags the version on the default branch, creates a draft and
+   waits for the five platform builds and their packages. It downloads the
+   assets and verifies them against `SHA256SUMS` before publishing the draft.
+3. Merge the Homebrew PR the command opens. Homebrew reads the new version from
+   the default branch after that merge. A retry with the same tag reuses the
+   release and the existing formula PR.
+4. The `publish` workflow handles crates.io when `CARGO_REGISTRY_TOKEN` is
+   configured. The owner can also use `./packaging/publish.sh`.
+   See [§4.1](#41-cratesio).
 
-1. `CHANGELOG.md` gets its section, `Cargo.toml` its version.
-2. The version is committed to `main` with the tag that will carry it.
-3. `git tag vX.Y.Z && git push origin vX.Y.Z`.
-4. The release workflow builds the five targets, packages them with the manual
-   page and the completions, builds the `.deb`/`.rpm` from the Linux tarball
-   with `nfpm` and the `.apk` from the same tarball with `packaging/apk.py`, copies
-   `install.ps1` into the assets, renders the winget manifests from the Windows
-   ZIP, writes the SBOM, writes `SHA256SUMS`, renders the AUR, Scoop, flake and
-   Homebrew files from those checksums, signs every file when the key is present,
-   and attaches everything to the release.
-5. After the release publishes its assets, download its `SHA256SUMS` and run
-   `python3 packaging/channels.py --tag "$TAG" --artifacts artifacts --output-dir /tmp/tafas-channels`.
-   Copy the generated `Formula/tafas.rb` into the checkout, verify it with
-   `python3 packaging/tests/formula.py --release "$TAG"`, and commit the verified
-   formula. The same generator renders the AUR, Scoop and flake files.
+### 4.2 Retrying a release
 
-   Between a version bump and its tag the formula names a release that does not
-   exist yet, so its four hashes are placeholders. That state is declared on a
-   line the generator writes — `# unpublished: vX.Y.Z has not been built` — and
-   the two checks read it rather than guessing:
+Run `python3 packaging/release.py vX.Y.Z` again after fixing the workflow.
+The command reuses the existing tag and draft. It waits for an active build
+and redispatches when a draft is missing valid assets. A published release
+with valid assets skips rebuilding and proceeds to the formula.
 
-   | Formula | `tests/packaging.rs` | `formula.py` |
-   | --- | --- | --- |
-   | zeros **and** the declaration | passes; the file is what the generator writes for an unpublished version | passes, and says the hashes are placeholders rather than calling them the release's |
-   | zeros **without** the declaration | fails: a hash is missing, or the explanation was edited out | fails: "the formula carries a placeholder, not a hash" |
-   | the declaration while the release **exists** | — | fails: the release answers with checksums, so the placeholders should have been real |
 
-   The declaration is never taken on trust from the file alone: `formula.py`
-   asks GitHub whether that tag has a release, and a version that claims to be
-   unpublished while its release is live is the exact shape of "the zeros are
-   still there and somebody wrote a comment about it".
-6. `cargo install` works from the tag without any additional publication step.
-7. crates.io: either `./packaging/publish.sh` from the owner's machine, or the
-   `publish` workflow on the published release once `CARGO_REGISTRY_TOKEN` is in
-   the repository's secrets — whichever runs second does nothing. See
-   [§4.1](#41-cratesio).
-
-### 4.2 When step 3 does not start step 4
-
-`release.yml` listens for `release: types: [published]`, not for a tag, so that
-the notes can be written before the binaries are attached. That choice is fine
-and this is its cost: a pushed tag on its own publishes nothing, and the
-artifacts — the archives, the `.deb`/`.rpm`/`.apk`, the winget manifests, the
-SBOM, `SHA256SUMS`, the four channel files, the signatures — are exactly what
-step 4 and step 5 need. Until they exist, the formula's hashes stay
-placeholders, and `packaging/tests/formula.py` says so instead of calling them
-wrong.
-
-**Closing it, without a new tag.** The tag is already pushed and is what the
-release must point at, so the thing to create is the release, not the tag:
-
-```
-# the notes are the CHANGELOG section for this version
-gh release create v0.4.0 --title "0.4.0 — ..." --notes-file /tmp/notes.md --verify-tag
-```
-
-`--verify-tag` makes the release attach to the tag that exists instead of
-inventing one, and `published` then fires `release.yml`, which builds and
-uploads everything and commits the regenerated formula. The alternative,
-`workflow_dispatch` on `release.yml` with `tag: v0.4.0`, builds the same
-artifacts but attaches them to a release that still has to be created.
-
-A draft release is the honest middle: `--draft` creates it without firing
-`release.yml`, so the notes can be reviewed first, and publishing the draft is
-the event that starts the build.
-
-**What to check afterwards**, in the order the failures would show up:
-
-1. `release.yml` completed for all five targets.
-2. `releases/download/v0.4.0/SHA256SUMS` exists, and the formula on `main` no
-   longer says `# unpublished` and no longer carries zeroes — step 5 committed
-   the real hashes back.
-3. `packaging/tests/formula.py --release v0.4.0` passes with no placeholder
-   language in its output.
-4. `audit.yml` is green on the tag, which it has never been before (§4.1 note
-   in `docs/dependencies.md`).
-
-Step 3 also starts `audit.yml`, which runs `cargo audit` on the tag: the last
-moment before the archives go out at which an advisory against a crate in the
-lock file is still a reason to stop. That job was red on every tag until 0.4.0
-for a reason that had nothing to do with the graph — it passed `cargo audit` a
-flag only `cargo deny` has (§4.1 in `docs/dependencies.md`) — so for the first
-time that check is about the tree rather than about its own command line. It is
-not a gate on the release — that would require the release to wait on a database
-it does not control — but a red run on a tag is read before the release notes
-are written, not after. Everything else
-about the graph is checked per commit, by `licenses`.
-
-Nothing is built on a developer machine. The workflow is the only place a
-shipped binary is produced, which is what makes "the archive contains what the
-tag contains" a property rather than a hope.
+The tag also starts `audit.yml`, which runs `cargo audit` against the tagged
+lockfile. Check the advisory report separately from the artifact build.
 
 ### 4.1 crates.io
 

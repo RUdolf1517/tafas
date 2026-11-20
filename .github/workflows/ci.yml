@@ -45,6 +45,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 packaging/channels.py --self-test
+          python3 packaging/tests/release.py
           # The generator refuses an archive that is not exactly `tafas.exe` and
           # `LICENSE`, so the stand-in is a real ZIP with those two entries.
           mkdir -p /tmp/winget-check/build

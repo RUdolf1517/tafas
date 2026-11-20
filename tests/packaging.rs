@@ -574,21 +574,26 @@ fn the_changelog_describes_the_version_being_published() {
 /// `PKGBUILD`, the Scoop manifest and `flake.nix`, so there is nothing left to
 /// paste.
 ///
-/// Two things follow, and this test is both of them: the formula's version is the
-/// crate's version, and the file in the tree is byte for byte what the generator
-/// would write for that version. The second is what makes "generated" a fact
-/// rather than a comment in the header — a hash edited by hand, a block
-/// reordered, a version bumped in one place and not the other all fail here.
+/// The formula must match the generator for the version it installs. It can
+/// stay on the previous release while the next version is being packaged.
 #[test]
 fn the_homebrew_formula_names_hashes_the_release_published() {
     let formula = read("Formula/tafas.rb");
-    let version = env!("CARGO_PKG_VERSION");
-
-    // The formula's version and the crate's are one number: the archives it
-    // downloads live under `v<version>`, which is the crate's version.
+    let version = formula
+        .lines()
+        .find_map(|line| line.strip_prefix("  version \"")?.strip_suffix('"'))
+        .expect("Formula/tafas.rb has a version");
+    let parse = |version: &str| {
+        let components: Vec<u64> = version
+            .split('.')
+            .map(|part| part.parse().expect("a numeric version component"))
+            .collect();
+        assert_eq!(components.len(), 3, "expected a release version: {version}");
+        components
+    };
     assert!(
-        formula.contains(&format!("  version \"{version}\"")),
-        "Formula/tafas.rb does not say version {version}"
+        parse(version) <= parse(env!("CARGO_PKG_VERSION")),
+        "Formula/tafas.rb points to a version newer than the crate"
     );
 
     // A zeroed hash is a placeholder, and a placeholder is an install that fails
@@ -603,6 +608,7 @@ fn the_homebrew_formula_names_hashes_the_release_published() {
     let placeholders = formula.contains(&format!("sha256 \"{zeroes}\""));
     let declared = format!("# unpublished: v{version} has not been built");
     if placeholders {
+        assert_eq!(version, env!("CARGO_PKG_VERSION"));
         assert!(
             formula.contains(&declared),
             "Formula/tafas.rb carries a zero-filled sha256 and does not declare \
