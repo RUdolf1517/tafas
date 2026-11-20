@@ -43,19 +43,17 @@ pub fn sanitize(text: &str) -> String {
         });
     }
 
-    let mut cleaned = out
-        .trim()
-        .trim_end_matches('.')
-        .trim_end_matches(' ')
-        .to_string();
-    cleaned = truncate(cleaned, MAX_STEM_BYTES);
+    let mut cleaned = truncate(out, MAX_STEM_BYTES);
+    cleaned.truncate(cleaned.trim_end_matches(['.', ' ']).len());
 
     if cleaned.is_empty() {
         return "untitled".to_string();
     }
-    if RESERVED.contains(&cleaned.to_ascii_lowercase().as_str()) {
+    let base = cleaned.split('.').next().unwrap_or_default().trim_end();
+    if RESERVED.iter().any(|name| base.eq_ignore_ascii_case(name)) {
         // A file called `nul` cannot be created on Windows; prefixing keeps the
         // name recognisable instead of dropping the title entirely.
+        cleaned = truncate(cleaned, MAX_STEM_BYTES - 1);
         cleaned.insert(0, '_');
     }
     cleaned
@@ -240,6 +238,8 @@ mod tests {
     fn collapses_and_trims_whitespace() {
         assert_eq!(sanitize("  a   b  "), "a b");
         assert_eq!(sanitize("ends with dots..."), "ends with dots");
+        assert_eq!(sanitize("ends with dots . . "), "ends with dots");
+        assert_eq!(sanitize("NUL.txt"), "_NUL.txt");
     }
 
     #[test]

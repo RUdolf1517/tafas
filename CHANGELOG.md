@@ -13,6 +13,21 @@ version; adding a site, a flag or a container is minor. The policy is in
 
 Nothing yet.
 
+## [0.4.1] - 2026-11-20
+
+### Fixed
+
+- Resolve relative HLS URLs after redirects, fetch direct media playlists once,
+  and report the duration of the selected segments.
+- Make output names with Windows device prefixes safe and restore locked builds
+  on Rust 1.82.
+
+### Changed
+
+- Decrypt HLS segments in place and use binary search for playlist item ranges.
+- Reduce the Apple Silicon release binary and reuse dependencies in the CI
+  feature check.
+
 ## [0.4.0] - 2026-11-15
 
 ### Added

@@ -23,6 +23,7 @@ use std::time::Duration;
 pub struct Route {
     pub path: String,
     pub body: Vec<u8>,
+    pub location: Option<String>,
     /// Answer this many requests with a 5xx before answering normally.
     pub fail_first: usize,
     /// Honour `Range` with a 206, or ignore it with a 200.
@@ -56,6 +57,7 @@ impl Route {
         Route {
             path: path.to_string(),
             body: body.to_vec(),
+            location: None,
             fail_first: 0,
             support_range: true,
             truncate_by: 0,
@@ -298,6 +300,16 @@ fn handle_connection(
         Some(route) => route,
         None => return write_response(&mut stream, 404, "Not Found", b"no route", None),
     };
+
+    if let Some(location) = &route.location {
+        return write_response(
+            &mut stream,
+            302,
+            "Found",
+            b"",
+            Some(&format!("Location: {location}")),
+        );
+    }
 
     // `truncate_by` keeps the declared length honest and cuts the bytes sent,
     // which is what a connection dropped mid-transfer actually looks like.
