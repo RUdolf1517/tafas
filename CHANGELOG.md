@@ -13,6 +13,15 @@ version; adding a site, a flag or a container is minor. The policy is in
 
 Nothing yet.
 
+## [0.4.2] - 2026-11-20
+
+### Changed
+
+- Demux MPEG-TS HLS as segments arrive, including the cached prefix on resume.
+  Limit the number of out-of-order segments buffered during parallel downloads.
+- Build and verify GitHub release assets in a draft before publishing. The
+  release command opens a Homebrew formula PR with the verified checksums.
+
 ## [0.4.1] - 2026-11-20
 
 ### Fixed
