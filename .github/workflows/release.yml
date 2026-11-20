@@ -247,9 +247,10 @@ jobs:
         run: |
           set -euo pipefail
           version="${TAG#v}"
-          python3 packaging/channels.py --tag "$TAG" --artifacts artifacts
+          channels="$(mktemp -d)"
+          python3 packaging/channels.py --tag "$TAG" --artifacts artifacts --output-dir "$channels"
           tar czf "artifacts/tafas-channels-${version}.tar.gz" \
-            -C packaging aur scoop flake
+            -C "$channels" aur scoop flake
           ls -l "artifacts/tafas-channels-${version}.tar.gz"
           tar tzf "artifacts/tafas-channels-${version}.tar.gz"
 
