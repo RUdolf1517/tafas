@@ -73,18 +73,15 @@ jobs:
           set -euo pipefail
           echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
           echo "CARGO_INCREMENTAL=0" >> "$GITHUB_ENV"
-          {
-            echo 'RUSTFLAGS<<__TAFAS_RUSTFLAGS__'
-            # `GITHUB_WORKSPACE` rather than `pwd`: on the Windows runner the shell
-            # spells the checkout `/d/a/...` while rustc is handed `D:\a\...`.
-            echo "--remap-path-prefix=${GITHUB_WORKSPACE:-$(pwd)}=/build"
-            echo "--remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo"
-            # RUSTFLAGS overrides target flags from .cargo/config.toml.
-            if [[ "${{ matrix.target }}" == aarch64-apple-darwin ]]; then
-              echo '-C llvm-args=-enable-machine-outliner=always'
-            fi
-            echo '__TAFAS_RUSTFLAGS__'
-          } >> "$GITHUB_ENV"
+          # Encoded flags preserve paths containing spaces and separate each
+          # argument with Cargo's ASCII unit separator.
+          flags=( "--remap-path-prefix=${GITHUB_WORKSPACE:-$(pwd)}=/build"
+                  "--remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo" )
+          # Environment flags override target flags from .cargo/config.toml.
+          if [[ "${{ matrix.target }}" == aarch64-apple-darwin ]]; then
+            flags+=( "-Cllvm-args=-enable-machine-outliner=always" )
+          fi
+          ( IFS=$'\x1f'; printf 'CARGO_ENCODED_RUSTFLAGS=%s\n' "${flags[*]}" ) >> "$GITHUB_ENV"
 
       - name: Install musl tooling
         if: matrix.target == 'x86_64-unknown-linux-musl'
