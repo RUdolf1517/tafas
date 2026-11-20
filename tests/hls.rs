@@ -49,11 +49,14 @@ fn media_playlist(segment: &str) -> String {
 }
 
 #[test]
-fn a_media_playlist_becomes_an_mp4() {
+fn a_media_playlist_becomes_an_mp4_after_a_redirect() {
     let segment = ts_segment();
+    let mut redirect = Route::ok("/media.m3u8", b"");
+    redirect.location = Some("/stream/media.m3u8".to_string());
     let server = TestServer::start(vec![
-        Route::ok("/media.m3u8", media_playlist("seg1.ts").as_bytes()),
-        Route::ok("/seg1.ts", &segment),
+        redirect,
+        Route::ok("/stream/media.m3u8", media_playlist("seg1.ts").as_bytes()),
+        Route::ok("/stream/seg1.ts", &segment),
     ]);
     let out = temp_dir("hls-media").join("clip.mp4");
     let url = Url::parse(&server.url("/media.m3u8")).unwrap();
@@ -70,6 +73,8 @@ fn a_media_playlist_becomes_an_mp4() {
     )
     .expect("the pipeline should accept a plain media playlist");
 
+    assert_eq!(server.hits("/media.m3u8"), 1);
+    assert_eq!(server.hits("/stream/media.m3u8"), 1);
     assert_eq!(report.segments, 1);
     assert_eq!(
         seen,
@@ -452,6 +457,7 @@ fn a_playlist_selection_fetches_only_the_segments_it_names() {
     .expect("one segment out of three is still a stream");
 
     assert_eq!(report.segments, 1);
+    assert_eq!(report.duration_ms, 2_000);
     assert_eq!(server.hits("/seg1.ts"), 1);
     assert_eq!(
         server.hits("/seg2.ts"),

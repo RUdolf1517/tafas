@@ -79,6 +79,10 @@ jobs:
             # spells the checkout `/d/a/...` while rustc is handed `D:\a\...`.
             echo "--remap-path-prefix=${GITHUB_WORKSPACE:-$(pwd)}=/build"
             echo "--remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo"
+            # RUSTFLAGS overrides target flags from .cargo/config.toml.
+            if [[ "${{ matrix.target }}" == aarch64-apple-darwin ]]; then
+              echo '-C llvm-args=-enable-machine-outliner=always'
+            fi
             echo '__TAFAS_RUSTFLAGS__'
           } >> "$GITHUB_ENV"
 
@@ -243,9 +247,10 @@ jobs:
         run: |
           set -euo pipefail
           version="${TAG#v}"
-          python3 packaging/channels.py --tag "$TAG" --artifacts artifacts
+          channels="$(mktemp -d)"
+          python3 packaging/channels.py --tag "$TAG" --artifacts artifacts --output-dir "$channels"
           tar czf "artifacts/tafas-channels-${version}.tar.gz" \
-            -C packaging aur scoop flake
+            -C "$channels" aur scoop flake
           ls -l "artifacts/tafas-channels-${version}.tar.gz"
           tar tzf "artifacts/tafas-channels-${version}.tar.gz"
 
@@ -328,38 +333,6 @@ jobs:
           trap 'rm -f /tmp/minisign.key' EXIT
           sh packaging/sign.sh artifacts /tmp/minisign.key packaging/minisign.pub
           ls -l artifacts/*.minisig artifacts/minisign.pub
-
-      # The formula is generated, and the four hashes it carries cannot exist
-      # before the archives do — so it is regenerated here, once they do, and
-      # committed back. This replaces the hand edit that shipped four zeroes in
-      # 0.3.0: nothing is typed, so nothing can be typed wrong.
-      #
-      # It runs after `Checksums` because it reads them, and before the release
-      # is published so the tap's `main` is correct the moment the tag is out. A
-      # push to a protected branch needs a token that may push to it; when that
-      # is absent the step says so and the formula stays behind, which is the
-      # state `tests/packaging.rs` refuses rather than hides.
-      - name: Regenerate the Homebrew formula
-        shell: bash
-        env:
-          TAG: ${{ inputs.tag || github.event.release.tag_name }}
-        run: |
-          set -euo pipefail
-          python3 packaging/channels.py --tag "$TAG" --artifacts artifacts --output-dir /tmp/channels
-          cp /tmp/channels/Formula/tafas.rb Formula/tafas.rb
-          if git diff --quiet -- Formula/tafas.rb; then
-            echo "Formula/tafas.rb already describes $TAG"
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Formula/tafas.rb
-          git commit -m "formula: the hashes ${TAG} actually published"
-          git push origin "HEAD:${GITHUB_REF_NAME}" || {
-            echo "could not push the formula commit; regenerate it by hand:" >&2
-            echo "  python3 packaging/channels.py --tag $TAG --artifacts artifacts" >&2
-            exit 0
-          }
 
       - name: Attach to the release
         env:

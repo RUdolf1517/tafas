@@ -261,9 +261,22 @@ impl Http {
 
     /// A page as text, with a hard ceiling.
     pub fn get_text(&self, url: &str, headers: &[(&str, &str)]) -> Result<String> {
+        read_bounded(self.page(url, headers)?, MAX_HTML_BYTES)
+    }
+
+    pub(crate) fn get_text_at(
+        &self,
+        url: &crate::url::Url,
+        headers: &[(&str, &str)],
+    ) -> Result<(String, crate::url::Url)> {
+        let response = self.page(&url.to_string(), headers)?;
+        let resolved = crate::url::Url::parse(response.url().as_str())?;
+        Ok((read_bounded(response, MAX_HTML_BYTES)?, resolved))
+    }
+
+    fn page(&self, url: &str, headers: &[(&str, &str)]) -> Result<Response> {
         let response = self.execute("page", || self.prepare(url, headers))?;
-        let response = self.classify("page", url, response)?;
-        read_bounded(response, MAX_HTML_BYTES)
+        self.classify("page", url, response)
     }
 
     /// A small body — one HLS segment, one key — read into memory on purpose:

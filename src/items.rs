@@ -15,8 +15,8 @@ pub struct Items {
     /// The text the user typed, kept for messages: echoing it back is more
     /// useful than reprinting a normalised form they did not write.
     spec: String,
-    /// Inclusive, 1-based. `None` as the end means "to the end of the list".
-    ranges: Vec<(usize, Option<usize>)>,
+    /// Sorted, disjoint, inclusive 1-based ranges.
+    ranges: Vec<(usize, usize)>,
 }
 
 impl Items {
@@ -40,46 +40,57 @@ impl Items {
             let (start, end) = match part.split_once('-') {
                 None => {
                     let index = number(part, text)?;
-                    (index, Some(index))
+                    (index, index)
                 }
                 Some((start, end)) => {
                     let start = number(start.trim(), text)?;
                     let end = if end.trim().is_empty() {
-                        None
+                        usize::MAX
                     } else {
-                        Some(number(end.trim(), text)?)
+                        number(end.trim(), text)?
                     };
                     (start, end)
                 }
             };
-            if let Some(end) = end {
-                if end < start {
-                    return Err(Error::Usage(format!(
-                        "'{part}' runs backwards: {end} comes before {start}"
-                    )));
-                }
+            if end < start {
+                return Err(Error::Usage(format!(
+                    "'{part}' runs backwards: {end} comes before {start}"
+                )));
             }
             ranges.push((start, end));
         }
 
+        ranges.sort_unstable();
+        let mut merged: Vec<(usize, usize)> = Vec::new();
+        for (start, end) in ranges {
+            if let Some((_, previous_end)) = merged.last_mut() {
+                if start <= previous_end.saturating_add(1) {
+                    *previous_end = (*previous_end).max(end);
+                    continue;
+                }
+            }
+            merged.push((start, end));
+        }
+
         Ok(Items {
             spec: text.to_string(),
-            ranges,
+            ranges: merged,
         })
     }
 
     /// Whether the entry at `index` (1-based) is selected.
     pub fn contains(&self, index: usize) -> bool {
-        self.ranges.iter().any(|(start, end)| match end {
-            Some(end) => (*start..=*end).contains(&index),
-            None => index >= *start,
-        })
+        let next = self.ranges.partition_point(|(start, _)| *start <= index);
+        next > 0 && index <= self.ranges[next - 1].1
     }
 
-    /// How many entries of a list of `length` this selects. Used to refuse a
-    /// selection that matches nothing instead of writing an empty file.
+    /// How many entries of a list of `length` this selects.
     pub fn count_within(&self, length: usize) -> usize {
-        (1..=length).filter(|index| self.contains(*index)).count()
+        self.ranges
+            .iter()
+            .take_while(|(start, _)| *start <= length)
+            .map(|(start, end)| (*end).min(length) - *start + 1)
+            .sum()
     }
 }
 
@@ -134,11 +145,12 @@ mod tests {
         assert!(!list.contains(3));
         assert!(list.contains(4));
         assert!(list.contains(10_000));
+        assert_eq!(list.count_within(usize::MAX), usize::MAX - 3);
     }
 
     #[test]
     fn a_mix_is_the_union() {
-        let list = items("1-2,5,8-9");
+        let list = items("8-9,5,1-2,2,9");
         let taken: Vec<usize> = (1..=10).filter(|index| list.contains(*index)).collect();
         assert_eq!(taken, vec![1, 2, 5, 8, 9]);
         assert_eq!(list.count_within(10), 5);

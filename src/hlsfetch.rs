@@ -142,23 +142,25 @@ pub fn fetch(
         .map(|(name, value)| (name.as_str(), value.as_str()))
         .collect();
 
-    let text = http.get_text(&url.to_string(), &borrowed)?;
-    let playlist = Playlist::parse(&text, url)?;
-
-    let (video_url, audio_url, dimensions) = match &playlist {
-        Playlist::Media(_) => (url.clone(), None, (0, 0)),
+    let (text, resolved) = http.get_text_at(url, &borrowed)?;
+    let (video_media, video_url, audio_url, dimensions) = match Playlist::parse(&text, &resolved)? {
+        Playlist::Media(media) => (media, resolved, None, (0, 0)),
         Playlist::Master(master) => {
             let variant = master.choose(quality).ok_or_else(|| {
-                Error::Parse(format!("{url}: the master playlist names no variants"))
+                Error::Parse(format!("{resolved}: the master playlist names no variants"))
             })?;
             let audio = master
                 .audio_for(variant)
                 .and_then(|rendition| rendition.uri.clone());
-            (variant.uri.clone(), audio, (variant.width, variant.height))
+            (
+                media_playlist(http, &variant.uri, &borrowed)?,
+                variant.uri.clone(),
+                audio,
+                (variant.width, variant.height),
+            )
         }
     };
-
-    let video_media = media_playlist(http, &video_url, &borrowed)?;
+    check(&video_media, &video_url)?;
     let video_segments = selected(&video_media, items, &video_url)?;
     let mut segments = 0usize;
     // The init segment is fetched once, before the media segments: it is what
@@ -189,10 +191,11 @@ pub fn fetch(
         &mut video_cache,
     )?;
     let mut tracks = tracks_of(&video_bytes, video_map.as_deref())?;
-    let mut duration = video_media.total_duration();
+    drop(video_bytes);
+    let mut duration: f64 = video_segments.iter().map(|segment| segment.duration).sum();
     let video_has_audio = tracks.iter().any(|track| track.kind == TrackKind::Audio);
     let mut warnings = Vec::new();
-    if let Some(warning) = video_cache.warning.clone() {
+    if let Some(warning) = video_cache.warning.take() {
         warnings.push(warning);
     }
     if items.is_some() {
@@ -217,6 +220,7 @@ pub fn fetch(
     let mut resumed_audio = 0usize;
     if let Some(audio_url) = audio_url.filter(|_| !video_has_audio) {
         let audio_media = media_playlist(http, &audio_url, &borrowed)?;
+        check(&audio_media, &audio_url)?;
         let audio_segments = selected(&audio_media, items, &audio_url)?;
         let audio_map = init_section(http, &audio_media, &borrowed, on_bytes)?;
         let mut audio_cache = match resume {
@@ -240,7 +244,7 @@ pub fn fetch(
             &mut segments,
             &mut audio_cache,
         )?;
-        if let Some(warning) = audio_cache.warning.clone() {
+        if let Some(warning) = audio_cache.warning.take() {
             warnings.push(warning);
         }
         let audio = tracks_of(&audio_bytes, audio_map.as_deref())?;
@@ -255,7 +259,7 @@ pub fn fetch(
                 )))
             }
         }
-        duration = duration.max(audio_media.total_duration());
+        duration = duration.max(audio_segments.iter().map(|segment| segment.duration).sum());
     }
 
     let report = mp4write::write(&tracks, dimensions, out)?;
@@ -271,14 +275,11 @@ pub fn fetch(
     })
 }
 
-/// One segment list, with the gates crossed.
+/// Fetch and parse one segment list.
 fn media_playlist(http: &Http, url: &Url, headers: &[(&str, &str)]) -> Result<Media> {
-    let text = http.get_text(&url.to_string(), headers)?;
-    match Playlist::parse(&text, url)? {
-        Playlist::Media(media) => {
-            check(&media, url)?;
-            Ok(media)
-        }
+    let (text, resolved) = http.get_text_at(url, headers)?;
+    match Playlist::parse(&text, &resolved)? {
+        Playlist::Media(media) => Ok(media),
         Playlist::Master(_) => Err(Error::Parse(format!(
             "{url}: expected a list of segments, found a list of variants"
         ))),
@@ -377,10 +378,9 @@ fn resolve_key(
 /// A segment that does not decrypt — a wrong key, a wrong IV, a truncated
 /// body — is a failure rather than something to write out and hope for: the
 /// padding check is the only integrity signal there is.
-fn decrypt(data: &[u8], key: [u8; KEY_BYTES], iv: [u8; 16]) -> Result<Vec<u8>> {
+fn decrypt(mut buffer: Vec<u8>, key: [u8; KEY_BYTES], iv: [u8; 16]) -> Result<Vec<u8>> {
     use aes::cipher::{block_padding::Pkcs7, BlockDecryptMut, KeyIvInit};
 
-    let mut buffer = data.to_vec();
     let clear_length = cbc::Decryptor::<aes::Aes128>::new(&key.into(), &iv.into())
         .decrypt_padded_mut::<Pkcs7>(&mut buffer)
         .map_err(|_| {
@@ -500,7 +500,7 @@ fn fetch_segment(
         limit,
     )?;
     if let Some((key_bytes, iv)) = key {
-        bytes = decrypt(&bytes, key_bytes, iv)?;
+        bytes = decrypt(bytes, key_bytes, iv)?;
     }
     Ok(bytes)
 }
@@ -992,7 +992,7 @@ mod tests {
         // A body that is not a whole number of blocks cannot be a padded
         // CBC stream, whatever the key says. The padding check is the only
         // integrity signal an AES-128 segment carries.
-        let error = decrypt(&[0x42; 17], [0u8; 16], [0u8; 16]).unwrap_err();
+        let error = decrypt(vec![0x42; 17], [0u8; 16], [0u8; 16]).unwrap_err();
         assert!(error.to_string().contains("did not decrypt"), "{error}");
     }
 

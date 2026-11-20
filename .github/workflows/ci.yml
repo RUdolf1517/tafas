@@ -29,7 +29,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy
+          components: clippy
 
       # The generators are Python, and three of them produce files that ship.
       # They are exercised here rather than only in the release job, because a
@@ -102,7 +102,7 @@ jobs:
         if: ${{ !cancelled() }}
         continue-on-error: true
         shell: bash
-        run: cargo clippy --all-targets -- -D warnings 2>&1 | tee clippy.log
+        run: cargo clippy --locked --all-targets -- -D warnings 2>&1 | tee clippy.log
 
       # `--all-targets` covers the unit, integration, example and bench targets
       # and deliberately *not* the doc-tests, which are their own target group.
@@ -127,9 +127,9 @@ jobs:
           # group in a pipeline is a subshell, so the status it sets is discarded
           # and the step reports success while the log shows a panic.
           status=0
-          { cargo test --all-targets; } 2>&1 | tee test.log | tail -n 40
+          { cargo test --locked --all-targets; } 2>&1 | tee test.log | tail -n 40
           [ "${PIPESTATUS[0]}" -eq 0 ] || status=1
-          { cargo test --doc; } 2>&1 | tee -a test.log | tail -n 40
+          { cargo test --locked --doc; } 2>&1 | tee -a test.log | tail -n 40
           [ "${PIPESTATUS[0]}" -eq 0 ] || status=1
           exit "$status"
 
@@ -138,7 +138,7 @@ jobs:
         if: ${{ !cancelled() }}
         continue-on-error: true
         shell: bash
-        run: cargo build --release 2>&1 | tee build.log
+        run: cargo build --release --locked 2>&1 | tee build.log
 
       - name: Publish the failure
         if: always() && (steps.channels.outcome == 'failure' || steps.clippy.outcome == 'failure' || steps.test.outcome == 'failure' || steps.build.outcome == 'failure')
@@ -348,16 +348,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # A different target directory, so the full build below cannot be
-          # served a binary that was compiled without the other six sites.
-          CARGO_TARGET_DIR=target/one \
-            cargo build --release --locked --no-default-features --features youtube \
+          # Save the full binary before Cargo replaces it. Both variants can
+          # use the same compiled dependencies.
+          cp target/release/tafas target/release/tafas-full
+          cargo build --release --locked --no-default-features --features youtube \
             2>&1 | tee features.log
 
       - name: Check what the one-site build is
         if: steps.one.outcome == 'success'
         shell: bash
-        run: python3 packaging/tests/features.py target/one/release/tafas target/release/tafas
+        run: python3 packaging/tests/features.py target/release/tafas target/release/tafas-full
 
       - name: Publish the failure
         if: steps.one.outcome == 'failure'

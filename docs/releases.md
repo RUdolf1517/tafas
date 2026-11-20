@@ -191,18 +191,11 @@ the state steps 4 and 5 exist to end. §4.2 is that gap and what closes it.
    ZIP, writes the SBOM, writes `SHA256SUMS`, renders the AUR, Scoop, flake and
    Homebrew files from those checksums, signs every file when the key is present,
    and attaches everything to the release.
-5. The Homebrew formula is regenerated from `SHA256SUMS` and committed back, by
-   the release job itself. It used to be the one hand edit in this list, and that
-   is exactly what went wrong: 0.3.0 was tagged with four zeroes in the formula,
-   so `brew install` would have refused the archive it had just downloaded.
-   `packaging/channels.py` now renders `Formula/tafas.rb` the way it renders the
-   `PKGBUILD`, the Scoop manifest and `flake.nix`, and the step is that command
-   with `--tag "$TAG" --artifacts artifacts`. If the push is refused — a protected
-   branch and a token that may not push to it — the step says so and the run
-   continues. What is left behind is still visible: `tests/packaging.rs` compares
-   the checked-in file with what the generator writes, and CI runs
-   `packaging/tests/formula.py` against the *published* release on every pull
-   request. Nothing is pasted, so nothing can be pasted wrong.
+5. After the release publishes its assets, download its `SHA256SUMS` and run
+   `python3 packaging/channels.py --tag "$TAG" --artifacts artifacts --output-dir /tmp/tafas-channels`.
+   Copy the generated `Formula/tafas.rb` into the checkout, verify it with
+   `python3 packaging/tests/formula.py --release "$TAG"`, and commit the verified
+   formula. The same generator renders the AUR, Scoop and flake files.
 
    Between a version bump and its tag the formula names a release that does not
    exist yet, so its four hashes are placeholders. That state is declared on a
