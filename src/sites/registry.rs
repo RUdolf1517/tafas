@@ -154,7 +154,7 @@ pub const READERS: &[Reader] = &[
     #[cfg(feature = "twitch")]
     Reader {
         name: "twitch",
-        hosts: &["twitch.tv"],
+        hosts: &["twitch.tv", "clips.twitch.tv"],
         args: false,
         listing: Some(super::twitch_collection::listing),
         video: super::twitch::extract,

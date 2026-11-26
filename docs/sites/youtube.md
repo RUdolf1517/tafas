@@ -38,6 +38,11 @@ like when it happens, what happens when a site changes, and the
 | 4 | `TVHTML5_SIMPLY_EMBEDDED_PLAYER` | the embedded player, which some videos allow when others do not |
 | 5 | `WEB` | last, because it is the most likely to demand a challenge |
 
+With a signed-in YouTube session from `--cookies FILE`, the watch page is
+followed by authenticated `WEB` and `TVHTML5` player requests before the
+anonymous clients. With an explicit `youtube:client` pin, use `web` to
+authenticate the player request.
+
 The first response that yields at least one directly playable format wins. The
 formats remember which client produced them, and `--list-formats` shows it in
 `-v` output.
@@ -76,16 +81,21 @@ that matter:
 
 | Status / reason | Output |
 | --- | --- |
-| `LOGIN_REQUIRED` + "Sign in to confirm you're not a bot" | refusal naming the check; cookies from `--cookies` are sent, no challenge is solved |
+| `LOGIN_REQUIRED` + "Sign in to confirm you're not a bot" | asks for a signed-in cookie export or for a fresh export if the supplied session was refused |
 | `AGE_VERIFICATION_REQUIRED` / "inappropriate for some users" | refusal naming the age gate |
 | `UNPLAYABLE`, `ERROR`, region block | refusal quoting the site's own sentence |
 
-v0.1.0 had no `--cookies` flag, on the grounds that a cookie jar turns a
-stateless command into something that can act as a logged-in account. v0.2 adds
-one with that cost stated: the file is read **once**, sent only to the hosts its
-domains match, never written back, and never logged. tafas still has no sign-in
-flow and stores nothing between runs — the file is the user's, and using it is
-the user's decision. Details in [safety §5](../safety.md#5-network).
+Sign in to YouTube in your browser and export the site's cookies as a Netscape
+cookie file. Then run:
+
+```sh
+tafas --cookies ~/youtube-cookies.txt 'https://www.youtube.com/watch?v=VIDEO_ID'
+```
+
+The file is read once and stays on your machine. Keep it private because it
+contains session credentials. If YouTube still requires sign-in, refresh the
+export. A valid session can still receive signature-protected formats.
+Details in [safety §5](../safety.md#5-network).
 
 ## 5. Captions, and the languages a video does not have
 

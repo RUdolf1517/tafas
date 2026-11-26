@@ -117,6 +117,11 @@ impl Http {
         self
     }
 
+    #[cfg(feature = "youtube")]
+    pub(crate) fn cookie_value(&self, url: &Url, name: &str) -> Option<&str> {
+        self.cookies.as_ref()?.value(url, name)
+    }
+
     /// `--limit-rate`: caps the bytes this client streams to a sink.
     ///
     /// The budget is one per client, so `--jobs` and `--concurrent-fragments`

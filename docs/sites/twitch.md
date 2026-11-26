@@ -15,13 +15,13 @@ like when it happens, what happens when a site changes, and the
 
 One batched GraphQL request carries two operations:
 
-1. `PlaybackAccessToken`, asked by persisted-query hash with the **public web
+1. `videoPlaybackAccessToken(id:)`, asked with the **public web
    client id** in a `client-id` header. It answers `value` and `signature`;
 2. `video(id:)` for the title, the uploader, the length and the poster — so a
    capture does not pay a second round trip just to name the file.
 
 Those two values become the playlist URL:
-`https://usher.ttvnw.net/vod/<id>.m3u8?...&nauth=<token>&nauthsig=<signature>`.
+`https://usher.ttvnw.net/vod/<id>.m3u8?...&token=<token>&sig=<signature>`.
 `value` is a JSON document, so it is percent-encoded before it goes in the query
 string; `signature` is a signature over it and is sent as it arrived. `hlsfetch`
 then assembles the playlist like any other — the renditions are MPEG-TS, and the
@@ -79,7 +79,7 @@ is what this build takes.
 | Situation | Result |
 | --- | --- |
 | a channel URL (`twitch.tv/<name>`) | unsupported (1): a live stream has no end, and a file needs one |
-| `streamPlaybackAccessToken` null | refusal (1): expired, deleted, or subscriber-only; `--cookies FILE` is named |
+| `videoPlaybackAccessToken` null | refusal (1): expired, deleted, or subscriber-only; `--cookies FILE` is named |
 | a token without `value` or without `signature` | refusal (1) naming which field is missing |
 | an `errors` array in the answer | refusal (1) quoting the API's own message, because a changed persisted-query hash arrives exactly that way |
 | a clip slug the API does not know | refusal naming both shapes that work: `clips.twitch.tv/<slug>` and `/clip/` |

@@ -929,6 +929,7 @@ dependencies = [
  "clap",
  "clap_complete",
  "reqwest",
+ "ring",
  "rustls",
  "serde_json",
  "tracing",

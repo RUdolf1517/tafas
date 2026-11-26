@@ -4,8 +4,9 @@
 //!
 //! 1. the watch page, whose inlined `ytInitialPlayerResponse` is the same
 //!    document the browser receives;
-//! 2. InnerTube — the JSON API the site's own clients call — with a fixed
-//!    order of clients (`ANDROID_VR`, `IOS`, `ANDROID`, embedded TV, `WEB`).
+//! 2. InnerTube — the JSON API the site's own clients call. A supplied
+//!    YouTube session is tried with the web and TV clients before the
+//!    anonymous client chain.
 //!
 //! The order is not taste. YouTube decides what to serve partly from the client
 //! that asks, and some clients receive directly playable URLs while others
@@ -15,6 +16,10 @@
 //! a video is protected that way, the run ends in a documented refusal rather
 //! than in a broken file.
 
+use std::fmt::Write as _;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use ring::digest::{digest, SHA1_FOR_LEGACY_USE_ONLY};
 use serde_json::{json, Value};
 
 use crate::error::{Error, Result};
@@ -41,6 +46,8 @@ pub(crate) const PUBLIC_WEB_API_KEY: &str = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11
 
 const UA_ANDROID_VR: &str =
     "com.google.android.apps.youtube.vr.oculus/1.60.19 (Linux; U; Android 12; GB) gzip";
+const YOUTUBE_ORIGIN: &str = "https://www.youtube.com";
+const UA_TV: &str = "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/25.lts.30.1034943-gold (unlike Gecko), Unknown_TV_Unknown_0/Unknown (Unknown, Unknown)";
 
 /// Consent and locale cookies. Without them a European request is answered with
 /// the consent interstitial, which contains no player response at all.
@@ -111,10 +118,42 @@ pub fn extract(http: &Http, url: &Url, raw: &str, args: &ExtractorArgs) -> Resul
 
     let endpoint =
         format!("https://www.youtube.com/youtubei/v1/player?key={api_key}&prettyPrint=false");
-    for (name, user_agent, context) in clients() {
+    let endpoint_url = Url::parse(&endpoint)?;
+    let auth = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .and_then(|now| session_authorization(http, &endpoint_url, now.as_secs()));
+    let mut clients = clients();
+    if pinned.is_none() && auth.is_some() {
+        let web = clients.pop().expect("web is the last client");
+        clients.insert(0, web);
+        clients.insert(
+            1,
+            (
+                "tv_session",
+                UA_TV,
+                json!({"client": {
+                    "clientName": "TVHTML5",
+                    "clientVersion": "7.20260707.07.00",
+                    "userAgent": UA_TV,
+                    "hl": "en",
+                    "gl": "US"
+                }}),
+            ),
+        );
+    }
+    for (name, user_agent, mut context) in clients {
         if let Some(pinned) = pinned {
             if name != pinned {
                 continue;
+            }
+        }
+        if name == "web" {
+            if let Some(version) = page
+                .as_deref()
+                .and_then(|page| inline_string(page, "INNERTUBE_CLIENT_VERSION"))
+            {
+                context["client"]["clientVersion"] = json!(version);
             }
         }
         let body = json!({
@@ -123,10 +162,26 @@ pub fn extract(http: &Http, url: &Url, raw: &str, args: &ExtractorArgs) -> Resul
             "contentCheckOk": true,
             "racyCheckOk": true,
         });
-        let headers = [
-            ("user-agent", user_agent),
-            ("origin", "https://www.youtube.com"),
-        ];
+        let mut headers = vec![("user-agent", user_agent), ("origin", YOUTUBE_ORIGIN)];
+        if let Some(auth) = auth.as_deref() {
+            if let Some(client_name) = match name {
+                "web" => Some("1"),
+                "tv_session" => Some("7"),
+                _ => None,
+            } {
+                headers.extend([
+                    ("authorization", auth),
+                    ("x-origin", YOUTUBE_ORIGIN),
+                    ("x-youtube-client-name", client_name),
+                    (
+                        "x-youtube-client-version",
+                        body["context"]["client"]["clientVersion"]
+                            .as_str()
+                            .expect("client version is a string"),
+                    ),
+                ]);
+            }
+        }
         match http.post_json(name, &endpoint, &headers, &body) {
             Ok(value) => {
                 let info = read_player(&value, name);
@@ -140,19 +195,52 @@ pub fn extract(http: &Http, url: &Url, raw: &str, args: &ExtractorArgs) -> Resul
         }
     }
 
-    Err(refusal(&id, &notes, pinned))
+    Err(refusal(&id, &notes, pinned, auth.is_some()))
+}
+
+fn session_authorization(http: &Http, endpoint: &Url, timestamp: u64) -> Option<String> {
+    // The SID cookies can outlive sign-out; LOGIN_INFO identifies a session.
+    http.cookie_value(endpoint, "LOGIN_INFO")?;
+    let third_party = http.cookie_value(endpoint, "__Secure-3PAPISID");
+    let first_party = http.cookie_value(endpoint, "__Secure-1PAPISID");
+    let sapisid = http.cookie_value(endpoint, "SAPISID").or(third_party);
+    let mut authorization = String::new();
+    for (scheme, value) in [
+        ("SAPISIDHASH", sapisid),
+        ("SAPISID1PHASH", first_party),
+        ("SAPISID3PHASH", third_party),
+    ] {
+        if let Some(value) = value {
+            if !authorization.is_empty() {
+                authorization.push(' ');
+            }
+            let input = format!("{timestamp} {value} {YOUTUBE_ORIGIN}");
+            let hash = digest(&SHA1_FOR_LEGACY_USE_ONLY, input.as_bytes());
+            let _ = write!(authorization, "{scheme} {timestamp}_");
+            for byte in hash.as_ref() {
+                let _ = write!(authorization, "{byte:02x}");
+            }
+        }
+    }
+    (!authorization.is_empty()).then_some(authorization)
 }
 
 /// Turns the accumulated failure reasons into the one sentence the user gets.
 /// A bot check and a cipher are different problems with different answers, so
 /// they are named separately instead of being flattened into "failed".
-fn refusal(id: &str, notes: &[String], pinned: Option<&str>) -> Error {
+fn refusal(id: &str, notes: &[String], pinned: Option<&str>, has_session: bool) -> Error {
     let joined = notes.join("; ").to_ascii_lowercase();
-    if joined.contains("sign in to confirm") || joined.contains("not a bot") {
+    let sign_in = match (has_session, pinned) {
+        (true, Some(client)) if client != "web" => {
+            "use --extractor-args youtube:client=web or remove the client pin to use your session"
+        }
+        (true, _) => "YouTube did not accept the session; sign in again and refresh --cookies FILE",
+        (false, _) => "pass --cookies FILE with a fresh Netscape export from a signed-in browser",
+    };
+    if joined.contains("not a bot") {
         return Error::Refused(format!(
-            "youtube: {id}: the site answered with a sign-in check (\"{}\"). Cookies from \
-             --cookies are sent when you name a file, but no challenge is solved; see \
-             docs/sites/youtube.md §4.",
+            "youtube: {id}: the site answered with a sign-in check (\"{}\"); {sign_in} \
+             (docs/sites/youtube.md §4)",
             first_bot_sentence(notes)
         ));
     }
@@ -162,10 +250,19 @@ fn refusal(id: &str, notes: &[String], pinned: Option<&str>) -> Error {
              player JavaScript that would decipher it (docs/sites/youtube.md §3)"
         ));
     }
-    if joined.contains("age") || joined.contains("inappropriate") {
+    if joined.contains("age_verification_required")
+        || joined.contains("age-restricted")
+        || joined.contains("inappropriate")
+        || joined.contains("sign in to confirm your age")
+    {
         return Error::Refused(format!(
-            "youtube: {id}: age-restricted content needs a signed-in account; pass --cookies FILE \
-             with an export from a signed-in browser (docs/sites/youtube.md §4)"
+            "youtube: {id}: YouTube requires age verification; {sign_in} (docs/sites/youtube.md §4)"
+        ));
+    }
+    if joined.contains("login_required") {
+        return Error::Refused(format!(
+            "youtube: {id}: YouTube requires sign-in; {sign_in}; {} (docs/sites/youtube.md §4)",
+            notes.join("; ")
         ));
     }
     let tried = if notes.is_empty() {
@@ -257,7 +354,7 @@ fn clients() -> Vec<(&'static str, &'static str, Value)> {
             UA_DESKTOP,
             json!({"client": {
                 "clientName": "WEB",
-                "clientVersion": "2.20241126.01.00",
+                "clientVersion": "2.20260708.00.00",
                 "hl": "en",
                 "gl": "US"
             }}),
@@ -722,9 +819,14 @@ mod tests {
         assert!(info.formats.is_empty());
         assert!(describe(&info).contains("Sign in to confirm"));
 
-        let error = refusal("dQw4w9WgXcQ", &[format!("web: {}", describe(&info))], None);
+        let notes = [format!("web: {}", describe(&info))];
+        let error = refusal("dQw4w9WgXcQ", &notes, None, false);
         assert!(matches!(error, Error::Refused(_)));
         assert!(error.to_string().contains("sign-in check"));
+        assert!(error.to_string().contains("pass --cookies FILE"));
+        assert!(refusal("dQw4w9WgXcQ", &notes, None, true)
+            .to_string()
+            .contains("refresh --cookies FILE"));
     }
 
     #[test]
@@ -744,8 +846,34 @@ mod tests {
             "dQw4w9WgXcQ",
             &[format!("android_vr: {}", describe(&info))],
             None,
+            false,
         );
         assert!(error.to_string().contains("signature-protected"));
+    }
+
+    #[test]
+    fn signs_only_matching_youtube_session_cookies() {
+        let http = Http::new(0, 1, 0)
+            .unwrap()
+            .with_cookies(crate::cookies::Jar::parse(
+                ".youtube.com\tTRUE\t/\tTRUE\t0\tLOGIN_INFO\tsession\n\
+             .youtube.com\tTRUE\t/\tTRUE\t0\t__Secure-1PAPISID\tfirst\n\
+             .youtube.com\tTRUE\t/\tTRUE\t0\t__Secure-3PAPISID\tthird\n\
+             .example.org\tTRUE\t/\tTRUE\t0\tSAPISID\twrong-domain\n\
+             .youtube.com\tTRUE\t/account\tTRUE\t0\tSAPISID\twrong-path\n\
+             .youtube.com\tTRUE\t/\tTRUE\t1\tSAPISID\texpired",
+            ));
+        let url = Url::parse("https://www.youtube.com/youtubei/v1/player").unwrap();
+        assert_eq!(
+            session_authorization(&http, &url, 123).as_deref(),
+            Some(concat!(
+                "SAPISIDHASH 123_05e77d6ad3c8914a295106ec40a91f88f5b8a8a6 ",
+                "SAPISID1PHASH 123_9fbb7879590bc83d0d5e5c59b74264c67a853819 ",
+                "SAPISID3PHASH 123_05e77d6ad3c8914a295106ec40a91f88f5b8a8a6",
+            ))
+        );
+        let insecure = Url::parse("http://www.youtube.com/youtubei/v1/player").unwrap();
+        assert_eq!(session_authorization(&http, &insecure, 123), None);
     }
 
     #[test]
