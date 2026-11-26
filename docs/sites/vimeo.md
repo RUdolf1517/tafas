@@ -13,12 +13,12 @@ like when it happens, what happens when a site changes, and the
 
 ## 1. Route
 
-One request: `https://player.vimeo.com/video/<id>/config`, the JSON the embed
+The primary route is `https://player.vimeo.com/video/<id>/config`, the JSON the embed
 player asks for itself, with a `vimeo.com` referer and origin because the player
 checks them. The document lists `request.files.progressive[]` — complete MP4s,
 picture and sound in one stream — and `request.files.hls.cdns[*].url` when the
-video has a playlist. No HTML is parsed: the page is a player, and the player
-already knows what it would play.
+video has a playlist. If the endpoint fails, tafas looks for the same
+configuration in the public embed page.
 
 An unlisted video needs the hash that its URL carries (`/76979871/1a2b3c4d5e`,
 or `?h=` on the player host), and the hash is passed back as `?h=`.

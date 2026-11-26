@@ -72,7 +72,7 @@ beside it.
 Video and audio are joined only when both are ISO-BMFF (`mp4`/`m4a`). A webm
 audio stream is downloaded separately and the terminal says why:
 
-A SoundCloud track arrives as an **MP3** and is one of the two files this program writes without rebuilding a container (a poster image is the other). It is copied byte for byte, named `.mp3`, and checked by byte count alone — there is no box structure to verify and nothing here pretends there is.
+A SoundCloud track is saved as a progressive **MP3** when available. An AAC HLS playlist is assembled into **M4A** and verified before saving.
 
 ```
 note: the audio stream is opus, which cannot be remuxed with mp4 video without re-encoding

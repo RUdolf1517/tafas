@@ -324,11 +324,14 @@ fn parse(text: &str, base: &Url) -> Result<Playlist> {
             match method {
                 Encryption::None => current_key = None,
                 Encryption::SampleAes => {
-                    return Err(Error::Unsupported(
-                        "this playlist uses SAMPLE-AES encryption, which hides the picture inside \
-                         the container's own framing; tafas does not decrypt it"
-                            .into(),
-                    ))
+                    let protection = match value(&attributes, "KEYFORMAT") {
+                        Some("com.apple.streamingkeydelivery") => "FairPlay DRM (SAMPLE-AES)",
+                        Some(format) if format != "identity" => "DRM (SAMPLE-AES)",
+                        _ => "SAMPLE-AES encryption",
+                    };
+                    return Err(Error::Unsupported(format!(
+                        "this playlist uses {protection}, which tafas cannot decrypt"
+                    )));
                 }
                 Encryption::Other => {
                     return Err(Error::Unsupported(

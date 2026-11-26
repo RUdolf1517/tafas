@@ -1,9 +1,8 @@
 //! Twitch VODs.
 //!
 //! A recorded broadcast is served from `usher.ttvnw.net`, and that host wants a
-//! token: `sig` and `nauth` come from GraphQL's `PlaybackAccessToken`, which the
-//! site's own player asks for by persisted-query hash with the **public web
-//! client id** in a header. The number that comes back is a JSON document that
+//! token: `sig` and `token` come from GraphQL's `videoPlaybackAccessToken`, with
+//! the **public web client id** in a header. The token is a JSON document that
 //! has to be percent-encoded before it goes in a query string.
 //!
 //! One request is enough for everything: the batch carries the token operation
@@ -37,11 +36,6 @@ const GQL: &str = "https://gql.twitch.tv/gql";
 /// `PUBLIC_WEB_API_KEY` in `SECURITY.md`.
 pub const PUBLIC_WEB_CLIENT_ID: &str = "kimne78kx3ncx6brgo4mv6wki5h1ko";
 
-/// The persisted-query hash the player uses for `PlaybackAccessToken`. Twitch
-/// asks by hash rather than by query text; if it ever changes, the API answers an
-/// error object, which is a refusal that quotes it rather than a silent nothing.
-const PLAYBACK_TOKEN_HASH: &str = "0828119ded1c13477966434e15800ff57ddacf13ba1911c443297a175cb92a5";
-
 pub fn extract(
     http: &Http,
     url: &Url,
@@ -71,15 +65,8 @@ pub fn extract(
     // One batch: the playback token, and the metadata that names the file.
     let body = json!([
         {
-            "operationName": "PlaybackAccessToken",
-            "variables": {
-                "isLive": false,
-                "login": "",
-                "isVod": true,
-                "vodID": &id,
-                "playerType": "site"
-            },
-            "extensions": { "persistedQuery": { "version": 1, "sha256Hash": PLAYBACK_TOKEN_HASH } }
+            "query": "query($id: ID!) { videoPlaybackAccessToken(id: $id, params: {platform: \"web\", playerBackend: \"mediaplayer\", playerType: \"site\"}) { value signature } }",
+            "variables": { "id": &id }
         },
         {
             "query": "query($id: ID!) { video(id: $id) { title, lengthSeconds, previewThumbnailURL, owner { displayName } } }",
@@ -217,7 +204,7 @@ pub fn parse_clip(answer: &Value, slug: &str) -> Result<Media> {
 }
 
 /// `sourceURL` + `?sig=` + `&token=`, in that order: the signature is sent as it
-/// arrived and the token is percent-encoded, exactly as the `nauth` case above.
+/// arrived and the token is percent-encoded.
 fn clip_url(source: &str, signature: &str, token: &str) -> String {
     let separator = if source.contains('?') { '&' } else { '?' };
     format!(
@@ -249,7 +236,7 @@ pub fn parse(answer: &Value, id: &str) -> Result<Media> {
 
     let token = entries
         .first()
-        .and_then(|entry| at(entry, &["data", "streamPlaybackAccessToken"]))
+        .and_then(|entry| at(entry, &["data", "videoPlaybackAccessToken"]))
         .filter(|token| !token.is_null());
     let Some(token) = token else {
         return Err(Error::Refused(format!(
@@ -317,13 +304,12 @@ fn first_error(entry: &Value) -> Option<String> {
 
 /// The playlist the recording is served from.
 ///
-/// `nauth` is the token, and the token is a JSON document — quotes, braces and
-/// backslashes — so it is percent-encoded. `nauthsig` is a signature over it and
+/// The token is a JSON document and is percent-encoded. `sig` is a signature over it and
 /// must be sent as it arrived.
 fn usher_url(id: &str, token: &str, signature: &str) -> String {
     format!(
         "https://usher.ttvnw.net/vod/{id}.m3u8?allow_source=true&allow_audio_only=true\
-         &fast_bread=true&player=twitchweb&playlist_include_framerate=true&nauth={}&nauthsig={signature}",
+         &platform=web&player=twitchweb&playlist_include_framerate=true&token={}&sig={signature}",
         percent_encode(token)
     )
 }
@@ -417,7 +403,7 @@ mod tests {
         json!([
             {
                 "data": {
-                    "streamPlaybackAccessToken": {
+                    "videoPlaybackAccessToken": {
                         "value": "{\"authorization\":{\"forbidden\":false},\"channels\":{}}",
                         "signature": "abc123signature"
                     }
@@ -450,9 +436,9 @@ mod tests {
             url.starts_with("https://usher.ttvnw.net/vod/1234567890.m3u8?"),
             "{url}"
         );
-        assert!(url.contains("nauthsig=abc123signature"), "{url}");
+        assert!(url.contains("&sig=abc123signature"), "{url}");
         assert!(
-            url.contains("nauth=%7B%22authorization%22"),
+            url.contains("&token=%7B%22authorization%22"),
             "the token is percent-encoded: {url}"
         );
         assert!(
@@ -463,7 +449,7 @@ mod tests {
 
     #[test]
     fn a_subscriber_only_recording_is_refused_by_name() {
-        let answer = json!([{ "data": { "streamPlaybackAccessToken": null } }, { "data": { "video": null } }]);
+        let answer = json!([{ "data": { "videoPlaybackAccessToken": null } }, { "data": { "video": null } }]);
         let error = parse(&answer, "1").unwrap_err();
         let text = error.to_string();
         assert!(text.contains("subscription"), "{text}");

@@ -159,6 +159,20 @@ fn the_dependency_list_in_the_docs_matches_the_manifest() {
     }
 }
 
+#[test]
+fn the_release_archives_the_directory_rendered_by_the_channel_generator() {
+    let release = read(".github/workflows/release.yml");
+    let (_, step) = release.split_once("- name: AUR, Scoop and flake").unwrap();
+    let (step, _) = step.split_once("- name: Alpine package").unwrap();
+    let arguments = |flag| {
+        step.lines()
+            .filter(|line| !line.trim_start().starts_with('#'))
+            .find_map(|line| line.split_once(flag)?.1.split_whitespace().next())
+            .unwrap()
+    };
+    assert_eq!(arguments("--output-dir "), arguments("-C "));
+}
+
 /// The Windows asset name appears in four places that must never drift: the
 /// installer downloads it, the manifest generator hashes it, the release job
 /// builds it, and the documentation tells a reader what to look for.
@@ -421,14 +435,20 @@ fn every_reader_is_a_feature_and_every_feature_is_a_reader() {
     let feature_table = manifest
         .split("[features]")
         .nth(1)
-        .expect("Cargo.toml has a [features] table");
+        .expect("Cargo.toml has a [features] table")
+        .split("\n[")
+        .next()
+        .unwrap_or_default();
     for site in tafas::sites::names() {
         assert!(
             default_line.contains(&format!("\"{site}\"")),
             "{site} is a reader but is not in the default feature set"
         );
         assert!(
-            feature_table.contains(&format!("\n{site} = []")),
+            feature_table.lines().any(|line| {
+                line.split_once('=')
+                    .is_some_and(|(name, _)| name.trim() == site)
+            }),
             "{site} is a reader but Cargo.toml has no `{site}` feature"
         );
     }
@@ -505,25 +525,12 @@ fn the_published_crate_is_the_source_and_publishes_only_on_a_tag() {
     );
 
     let publish = read(".github/workflows/publish.yml");
-    // The irreversible step is behind one condition, and that condition has to
-    // mention the event and the token: a `workflow_dispatch` that published by
-    // default would be a version number spent by a misclick.
-    assert!(
-        publish.contains("cargo publish"),
-        "publish.yml must be the thing that publishes"
-    );
-    assert!(
-        publish.contains("github.event_name") && publish.contains("CARGO_REGISTRY_TOKEN"),
-        "the upload must be conditional on the event and on the token being present"
-    );
-    assert!(
-        publish.contains("cargo package --list"),
-        "publish.yml must check what the package holds before uploading it"
-    );
-    assert!(
-        publish.contains("dry_run") || publish.contains("dry-run"),
-        "a manual run must be able to package without publishing"
-    );
+    assert!(publish.contains("cargo publish --locked"));
+    assert!(publish.contains("github.event_name == 'release'"));
+    assert!(publish.contains("steps.check.outputs.exists == 'false'"));
+    assert!(publish.contains("rust-lang/crates-io-auth-action@"));
+    assert!(publish.contains("id-token: write"));
+    assert!(publish.contains("cargo package --list"));
     // Publishing from a machine and then from the release tag would upload the
     // same version twice, and the second one is a rejection on a release that
     // went perfectly. The workflow has to look first.

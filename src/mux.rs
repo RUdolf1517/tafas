@@ -290,6 +290,20 @@ fn scan(path: &Path) -> Result<Source> {
             end: pos + size,
             kind,
         });
+        // These are the only whole boxes read into memory.
+        let metadata_limit = match &kind {
+            b"ftyp" => 64 * 1024,
+            b"moov" => 128 * 1024 * 1024,
+            _ => u64::MAX,
+        };
+        if size > metadata_limit {
+            return Err(Error::Limit(format!(
+                "mp4: {}: {} box exceeds the {metadata_limit}-byte metadata limit",
+                path.display(),
+                show(&kind)
+            )));
+        }
+
         match &kind {
             b"ftyp" => {
                 // The header has already been consumed; rewind so the stored
@@ -811,6 +825,14 @@ pub fn verify(path: &Path) -> Result<VerifyReport> {
                 b"stsz" => {
                     let uniform = be_u32(moov, leaf.payload + 4)?;
                     let count = be_u32(moov, leaf.payload + 8)? as u64;
+                    if leaf.end.saturating_sub(leaf.payload + 12) / 4 < count as usize
+                        && uniform == 0
+                    {
+                        return Err(Error::Verify(format!(
+                            "{}: truncated {handler} sample sizes",
+                            path.display()
+                        )));
+                    }
                     // A non-zero sample_size means every sample is that size;
                     // an empty track has neither.
                     if count > 0 && (uniform > 0 || leaf.payload + 12 < leaf.end) {
@@ -820,6 +842,12 @@ pub fn verify(path: &Path) -> Result<VerifyReport> {
                 b"stco" | b"co64" => {
                     let width = if &leaf.kind == b"stco" { 4 } else { 8 };
                     let count = be_u32(moov, leaf.payload + 4)? as usize;
+                    if leaf.end.saturating_sub(leaf.payload + 8) / width < count {
+                        return Err(Error::Verify(format!(
+                            "{}: truncated {handler} chunk offsets",
+                            path.display()
+                        )));
+                    }
                     chunks += count as u64;
                     for entry in 0..count {
                         let at = leaf.payload + 8 + entry * width;
@@ -847,6 +875,13 @@ pub fn verify(path: &Path) -> Result<VerifyReport> {
         if samples == 0 {
             return Err(Error::Verify(format!(
                 "{}: the {handler} track has no samples",
+                path.display()
+            )));
+        }
+
+        if chunks == 0 {
+            return Err(Error::Verify(format!(
+                "{}: the {handler} track has no chunks",
                 path.display()
             )));
         }

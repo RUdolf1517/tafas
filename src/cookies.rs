@@ -144,6 +144,19 @@ impl Jar {
         self.cookies.is_empty()
     }
 
+    #[cfg(feature = "youtube")]
+    pub(crate) fn value(&self, url: &Url, name: &str) -> Option<&str> {
+        let host = host_of(url);
+        let https = url.scheme.eq_ignore_ascii_case("https");
+        let now = now_seconds();
+        self.cookies
+            .iter()
+            .filter(|cookie| cookie.name == name && cookie.applies(&host, &url.path, https, now))
+            .min_by_key(|cookie| std::cmp::Reverse(cookie.path.len()))
+            .map(|cookie| cookie.value.as_str())
+            .filter(|value| !value.is_empty())
+    }
+
     /// The `Cookie:` header for a request to `url`, or `None` when no cookie
     /// applies. Cookies are sent longest-path-first, which is the order a
     /// server resolving duplicate names expects.

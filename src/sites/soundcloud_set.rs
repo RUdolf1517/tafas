@@ -113,7 +113,7 @@ pub fn extract(http: &Http, _url: &Url, kind: &Kind, _raw: &str) -> Result<Listi
         }
     };
 
-    let client_id = super::soundcloud::client_id(&html).ok_or_else(|| {
+    let client_id = super::soundcloud::player_client_id(http, &html).ok_or_else(|| {
         Error::Refused(format!(
             "soundcloud: {page_url}: the page did not carry the public client id its player \
              uses, so the rest of the set cannot be asked for; --cookies FILE is sent when you \

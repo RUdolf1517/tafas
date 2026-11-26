@@ -41,7 +41,7 @@ pub fn extract(http: &Http, url: &Url, raw: &str, args: &ExtractorArgs) -> Resul
     let canonical = format!("https://www.tiktok.com{}", target_url.path);
     let headers: Vec<(String, String)> = vec![
         ("user-agent".to_string(), UA_DESKTOP.to_string()),
-        ("referer".to_string(), "https://www.tiktok.com/".to_string()),
+        ("referer".to_string(), canonical.clone()),
     ];
     let mut notes: Vec<String> = Vec::new();
 
@@ -204,6 +204,11 @@ fn from_item(item: &Value, id: &str, page: &str, headers: &[(String, String)]) -
         if let Some(url) = text(item, &["video", key]) {
             candidates.push((url, None));
         }
+        for source in list(item, &["video", key]) {
+            if let Some(url) = text(source, &["src"]) {
+                candidates.push((url, None));
+            }
+        }
         for url in url_list(item, &["video", key]) {
             candidates.push((url, None));
         }
@@ -277,6 +282,18 @@ mod tests {
 
     fn id(url: &str) -> Option<String> {
         aweme_id(&Url::parse(url).unwrap())
+    }
+
+    #[test]
+    fn the_web_playlist_can_list_playback_sources_as_objects() {
+        let item = serde_json::json!({
+            "video": {"playAddr": [{"src": "https://cdn.example/clip.mp4"}]}
+        });
+        let media = from_item(&item, "1", "https://www.tiktok.com/@a/video/1", &[]);
+        assert_eq!(
+            media.formats[0].url.as_deref(),
+            Some("https://cdn.example/clip.mp4")
+        );
     }
 
     #[test]

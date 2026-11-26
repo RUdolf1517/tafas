@@ -43,7 +43,7 @@ path = "src/main.rs"
 # contains no code for the other six, which is smaller and can be audited by
 # someone who only wants one site.
 default = ["youtube", "tiktok", "x", "vimeo", "reddit", "soundcloud", "twitch"]
-youtube = []
+youtube = ["dep:ring"]
 tiktok = []
 x = []
 vimeo = []
@@ -93,6 +93,8 @@ rustls = { version = "0.23", default-features = false, features = [
     "std",
     "tls12",
 ] }
+# YouTube's session signature uses SHA-1. Reuse the TLS provider already linked.
+ring = { version = "0.17", optional = true }
 
 # Keep warnings, but compile out per-connection tracing in release builds.
 # The CLI reports HTTP diagnostics through its own verbosity option.

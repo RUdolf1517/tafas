@@ -5,17 +5,9 @@
 //! holds everything a capture needs except the bytes: the title, the uploader,
 //! the duration, the artwork, and the transcodings the CDN will serve.
 //!
-//! A transcoding URL is not the media. It answers a small JSON document that
-//! names the real CDN URL, and it only answers when the page's own public
-//! `client_id` is appended — the same id the player sends, scraped from the page
-//! rather than guessed at. So a capture is three requests: the page, the
-//! transcoding, the bytes.
-//!
-//! Only the progressive `audio/mpeg` transcodings are taken: an MP3 is written
-//! verbatim, with no container rebuilt around it, which is the one thing this
-//! build can promise about it. A track that offers only the HLS/opus renditions
-//! is refused by name — demuxing opus it cannot do, and pretending an MP3
-//! exists when the page lists none would be a quiet lie.
+//! The player's public client ID comes from the page or its JavaScript.
+//! The transcoding endpoint returns a CDN URL for progressive MP3 or AAC HLS.
+//! MP3 is copied verbatim and AAC is remuxed to M4A.
 //!
 //! A set (`/<artist>/sets/<slug>`) is a list of tracks and is read as one, in
 //! [`soundcloud_set`](super::soundcloud_set): `--playlist-items`, one file per
@@ -72,38 +64,49 @@ pub fn extract(
              wall, a block on this address, or a page that is not a track"
         ))
     })?;
-    let (track, transcoding) = sound(&hydrated)?;
-    let client_id = client_id(&page).ok_or_else(|| {
+    let (track, transcoding, container) = track_rendition(&hydrated)?;
+    let client_id = player_client_id(http, &page).ok_or_else(|| {
         Error::Refused(format!(
-            "soundcloud: {page_url}: the page did not carry the public client id its player uses, \
-             so the transcoding cannot be asked for; --cookies FILE is sent when you name a file"
+            "soundcloud: {page_url}: could not find the player's client id"
         ))
     })?;
 
-    let mut media = parse(
-        track,
-        format!("{transcoding}?client_id={client_id}"),
-        page_url,
-    );
-
-    // The transcoding answers a document naming the CDN URL, so this is the
-    // second request, and the third is the bytes themselves.
-    let endpoint = media.formats[0].url.clone().unwrap_or_default();
-    let resolved = http.get_json("soundcloud-transcoding", &endpoint, &[])?;
+    let mut endpoint = reqwest::Url::parse(&transcoding)
+        .ok()
+        .filter(|url| {
+            url.scheme() == "https"
+                && matches!(
+                    url.host_str(),
+                    Some("api-v2.soundcloud.com" | "api.soundcloud.com")
+                )
+        })
+        .ok_or_else(|| Error::Parse("soundcloud: invalid transcoding endpoint".into()))?;
+    endpoint
+        .query_pairs_mut()
+        .append_pair("client_id", &client_id);
+    let resolved = http.get_json("soundcloud-transcoding", endpoint.as_str(), &[])?;
     let Some(final_url) = text(&resolved, &["url"]) else {
         return Err(Error::Refused(format!(
             "soundcloud: {}: the transcoding answered no url; the track is not served to this \
              address, which is what a region block looks like",
-            media.id
+            page_url
         )));
     };
-    media.formats[0].url = Some(final_url);
-    Ok(media)
+    Ok(media_with_rendition(track, final_url, page_url, container))
 }
 
-/// The track object and its progressive transcoding URL, out of the hydration
-/// array.
+/// The track and its progressive MP3 URL.
 pub fn sound(value: &Value) -> Result<(&Value, String)> {
+    let (track, url, container) = track_rendition(value)?;
+    if container != Container::Mp3 {
+        return Err(Error::Refused(
+            "soundcloud: the track offers AAC HLS and no progressive MP3".into(),
+        ));
+    }
+    Ok((track, url))
+}
+
+fn track_rendition(value: &Value) -> Result<(&Value, String, Container)> {
     let mut saw_playlist = false;
     for entry in value.as_array().map(|list| list.as_slice()).unwrap_or(&[]) {
         match text(entry, &["hydratable"]).as_deref() {
@@ -111,7 +114,8 @@ pub fn sound(value: &Value) -> Result<(&Value, String)> {
                 let track = at(entry, &["data"]).ok_or_else(|| {
                     Error::Refused("soundcloud: the hydration entry carries no track".to_string())
                 })?;
-                return Ok((track, transcoding(track)?));
+                let (url, container) = transcoding(track)?;
+                return Ok((track, url, container));
             }
             Some("playlist") => saw_playlist = true,
             _ => {}
@@ -131,39 +135,43 @@ pub fn sound(value: &Value) -> Result<(&Value, String)> {
     ))
 }
 
-/// The first progressive `audio/mpeg` transcoding, by name when there is none.
-fn transcoding(track: &Value) -> Result<String> {
-    let mut saw_hls = false;
+/// Prefer a progressive MP3 and fall back to AAC in an HLS playlist.
+fn transcoding(track: &Value) -> Result<(String, Container)> {
+    let mut aac = None;
     for entry in list(track, &["media", "transcodings"]) {
-        let protocol = text(entry, &["format", "protocol"]).unwrap_or_default();
-        let mime = text(entry, &["format", "mime_type"]).unwrap_or_default();
-        if protocol == "hls" {
-            saw_hls = true;
+        if entry["snipped"].as_bool() == Some(true) {
             continue;
         }
-        if protocol == "progressive" && mime.contains("mpeg") {
-            if let Some(url) = text(entry, &["url"]) {
-                return Ok(url);
-            }
+        let Some(url) = text(entry, &["url"]) else {
+            continue;
+        };
+        let protocol = text(entry, &["format", "protocol"]).unwrap_or_default();
+        let mime = text(entry, &["format", "mime_type"]).unwrap_or_default();
+        if protocol == "progressive" && mime == "audio/mpeg" {
+            return Ok((url, Container::Mp3));
+        }
+        if protocol == "hls" && mime.starts_with("audio/mp4") && mime.contains("mp4a") {
+            aac.get_or_insert(url);
         }
     }
-    if saw_hls {
-        return Err(Error::Refused(
-            "soundcloud: the track offers only HLS (opus) renditions, and this build demuxes \
-             neither opus nor a fragmented audio playlist"
-                .to_string(),
-        ));
-    }
-    Err(Error::Refused(
-        "soundcloud: the track offers no progressive MP3 — it is either a Go+ track or only a \
-         preview of one"
-            .to_string(),
-    ))
+    aac.map(|url| (url, Container::Hls)).ok_or_else(|| {
+        Error::Refused(
+            "soundcloud: the track offers no full-length MP3 or AAC HLS rendition".into(),
+        )
+    })
 }
 
-/// The track object, read into a [`Media`]. `url` is the transcoding; `extract`
-/// replaces it with the CDN address the transcoding names.
-pub fn parse(track: &Value, transcoding_url: String, page_url: String) -> Media {
+/// Builds media for a progressive MP3 stream.
+pub fn parse(track: &Value, url: String, page_url: String) -> Media {
+    media_with_rendition(track, url, page_url, Container::Mp3)
+}
+
+fn media_with_rendition(
+    track: &Value,
+    url: String,
+    page_url: String,
+    container: Container,
+) -> Media {
     let id = uint(track, &["id"])
         .map(|id| id.to_string())
         .unwrap_or_else(|| page_url.rsplit('/').next().unwrap_or("track").to_string());
@@ -180,11 +188,16 @@ pub fn parse(track: &Value, transcoding_url: String, page_url: String) -> Media 
             extension: "jpg",
             headers: request_headers(),
         });
+    let codec = if container == Container::Hls {
+        "aac"
+    } else {
+        "mp3"
+    };
     media.formats.push(Format {
-        id: "soundcloud-mp3".to_string(),
+        id: format!("soundcloud-{codec}"),
         kind: StreamKind::Audio,
-        container: Container::Mp3,
-        codec: "mp3".to_string(),
+        container,
+        codec: codec.into(),
         width: 0,
         height: 0,
         fps: 0,
@@ -192,7 +205,7 @@ pub fn parse(track: &Value, transcoding_url: String, page_url: String) -> Media 
         // a number nobody checked.
         bitrate: 0,
         bytes: None,
-        url: Some(transcoding_url),
+        url: Some(url),
         headers: request_headers(),
         source: "soundcloud-hydration",
     });
@@ -260,6 +273,27 @@ pub(crate) fn client_id(page: &str) -> Option<String> {
         }
     }
     None
+}
+
+/// The web player can publish its client ID in a JavaScript bundle.
+pub(crate) fn player_client_id(http: &Http, page: &str) -> Option<String> {
+    client_id(page).or_else(|| {
+        const PREFIX: &str = r#" src="https://a-v2.sndcdn.com/assets/"#;
+        page.rsplit(PREFIX).take(12).find_map(|tail| {
+            let (file, _) = tail.split_once('"')?;
+            if !file.ends_with(".js")
+                || !file
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || b"-_.".contains(&byte))
+            {
+                return None;
+            }
+            let script = http
+                .get_text(&format!("https://a-v2.sndcdn.com/assets/{file}"), &[])
+                .ok()?;
+            client_id(&script)
+        })
+    })
 }
 
 /// `<artist>/<track>` from the path. Everything else is not a track.
@@ -360,7 +394,32 @@ mod tests {
     }
 
     #[test]
-    fn a_track_without_a_progressive_transcoding_is_refused() {
+    fn aac_hls_uses_the_full_rendition() {
+        let value = json!({
+            "media": { "transcodings": [
+                { "url": "https://api-v2.soundcloud.com/preview", "snipped": true,
+                  "format": { "protocol": "progressive", "mime_type": "audio/mpeg" } },
+                { "url": "https://api-v2.soundcloud.com/full",
+                  "format": { "protocol": "hls", "mime_type": "audio/mp4; codecs=\"mp4a.40.2\"" } }
+            ] }
+        });
+        let (url, container) = transcoding(&value).unwrap();
+        let media = media_with_rendition(
+            &value,
+            url,
+            "https://soundcloud.com/artist/track".into(),
+            container,
+        );
+        assert_eq!(media.formats[0].id, "soundcloud-aac");
+        assert_eq!(media.formats[0].container, Container::Hls);
+        assert_eq!(
+            media.formats[0].url.as_deref(),
+            Some("https://api-v2.soundcloud.com/full")
+        );
+    }
+
+    #[test]
+    fn a_track_without_mp3_or_aac_is_refused() {
         let value = json!([
             { "hydratable": "sound", "data": {
                 "title": "opus only",
@@ -371,7 +430,7 @@ mod tests {
         ]);
         let error = sound(&value).unwrap_err();
         let text = error.to_string();
-        assert!(text.contains("opus"), "{text}");
+        assert!(text.contains("no full-length MP3 or AAC"), "{text}");
         assert!(text.contains("HLS"), "{text}");
     }
 

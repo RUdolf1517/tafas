@@ -30,7 +30,7 @@ use crate::error::{Error, Result};
 use crate::extractor_args::ExtractorArgs;
 use crate::http::Http;
 use crate::model::{Container, Format, Image, Media, Site, StreamKind};
-use crate::sites::{at, list, text, uint};
+use crate::sites::{at, json_after, list, text, uint};
 use crate::url::Url;
 
 const HEADERS: [(&str, &str); 2] = [
@@ -53,17 +53,26 @@ pub fn extract(
         ))
     })?;
 
-    let mut endpoint = format!("https://player.vimeo.com/video/{id}/config");
-    if let Some(hash) = hash.as_deref() {
-        endpoint.push_str("?h=");
-        endpoint.push_str(hash);
-    }
-    let value = http.get_json_opt("vimeo-config", &endpoint, &HEADERS)?;
-    let Some(value) = value else {
-        return Err(Error::Refused(format!(
-            "vimeo: {id}: the player answers 404, so the video is gone, private, or unlisted \
-             without the hash its URL carries"
-        )));
+    let player = format!("https://player.vimeo.com/video/{id}");
+    let query = hash
+        .as_ref()
+        .map(|hash| format!("?h={hash}"))
+        .unwrap_or_default();
+    let endpoint = format!("{player}/config{query}");
+    let value = match http.get_json_opt("vimeo-config", &endpoint, &HEADERS) {
+        Ok(Some(value)) => value,
+        result => {
+            let error = result.err().unwrap_or_else(|| {
+                Error::Refused(format!(
+                "vimeo: {id}: the player answers 404, so the video is gone, private, or unlisted \
+                 without the hash its URL carries"
+            ))
+            });
+            http.get_text(&format!("{player}{query}"), &HEADERS)
+                .ok()
+                .and_then(|page| embedded_config(&page))
+                .ok_or(error)?
+        }
     };
 
     let page_url = match hash {
@@ -78,6 +87,11 @@ pub fn extract(
         return unlocked(http, &value, &id, page_url, raw);
     }
     parse(&value, &id, page_url)
+}
+
+fn embedded_config(page: &str) -> Option<Value> {
+    let config = json_after(page, "playerConfig =")?;
+    serde_json::from_str(config).ok()
 }
 
 /// The sentence a password-protected video gets when no password was given.
@@ -337,6 +351,13 @@ mod tests {
                 }
             }
         })
+    }
+
+    #[test]
+    fn the_embed_page_can_carry_the_configuration_inline() {
+        let page = r#"<script>window.playerConfig = {"video":{"title":"An embed"}};</script>"#;
+        assert_eq!(embedded_config(page).unwrap()["video"]["title"], "An embed");
+        assert!(embedded_config("<html>Unavailable</html>").is_none());
     }
 
     #[test]

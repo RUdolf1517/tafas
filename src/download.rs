@@ -544,18 +544,16 @@ fn handle(
         return Ok(Status::Listed);
     }
 
-    let plan = select::choose(
-        &media,
-        &select::Options {
-            quality: options.quality,
-            audio_only: options.audio_only,
-            format: options.format.clone(),
-            no_mux: options.no_mux,
-        },
-    )?;
+    let selection = select::Options {
+        quality: options.quality,
+        audio_only: options.audio_only,
+        format: options.format.clone(),
+        no_mux: options.no_mux,
+    };
+    let mut plan = select::choose(&media, &selection)?;
     item.selection = plan.describe();
 
-    let hls_plan = matches!(&plan, Plan::Single(format) if format.container == Container::Hls);
+    let hls_plan = matches!(&plan, Plan::Single(format) | Plan::Audio(format) if format.container == Container::Hls);
     if options.playlist_items.is_some() && !hls_plan {
         printer.warn(
             "note: --playlist-items applies to an HLS segment list; this selection is not \
@@ -593,8 +591,18 @@ fn handle(
         return Ok(Status::Planned);
     }
 
+    let can_retry = media.site == crate::model::Site::TikTok && selection.format.is_none();
     if is_stdout(&target) {
-        return stream_to_stdout(http, &plan, options, printer, item);
+        return match stream_to_stdout(http, &plan, options, printer, item) {
+            Err(error @ Error::MediaUnavailable(_)) if can_retry => {
+                let (fallback, status) = retry_tiktok(&media, &selection, &plan, error, |plan| {
+                    stream_to_stdout(http, plan, options, printer, item)
+                })?;
+                item.selection = fallback.describe();
+                Ok(status)
+            }
+            result => result,
+        };
     }
 
     if target.exists() && !options.overwrite {
@@ -604,8 +612,23 @@ fn handle(
         )));
     }
 
-    let bytes = fetch_plan(http, &plan, &target, options, printer)?;
-    item.bytes = bytes;
+    let result = fetch_plan(http, &plan, &target, options, printer);
+    item.bytes = match result {
+        Err(error @ Error::MediaUnavailable(_)) if can_retry => {
+            let (fallback, bytes) = retry_tiktok(&media, &selection, &plan, error, |plan| {
+                let Plan::Single(format) = plan else {
+                    unreachable!("TikTok fallback selected a single format");
+                };
+                let part = suffix_path(&part_path(&target), &format!(".{}", format.id));
+                printer.note(&format!("TikTok: trying format {}", format.id));
+                fetch_single(http, format, &part, &target, options, printer)
+            })?;
+            plan = fallback;
+            item.selection = plan.describe();
+            bytes
+        }
+        result => result?,
+    };
 
     if options.write_thumbnail {
         write_thumbnail(http, &media, &plan, &target, options, printer)?;
@@ -643,6 +666,38 @@ fn handle(
 
     item.path = Some(target);
     Ok(Status::Downloaded)
+}
+
+fn retry_tiktok<T>(
+    media: &Media,
+    selection: &select::Options,
+    original: &Plan,
+    mut error: Error,
+    mut download: impl FnMut(&Plan) -> Result<T>,
+) -> Result<(Plan, T)> {
+    let Plan::Single(original) = original else {
+        return Err(error);
+    };
+    let mut candidates = media.clone();
+    candidates.formats.retain(|format| format.id != original.id);
+    let mut attempts = 1;
+    while let Ok(plan @ Plan::Single(_)) = select::choose(&candidates, selection) {
+        attempts += 1;
+        match download(&plan) {
+            Ok(result) => return Ok((plan, result)),
+            Err(failure @ Error::MediaUnavailable(_)) => error = failure,
+            Err(failure) => return Err(failure),
+        }
+        let Plan::Single(format) = plan else {
+            unreachable!()
+        };
+        candidates
+            .formats
+            .retain(|candidate| candidate.id != format.id);
+    }
+    Err(Error::MediaUnavailable(format!(
+        "TikTok: {attempts} format(s) refused by the media server; {error}"
+    )))
 }
 
 /// `--write-subs`: every caption track the selection names, as WebVTT.
@@ -862,7 +917,7 @@ fn stream_to_stdout(
 ) -> Result<Status> {
     let format =
         match plan {
-            Plan::Single(format) if format.container == Container::Hls => {
+            Plan::Single(format) | Plan::Audio(format) if format.container == Container::Hls => {
                 return Err(Error::Usage(format!(
                     "-o - writes one stream, and an HLS playlist ({}) is assembled from its \
                      segments into an MP4 first; give a file name instead",
@@ -969,20 +1024,11 @@ fn fetch_plan(
     printer: &Printer,
 ) -> Result<u64> {
     match plan {
-        Plan::Single(format) if format.container == Container::Hls => {
+        Plan::Single(format) | Plan::Audio(format) if format.container == Container::Hls => {
             fetch_hls(http, format, target, options, printer)
         }
-        Plan::Single(format) => {
-            let bytes = fetch_stream(http, format, target, options, printer)?;
-            strip_meta(&part_path(target), format.container, options, printer)?;
-            commit(&part_path(target), target, options.overwrite)?;
-            Ok(bytes)
-        }
-        Plan::Audio(format) => {
-            let bytes = fetch_stream(http, format, target, options, printer)?;
-            strip_meta(&part_path(target), format.container, options, printer)?;
-            commit(&part_path(target), target, options.overwrite)?;
-            Ok(bytes)
+        Plan::Single(format) | Plan::Audio(format) => {
+            fetch_single(http, format, &part_path(target), target, options, printer)
         }
         Plan::Images(images) => download_images(http, images, target, options, printer),
         Plan::Pair { video, audio } => {
@@ -1042,15 +1088,19 @@ fn fetch_plan(
             if let Some(why) = why {
                 printer.warn(&format!("note: {why}"));
             }
-            let bytes = fetch_stream(http, video, target, options, printer)?;
-            strip_meta(&part_path(target), video.container, options, printer)?;
-            commit(&part_path(target), target, options.overwrite)?;
+            let bytes = fetch_single(http, video, &part_path(target), target, options, printer)?;
 
             let mut total = bytes;
             if let Some(audio) = audio {
                 let audio_target = audio_path(target, audio);
-                let audio_bytes = fetch_stream(http, audio, &audio_target, options, printer)?;
-                commit(&part_path(&audio_target), &audio_target, options.overwrite)?;
+                let audio_bytes = fetch_single(
+                    http,
+                    audio,
+                    &part_path(&audio_target),
+                    &audio_target,
+                    options,
+                    printer,
+                )?;
                 total += audio_bytes;
                 announce_path(&audio_target, options, printer);
             }
@@ -1144,6 +1194,14 @@ fn fetch_hls(
         )));
     }
 
+    if format.kind == crate::model::StreamKind::Audio && !verified.has_handler("soun") {
+        let _ = fs::remove_file(&part);
+        return Err(Error::Verify(format!(
+            "{}: the assembled file has no audio track",
+            part.display()
+        )));
+    }
+
     strip_meta(&part, Container::Mp4, options, printer)?;
     commit(&part, target, options.overwrite)?;
     // The MP4 is the file that was asked for; the cache beside it is debris now.
@@ -1225,6 +1283,51 @@ fn download_images(
         }
     }
     Ok(total)
+}
+
+fn fetch_single(
+    http: &Http,
+    format: &Format,
+    part: &Path,
+    target: &Path,
+    options: &Options,
+    printer: &Printer,
+) -> Result<u64> {
+    let bytes = match fetch_stream_to(http, format, part, options, printer) {
+        Err(error @ Error::MediaUnavailable(_)) => {
+            if fs::metadata(part).is_ok_and(|file| file.len() == 0) {
+                let _ = fs::remove_file(part);
+            }
+            return Err(error);
+        }
+        result => result?,
+    };
+    if format.container == Container::Mp4 {
+        let verified = mux::verify(part)
+            .map_err(|error| Error::Verify(format!("{}: {error}", part.display())))
+            .and_then(|report| {
+                let handler = if format.kind.has_video() {
+                    "vide"
+                } else {
+                    "soun"
+                };
+                if report.has_handler(handler) {
+                    Ok(report)
+                } else {
+                    Err(Error::Verify(format!(
+                        "{}: missing {handler} track",
+                        part.display()
+                    )))
+                }
+            });
+        if let Err(error) = verified {
+            let _ = fs::remove_file(part);
+            return Err(error);
+        }
+    }
+    strip_meta(part, format.container, options, printer)?;
+    commit(part, target, options.overwrite)?;
+    Ok(bytes)
 }
 
 /// Fetches one stream into `<target>.part` and leaves it there.
@@ -1622,6 +1725,101 @@ impl Format {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tiktok_tries_the_remaining_formats_in_quality_order() {
+        let mut media = Media::new(crate::model::Site::TikTok, "1".into(), String::new());
+        for height in [720, 480, 360] {
+            media.formats.push(Format {
+                id: height.to_string(),
+                kind: crate::model::StreamKind::Muxed,
+                container: Container::Mp4,
+                codec: "avc1".into(),
+                width: 0,
+                height,
+                fps: 0,
+                bitrate: 0,
+                bytes: None,
+                url: Some("https://example.test/video.mp4".into()),
+                headers: Vec::new(),
+                source: "test",
+            });
+        }
+        let selection = select::Options {
+            quality: select::Quality::Best,
+            audio_only: false,
+            format: None,
+            no_mux: false,
+        };
+        let first = select::choose(&media, &selection).unwrap();
+        let mut tried = Vec::new();
+        let (_, bytes) = retry_tiktok(
+            &media,
+            &selection,
+            &first,
+            Error::MediaUnavailable("HTTP 403".into()),
+            |plan| {
+                let Plan::Single(format) = plan else {
+                    unreachable!()
+                };
+                tried.push(format.height);
+                if format.height == 480 {
+                    Err(Error::MediaUnavailable("HTML instead of media".into()))
+                } else {
+                    Ok(100)
+                }
+            },
+        )
+        .unwrap();
+        assert_eq!(tried, [480, 360]);
+        assert_eq!(bytes, 100);
+    }
+
+    #[test]
+    fn a_corrupt_direct_mp4_never_replaces_the_output() {
+        use std::net::TcpListener;
+        let socket = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/media", socket.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let (mut client, _) = socket.accept().unwrap();
+            let mut request = [0; 1024];
+            let _ = io::Read::read(&mut client, &mut request).unwrap();
+            client
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Length: 8\r\nConnection: close\r\n\r\ninvalid!",
+                )
+                .unwrap();
+        });
+        let target = std::env::temp_dir().join(format!("tafas-corrupt-{}.mp4", std::process::id()));
+        fs::write(&target, b"existing").unwrap();
+        let part = part_path(&target);
+        let format = Format {
+            id: "test".into(),
+            kind: crate::model::StreamKind::Muxed,
+            container: Container::Mp4,
+            codec: String::new(),
+            width: 0,
+            height: 0,
+            fps: 0,
+            bitrate: 0,
+            bytes: None,
+            url: Some(url),
+            headers: Vec::new(),
+            source: "test",
+        };
+        let options = Options {
+            overwrite: true,
+            ..Options::default()
+        };
+        let http = Http::new(0, 2, 0).unwrap();
+        let printer = Printer::new(&options);
+        let result = fetch_single(&http, &format, &part, &target, &options, &printer);
+        server.join().unwrap();
+        assert!(matches!(result, Err(Error::Verify(_))));
+        assert!(!part.exists());
+        assert_eq!(fs::read(&target).unwrap(), b"existing");
+        fs::remove_file(target).unwrap();
+    }
 
     #[test]
     fn part_paths_sit_next_to_the_target() {

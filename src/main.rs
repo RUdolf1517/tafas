@@ -37,7 +37,7 @@ fn main() -> ExitCode {
         return emit(&format!("{}\n", capabilities()));
     }
     if args.info {
-        return emit(&info(&args));
+        return emit(&info());
     }
 
     if args.urls.is_empty() {
@@ -132,7 +132,7 @@ fn capabilities() -> String {
                 "cookies": "user-supplied (--cookies FILE)"
             },
             "reddit": {
-                "routes": ["post json (comments/<id>.json)", "v.redd.it playlist"],
+                "routes": ["post json (comments/<id>.json)", "public embed player", "v.redd.it playlist"],
                 "hls": true,
                 "progressive": "not offered: DASH_<height>.mp4 carries no audio",
                 "cookies": "user-supplied (--cookies FILE)"
@@ -142,7 +142,7 @@ fn capabilities() -> String {
                     "page hydration, then the transcoding document",
                     "set page and api-v2 playlists (lists)"
                 ],
-                "container": "mp3, copied verbatim",
+                "container": "progressive MP3 or AAC HLS assembled into M4A",
                 "hls_opus": false,
                 "cookies": "user-supplied (--cookies FILE)"
             },
@@ -212,24 +212,26 @@ fn capabilities() -> String {
     value.to_string()
 }
 
-fn info(args: &Args) -> String {
-    let pen = Pen::for_stdout(args.color());
-    let mut out = String::new();
-    out.push_str(&format!(
-        "{} {}\n",
-        pen.paint(style::BOLD, "tafas"),
-        env!("CARGO_PKG_VERSION")
-    ));
-    out.push_str(
-        "capture YouTube, TikTok, X, Vimeo, Reddit and Twitch as one playable MP4, and SoundCloud as an MP3, without re-encoding\n\n",
-    );
-    out.push_str(&format!("sites        {}\n", sites::describe_build()));
-    out.push_str("muxing       mp4 (streams copied, index rebuilt, output verified)\n");
-    out.push_str("tls          rustls with the ring provider\n");
-    out.push_str("external     none — no yt-dlp, no ffmpeg, no shelling out\n");
-    out.push_str("config       none; every decision is an argument\n");
-    out.push_str("telemetry    none\n");
-    out
+fn info() -> String {
+    let home = env!("CARGO_PKG_REPOSITORY");
+    format!(
+        "tafas {} — save online media as a playable file\n\n\
+         A command-line downloader for video and audio.\n\n\
+         Sites in this build: {}\n\n\
+         Guarantees:\n\
+         \x20 Media tracks keep their original encoding.\n\
+         \x20 Assembled MP4 and M4A files are verified before they are saved.\n\n\
+         No external programs, no configuration file, no telemetry.\n\n\
+         Homepage  {home}\n\
+         Docs      {home}/blob/main/docs/cli.md\n\
+         License   {}\n\
+         Author    {}\n\n\
+         Try `tafas URL`, `tafas --list-formats URL` or `tafas --capabilities`.\n",
+        env!("CARGO_PKG_VERSION"),
+        sites::describe_build(),
+        env!("CARGO_PKG_LICENSE"),
+        env!("CARGO_PKG_AUTHORS"),
+    )
 }
 
 #[cfg(test)]
@@ -267,9 +269,9 @@ mod tests {
 
     #[test]
     fn info_names_the_sites_and_the_absence_of_external_tools() {
-        let args = Args::try_parse_from(["tafas", "--info"]).unwrap();
-        let text = info(&args);
-        assert!(text.contains("youtube"));
-        assert!(text.contains("none"));
+        let text = info();
+        assert!(text.contains(&format!("Sites in this build: {}", sites::describe_build())));
+        assert!(text.contains("No external programs"));
+        assert!(text.contains(env!("CARGO_PKG_REPOSITORY")));
     }
 }

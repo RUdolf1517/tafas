@@ -13,24 +13,24 @@ like when it happens, what happens when a site changes, and the
 
 ## 1. Route
 
-Three requests, and each one is needed:
+The track and its audio come from these routes:
 
 1. the track page, for `window.__sc_hydration` — the array the site's own player
    renders from. The entry with `"hydratable":"sound"` carries the title, the
    uploader, the duration, the artwork and `media.transcodings`;
 2. the transcoding URL, with the page's own public `client_id` appended. It
    answers a small JSON document, not audio;
-3. the CDN URL that document names — the bytes.
+3. the CDN audio or HLS playlist named by the transcoding.
 
 `on.soundcloud.com` is a redirector, so one redirect is followed first. The
-`client_id` is scraped from the page (`client_id=<32 alphanumerics>`, in a script
-URL or inline JSON), never guessed and never hard-coded.
+`client_id` is scraped from the page (`client_id=<32 alphanumerics>`, inline or in a player JavaScript bundle).
 
 ## 2. What is selected
 
 | In the document | Becomes |
 | --- | --- |
 | the first `transcodings[]` entry with `protocol: "progressive"` and `mime_type: "audio/mpeg"` | the stream, as an **MP3** copied verbatim |
+| an AAC HLS rendition when no full MP3 is available | an **M4A** assembled from the playlist without re-encoding |
 | `title`, `user.username`, `duration`, `artwork_url` | the name, the uploader, the duration, the poster |
 
 One format, no selection to make: a track is one file. `--audio-only` is
@@ -41,7 +41,7 @@ between.
 
 A set (`/<artist>/sets/<slug>`) is the site's own name for a playlist of
 tracks, and it is read as a **list page** — `--playlist-items`, one file per
-entry, `01 - Title [id].mp3`, and one dead track costing the others nothing,
+entry, such as `01 - Title [id].m4a`, and one dead track costing the others nothing,
 exactly as for a YouTube playlist.
 
 1. the set's page, for the same hydration document. The entry with
@@ -78,9 +78,8 @@ read, and which flag to use — not downloaded in part.
 | Situation | Result |
 | --- | --- |
 | no `__sc_hydration` | refusal (1): a consent wall, a block on this address, or not a track |
-| no page `client_id` | refusal (1), naming `--cookies FILE` |
-| only HLS/opus transcodings | refusal (1): this build demuxes neither opus nor a fragmented audio playlist |
-| no progressive transcoding | refusal (1): a Go+ track, or only a preview of one |
+| no player `client_id` | refusal (1): the player client ID could not be found |
+| no full MP3 or AAC HLS rendition | refusal (1): this includes Opus-only and preview-only tracks |
 | the transcoding answers no `url` | refusal (1), which is what a region block looks like |
 | a set page with no hydration document | refusal (1), the same sentence with “set” in it |
 | a set page with no playlist entry | refusal (1): the document lists neither a playlist entry nor tracks |

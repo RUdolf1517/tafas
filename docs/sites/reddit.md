@@ -15,8 +15,9 @@ like when it happens, what happens when a site changes, and the
 
 `/comments/<id>.json?raw_json=1` for a post — the listing the old mobile clients
 asked for; its first child is the post, and `secure_media.reddit_video` is the
-video. A bare `v.redd.it/<hash>` needs no JSON at all: the master playlist lives
-at a fixed path under the same hash, so the URL is built.
+video. If Reddit refuses the JSON request, tafas checks the public embed for
+the requested post and uses its HLS URL. A bare `v.redd.it/<hash>` names the
+master playlist directly.
 
 ## 2. One route, and why not the two obvious ones
 

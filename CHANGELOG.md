@@ -11,7 +11,11 @@ version; adding a site, a flag or a container is minor. The policy is in
 
 ## [Unreleased]
 
-Nothing yet.
+- Fix downloads and format selection across supported sites, verify direct MP4
+  files before saving, and add a live site smoke test.
+- Show the build’s supported sites and project links in `--info`.
+- Publish new releases to crates.io with Trusted Publishing.
+- Update `url` to 2.5.9 for RUSTSEC-2026-0592.
 
 ## [0.4.2] - 2026-11-20
 

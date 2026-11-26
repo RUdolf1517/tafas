@@ -216,7 +216,7 @@ pub struct Args {
     #[arg(long)]
     pub capabilities: bool,
 
-    /// Print version, supported sites and defaults
+    /// Print version, supported sites and project links
     #[arg(short = 'i', long)]
     pub info: bool,
 }
