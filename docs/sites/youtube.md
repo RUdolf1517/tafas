@@ -97,6 +97,12 @@ contains session credentials. If YouTube still requires sign-in, refresh the
 export. A valid session can still receive signature-protected formats.
 Details in [safety §5](../safety.md#5-network).
 
+The `reason` field in `--json` distinguishes `youtube_login_required`,
+`youtube_session_rejected` and `youtube_signature_protected`. To run the
+same download test locally with a valid session, use
+`python3 packaging/smoke.py --youtube-cookies /path/to/cookies.txt youtube`
+after building the binary and installing `ffprobe`.
+
 ## 5. Captions, and the languages a video does not have
 
 `--write-subs` writes WebVTT, one file per selected track:

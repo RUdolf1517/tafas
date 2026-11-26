@@ -490,6 +490,11 @@ impl Http {
                 final_url,
             });
         }
+        if status == StatusCode::FORBIDDEN {
+            return Err(Error::MediaUnavailable(format!(
+                "{label}: HTTP 403 from the media server"
+            )));
+        }
         let response = self.classify(label, url, response)?;
         let mime = response
             .headers()
@@ -501,7 +506,7 @@ impl Http {
             mime.eq_ignore_ascii_case("text/html")
                 || mime.eq_ignore_ascii_case("application/xhtml+xml")
         }) {
-            return Err(Error::Refused(format!(
+            return Err(Error::MediaUnavailable(format!(
                 "{label}: the server returned an HTML page instead of media"
             )));
         }
@@ -541,7 +546,7 @@ impl Http {
                         .is_some_and(|head| head.eq_ignore_ascii_case(tag))
                 })
             {
-                return Err(Error::Refused(format!(
+                return Err(Error::MediaUnavailable(format!(
                     "{label}: the server returned an HTML page instead of media"
                 )));
             }

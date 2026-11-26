@@ -22,7 +22,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use ring::digest::{digest, SHA1_FOR_LEGACY_USE_ONLY};
 use serde_json::{json, Value};
 
-use crate::error::{Error, Result};
+use crate::error::{Error, Result, YouTubeReason};
 use crate::extractor_args::ExtractorArgs;
 use crate::http::{Http, UA_ANDROID, UA_DESKTOP, UA_IOS};
 use crate::model::{Container, Format, Image, Media, Site, StreamKind, Subtitle};
@@ -229,41 +229,72 @@ fn session_authorization(http: &Http, endpoint: &Url, timestamp: u64) -> Option<
 /// A bot check and a cipher are different problems with different answers, so
 /// they are named separately instead of being flattened into "failed".
 fn refusal(id: &str, notes: &[String], pinned: Option<&str>, has_session: bool) -> Error {
+    let session_used = has_session && pinned.is_none_or(|client| client == "web");
+    let signed: Vec<_> = notes
+        .iter()
+        .filter(|note| {
+            session_used
+                && ["web: ", "tv_session: ", "watch page: "]
+                    .iter()
+                    .any(|prefix| note.starts_with(prefix))
+        })
+        .collect();
+    let signed_notes = signed
+        .iter()
+        .map(|note| note.as_str())
+        .collect::<Vec<_>>()
+        .join("; ")
+        .to_ascii_lowercase();
     let joined = notes.join("; ").to_ascii_lowercase();
-    let sign_in = match (has_session, pinned) {
-        (true, Some(client)) if client != "web" => {
-            "use --extractor-args youtube:client=web or remove the client pin to use your session"
-        }
-        (true, _) => "YouTube did not accept the session; sign in again and refresh --cookies FILE",
-        (false, _) => "pass --cookies FILE with a fresh Netscape export from a signed-in browser",
+
+    let signature = |text: &str| text.contains("only signature-protected formats");
+    let age_gate = |text: &str| {
+        [
+            "age_verification_required",
+            "age-restricted",
+            "inappropriate",
+            "sign in to confirm your age",
+        ]
+        .iter()
+        .any(|reason| text.contains(reason))
     };
-    if joined.contains("not a bot") {
-        return Error::Refused(format!(
-            "youtube: {id}: the site answered with a sign-in check (\"{}\"); {sign_in} \
-             (docs/sites/youtube.md §4)",
-            first_bot_sentence(notes)
-        ));
-    }
-    if joined.contains("signature") || joined.contains("cipher") {
-        return Error::Refused(format!(
+    let login_gate = |text: &str| text.contains("not a bot") || text.contains("login_required");
+    let message = if has_session && !session_used {
+        "use --extractor-args youtube:client=web or remove the client pin to use your session"
+    } else {
+        "pass --cookies FILE with a fresh Netscape export from a signed-in browser"
+    };
+
+    if signature(&signed_notes) || (!login_gate(&joined) && signature(&joined)) {
+        return Error::YouTube(
+            YouTubeReason::SignatureProtected,
+            format!(
             "youtube: {id}: every format is signature-protected; this build does not execute the \
              player JavaScript that would decipher it (docs/sites/youtube.md §3)"
-        ));
+        ),
+        );
     }
-    if joined.contains("age_verification_required")
-        || joined.contains("age-restricted")
-        || joined.contains("inappropriate")
-        || joined.contains("sign in to confirm your age")
-    {
-        return Error::Refused(format!(
-            "youtube: {id}: YouTube requires age verification; {sign_in} (docs/sites/youtube.md §4)"
-        ));
+    if login_gate(&signed_notes) || age_gate(&signed_notes) {
+        return Error::YouTube(
+            YouTubeReason::SessionRejected,
+            format!(
+                "youtube: {id}: YouTube did not accept the session for this video; sign in again \
+             and refresh --cookies FILE (docs/sites/youtube.md §4)"
+            ),
+        );
     }
-    if joined.contains("login_required") {
-        return Error::Refused(format!(
-            "youtube: {id}: YouTube requires sign-in; {sign_in}; {} (docs/sites/youtube.md §4)",
-            notes.join("; ")
-        ));
+    if age_gate(&joined) || login_gate(&joined) {
+        let reason = if age_gate(&joined) {
+            "age verification"
+        } else {
+            "a sign-in check"
+        };
+        return Error::YouTube(
+            YouTubeReason::LoginRequired,
+            format!(
+                "youtube: {id}: YouTube requires {reason}; {message} (docs/sites/youtube.md §4)"
+            ),
+        );
     }
     let tried = if notes.is_empty() {
         "no client returned a playable format".to_string()
@@ -278,17 +309,6 @@ fn refusal(id: &str, notes: &[String], pinned: Option<&str>, has_session: bool) 
         None => tried,
     };
     Error::Refused(format!("youtube: {id} could not be read: {tried}"))
-}
-
-fn first_bot_sentence(notes: &[String]) -> String {
-    for note in notes {
-        let lower = note.to_ascii_lowercase();
-        if let Some(at) = lower.find("sign in to confirm") {
-            let tail: String = note[at..].chars().take(90).collect();
-            return tail;
-        }
-    }
-    "Sign in to confirm you're not a bot".into()
 }
 
 /// The client chain, in the order it is tried.
@@ -821,12 +841,24 @@ mod tests {
 
         let notes = [format!("web: {}", describe(&info))];
         let error = refusal("dQw4w9WgXcQ", &notes, None, false);
-        assert!(matches!(error, Error::Refused(_)));
+        assert_eq!(error.kind(), "youtube_login_required");
         assert!(error.to_string().contains("sign-in check"));
         assert!(error.to_string().contains("pass --cookies FILE"));
-        assert!(refusal("dQw4w9WgXcQ", &notes, None, true)
-            .to_string()
-            .contains("refresh --cookies FILE"));
+        let error = refusal("dQw4w9WgXcQ", &notes, None, true);
+        assert_eq!(error.kind(), "youtube_session_rejected");
+        assert!(error.to_string().contains("refresh --cookies FILE"));
+    }
+
+    #[test]
+    fn a_signed_players_signature_result_beats_an_anonymous_login_gate() {
+        let notes = [
+            "web: only signature-protected formats (3)".to_string(),
+            "android_vr: LOGIN_REQUIRED: Sign in to confirm you're not a bot".to_string(),
+        ];
+        assert_eq!(
+            refusal("dQw4w9WgXcQ", &notes, None, true).kind(),
+            "youtube_signature_protected"
+        );
     }
 
     #[test]
@@ -848,6 +880,7 @@ mod tests {
             None,
             false,
         );
+        assert_eq!(error.kind(), "youtube_signature_protected");
         assert!(error.to_string().contains("signature-protected"));
     }
 

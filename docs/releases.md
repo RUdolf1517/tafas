@@ -178,7 +178,7 @@ the same process applies to each new version.
 3. Merge the Homebrew PR the command opens. Homebrew reads the new version from
    the default branch after that merge. A retry with the same tag reuses the
    release and the existing formula PR.
-4. The `publish` workflow handles crates.io when `CARGO_REGISTRY_TOKEN` is
+4. The `publish` workflow handles crates.io when Trusted Publishing is
    configured. The owner can also use `./packaging/publish.sh`.
    See [§4.1](#41-cratesio).
 
@@ -202,11 +202,11 @@ can fail on its own — a missing artifact for one target is not a reason to
 withhold a crate — and because one of the two is irreversible.
 
 **A version on crates.io cannot be replaced, only yanked.** So the upload runs on
-one condition: a release that is already *published* here, with the owner's
-`CARGO_REGISTRY_TOKEN` present in the repository's secrets. A `workflow_dispatch`
-run packages, builds the archive the way `cargo install` will, and stops — the
-`dry_run` box is ticked by default. A fork, a pull request and a branch have the
-same behaviour: no token, no upload.
+a published GitHub release whose tag matches the crate version. In crates.io
+settings for `tafas`, add a GitHub Trusted Publisher with owner `RUdolf1517`,
+repository `tafas` and workflow filename `publish.yml`. The workflow requests
+a temporary token when a new version needs uploading. A manual GitHub Actions
+run packages and verifies the archive without publishing.
 
 The workflow checks four things before it can upload, all of them cheap and all
 of them things that cannot be fixed after the fact:

@@ -511,25 +511,12 @@ fn the_published_crate_is_the_source_and_publishes_only_on_a_tag() {
     );
 
     let publish = read(".github/workflows/publish.yml");
-    // The irreversible step is behind one condition, and that condition has to
-    // mention the event and the token: a `workflow_dispatch` that published by
-    // default would be a version number spent by a misclick.
-    assert!(
-        publish.contains("cargo publish"),
-        "publish.yml must be the thing that publishes"
-    );
-    assert!(
-        publish.contains("github.event_name") && publish.contains("CARGO_REGISTRY_TOKEN"),
-        "the upload must be conditional on the event and on the token being present"
-    );
-    assert!(
-        publish.contains("cargo package --list"),
-        "publish.yml must check what the package holds before uploading it"
-    );
-    assert!(
-        publish.contains("dry_run") || publish.contains("dry-run"),
-        "a manual run must be able to package without publishing"
-    );
+    assert!(publish.contains("cargo publish --locked"));
+    assert!(publish.contains("github.event_name == 'release'"));
+    assert!(publish.contains("steps.check.outputs.exists == 'false'"));
+    assert!(publish.contains("rust-lang/crates-io-auth-action@"));
+    assert!(publish.contains("id-token: write"));
+    assert!(publish.contains("cargo package --list"));
     // Publishing from a machine and then from the release tag would upload the
     // same version twice, and the second one is a rejection on a release that
     // went perfectly. The workflow has to look first.

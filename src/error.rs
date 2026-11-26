@@ -21,6 +21,10 @@ pub enum Error {
     /// video, signature-protected format, watermarked-only source. Not a crash
     /// and not a silent skip — the reason is part of the output.
     Refused(String),
+    /// A selected media URL was refused before bytes were written.
+    MediaUnavailable(String),
+    /// A YouTube playability refusal with a stable machine-readable reason.
+    YouTube(YouTubeReason, String),
     /// The site answered, but with content this build does not handle
     /// (a live stream, a photo post, a region block).
     Unsupported(String),
@@ -34,6 +38,13 @@ pub enum Error {
     Internal(String),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum YouTubeReason {
+    LoginRequired,
+    SessionRejected,
+    SignatureProtected,
+}
+
 pub type Result<T> = std::result::Result<T, Error>;
 
 impl fmt::Display for Error {
@@ -43,7 +54,9 @@ impl fmt::Display for Error {
             Error::Io(e) => write!(f, "{e}"),
             Error::Http(m) => write!(f, "{m}"),
             Error::Parse(m) => write!(f, "{m}"),
-            Error::Refused(m) => write!(f, "{m}"),
+            Error::Refused(m) | Error::MediaUnavailable(m) | Error::YouTube(_, m) => {
+                write!(f, "{m}")
+            }
             Error::Unsupported(m) => write!(f, "{m}"),
             Error::Verify(m) => write!(f, "verification failed: {m}"),
             Error::Limit(m) => write!(f, "{m}"),
@@ -98,7 +111,10 @@ impl Error {
             Error::Io(_) => "io",
             Error::Http(_) => "http",
             Error::Parse(_) => "parse",
-            Error::Refused(_) => "refused",
+            Error::Refused(_) | Error::MediaUnavailable(_) => "refused",
+            Error::YouTube(YouTubeReason::LoginRequired, _) => "youtube_login_required",
+            Error::YouTube(YouTubeReason::SessionRejected, _) => "youtube_session_rejected",
+            Error::YouTube(YouTubeReason::SignatureProtected, _) => "youtube_signature_protected",
             Error::Unsupported(_) => "unsupported",
             Error::Verify(_) => "verify",
             Error::Limit(_) => "limit",
