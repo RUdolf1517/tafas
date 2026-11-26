@@ -12,28 +12,28 @@
 class Tafas < Formula
   desc "Capture a video from YouTube, TikTok, X, Vimeo, Reddit, SoundCloud or Twitch as one playable MP4"
   homepage "https://github.com/RUdolf1517/tafas"
-  version "0.4.2"
+  version "0.5.0"
   license "MIT"
 
   on_macos do
     on_arm do
       url "https://github.com/RUdolf1517/tafas/releases/download/v#{version}/tafas-aarch64-apple-darwin.tar.gz"
-      sha256 "71a57a2667b21faa59dbc0fa2026d0f0a4feadb5af4bc6d2968b9bf78e37e6e9"
+      sha256 "7578225b79b923a65a053c291e5681e04dc91ef9df4228ae990d6269a4de81f3"
     end
     on_intel do
       url "https://github.com/RUdolf1517/tafas/releases/download/v#{version}/tafas-x86_64-apple-darwin.tar.gz"
-      sha256 "73e9a4d68872f1cc48157b22de68a0f8760c4e741adeacbdedf734230949efe4"
+      sha256 "0234a956a6390f4c1ae08896d4296619b4365fb45c72509fb0c76dffedc5a0b4"
     end
   end
 
   on_linux do
     on_arm do
       url "https://github.com/RUdolf1517/tafas/releases/download/v#{version}/tafas-aarch64-unknown-linux-musl.tar.gz"
-      sha256 "a18fe655c9226e5e99b5a795b1539952290549c8947a1fc1b491326a46fc1167"
+      sha256 "57f3fbb8774ba5544685d1ffe6a4f35925764a1463e277474c9bfe0a6bbe30e1"
     end
     on_intel do
       url "https://github.com/RUdolf1517/tafas/releases/download/v#{version}/tafas-x86_64-unknown-linux-musl.tar.gz"
-      sha256 "a38be6994aced61e30b97a189627ba94efcdb353c32b04c93e6c4275a2e22076"
+      sha256 "179254e6f6015271baf47d9c39a6371fb45531b5f12d3f21e7e2db50982cce0c"
     end
   end
 
