@@ -155,15 +155,20 @@ fn put_u64(data: &mut [u8], at: usize, value: u64) -> Result<()> {
 
 /// Splits the boxes that occupy `data[from..to]`.
 fn children(data: &[u8], from: usize, to: usize) -> Result<Vec<Span>> {
+    if from > to || to > data.len() {
+        return Err(Error::Parse(
+            "mp4: box container is outside its input".into(),
+        ));
+    }
     let mut spans = Vec::new();
     let mut at = from;
-    while at + 8 <= to {
+    while to - at >= 8 {
         let size32 = be_u32(data, at)?;
         let kind = [data[at + 4], data[at + 5], data[at + 6], data[at + 7]];
         let (header, size) = match size32 {
             0 => (8usize, (to - at) as u64),
             1 => {
-                if at + 16 > to {
+                if to - at < 16 {
                     return Err(Error::Parse(format!(
                         "mp4: truncated 64-bit header at {at}"
                     )));
@@ -180,7 +185,7 @@ fn children(data: &[u8], from: usize, to: usize) -> Result<Vec<Span>> {
         };
         let size = usize::try_from(size)
             .map_err(|_| Error::Parse(format!("mp4: box size at {at} does not fit in memory")))?;
-        if size < header || at + size > to {
+        if size < header || size > to - at {
             return Err(Error::Parse(format!(
                 "mp4: box {} at {at} runs past its container",
                 show(&kind)
@@ -703,7 +708,7 @@ pub fn remux(video: &Path, audio: &Path, out: &Path) -> Result<MuxReport> {
         bytes,
         video_tracks: trak_count(&video_source)?,
         audio_tracks: trak_count(&audio_source)?,
-        duration_ms: Some(movie_duration * 1000 / movie.timescale as u64),
+        duration_ms: Some(scale(movie_duration, movie.timescale, 1000)),
     })
 }
 
@@ -907,7 +912,7 @@ pub fn verify(path: &Path) -> Result<VerifyReport> {
             duration_ms: if timescale == 0 {
                 None
             } else {
-                Some(duration * 1000 / timescale as u64)
+                Some(scale(duration, timescale, 1000))
             },
         });
     }

@@ -11,10 +11,30 @@ version; adding a site, a flag or a container is minor. The policy is in
 
 ## [Unreleased]
 
-- Fix downloads and format selection across supported sites, verify direct MP4
-  files before saving, and add a live site smoke test.
-- Show the build’s supported sites and project links in `--info`.
-- Publish new releases to crates.io with Trusted Publishing.
+## [0.5.0] - 2026-11-26
+
+### Added
+
+- Save AAC HLS from SoundCloud as M4A without re-encoding.
+- Run live download and track verification checks from GitHub Actions.
+- Publish GitHub releases to crates.io with Trusted Publishing.
+
+### Changed
+
+- Use signed YouTube sessions from `--cookies` and report separate JSON reasons
+  for login requirements, rejected sessions, and signature-protected formats.
+- Verify downloaded MP4 files before saving them.
+- Show the supported sites for the current build and project links in `--info`.
+
+### Fixed
+
+- Recover Twitch clip URLs and recorded broadcasts.
+- Try alternative TikTok formats when the media server refuses a request.
+- Read Vimeo player configuration and Reddit public embeds as fallback routes.
+- Check MP4 box boundaries and convert durations without integer overflow.
+
+### Security
+
 - Update `url` to 2.5.9 for RUSTSEC-2026-0592.
 
 ## [0.4.2] - 2026-11-20
