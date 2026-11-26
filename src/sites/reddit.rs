@@ -57,14 +57,70 @@ pub fn extract(
     })?;
 
     let endpoint = format!("https://www.reddit.com/comments/{id}.json?raw_json=1");
-    let value = http.get_json_opt("reddit-post", &endpoint, &HEADERS)?;
-    let Some(value) = value else {
-        return Err(Error::Refused(format!(
+    let page_url = format!("https://www.reddit.com/comments/{id}");
+    match http.get_json_opt("reddit-post", &endpoint, &HEADERS) {
+        Ok(Some(value)) => parse(&value, &id, page_url),
+        Ok(None) => Err(Error::Refused(format!(
             "reddit: {id}: the post answers 404 — it is deleted, private, or in a community that \
              does not exist any more"
-        )));
-    };
-    parse(&value, &id, format!("https://www.reddit.com/comments/{id}"))
+        ))),
+        Err(error @ Error::Refused(_)) => {
+            let segments = url.segments();
+            let subreddit = match segments.as_slice() {
+                ["r", subreddit, ..]
+                    if subreddit
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b == b'_') =>
+                {
+                    subreddit
+                }
+                _ => "reddit.com",
+            };
+            let embed_url = format!("https://embed.reddit.com/r/{subreddit}/comments/{id}/");
+            let page = http
+                .get_text(
+                    &embed_url,
+                    &[
+                        ("accept", "text/html,application/xhtml+xml"),
+                        ("referer", "https://www.reddit.com/"),
+                        ("sec-fetch-dest", "iframe"),
+                    ],
+                )
+                .map_err(|embed_error| {
+                    Error::Refused(format!(
+                        "{error}; the public Reddit embed also failed: {embed_error}"
+                    ))
+                })?;
+            embed_media(&page, &id, page_url).ok_or_else(|| {
+                Error::Refused(format!(
+                    "{error}; the public Reddit embed lists no Reddit-hosted video for {id}"
+                ))
+            })
+        }
+        Err(error) => Err(error),
+    }
+}
+
+fn embed_media(page: &str, id: &str, page_url: String) -> Option<Media> {
+    let marker = format!(r#"post-id="t3_{id}""#);
+    let hls = page.split("<shreddit-player ").skip(1).find_map(|player| {
+        let tag = player.split_once('>')?.0;
+        if !tag.split_ascii_whitespace().any(|attr| attr == marker) {
+            return None;
+        }
+        let value = tag
+            .strip_prefix("src=\"")
+            .or_else(|| tag.split_once(" src=\"").map(|(_, value)| value))?;
+        let value = value.split_once('"')?.0.replace("&amp;", "&");
+        let url = Url::parse(&value).ok()?;
+        (url.scheme == "https"
+            && matches!(url.host(), Some("v.redd.it" | "cf.v.redd.it"))
+            && url.path.ends_with(".m3u8"))
+        .then_some(value)
+    })?;
+    let mut media = playlist_media(id, page_url);
+    media.formats[0].url = Some(hls);
+    Some(media)
 }
 
 /// The listing, read into a [`Media`]. One route: the HLS playlist.
@@ -242,6 +298,21 @@ fn is_id(value: &str) -> bool {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn an_embed_uses_the_requested_posts_player_and_decodes_its_query() {
+        let page = r#"
+            <shreddit-player src="https://v.redd.it/other/HLSPlaylist.m3u8" post-id="t3_other"></shreddit-player>
+            <shreddit-player src="https://cf.v.redd.it/video/HLSPlaylist.m3u8?a=1&amp;v=2" post-id="t3_abcd"></shreddit-player>
+        "#;
+        let media =
+            embed_media(page, "abcd", "https://www.reddit.com/comments/abcd".into()).unwrap();
+        assert_eq!(
+            media.formats[0].url.as_deref(),
+            Some("https://cf.v.redd.it/video/HLSPlaylist.m3u8?a=1&v=2")
+        );
+        assert!(embed_media(page, "missing", String::new()).is_none());
+    }
 
     fn listing(post: Value) -> Value {
         json!([

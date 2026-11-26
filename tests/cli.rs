@@ -158,6 +158,11 @@ fn info_names_the_sites() {
     let output = tafas(&["--info"]);
     assert_eq!(code(&output), 0);
     let text = stdout(&output);
+    let short = tafas(&["-i", "--color", "always"]);
+    assert_eq!(code(&short), 0);
+    assert_eq!(text, stdout(&short));
+    assert!(text.contains("Homepage  https://github.com/RUdolf1517/tafas"));
+    assert!(text.contains("License   MIT"));
     for site in [
         "youtube",
         "tiktok",

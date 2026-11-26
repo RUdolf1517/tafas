@@ -555,7 +555,7 @@ fn handle(
     )?;
     item.selection = plan.describe();
 
-    let hls_plan = matches!(&plan, Plan::Single(format) if format.container == Container::Hls);
+    let hls_plan = matches!(&plan, Plan::Single(format) | Plan::Audio(format) if format.container == Container::Hls);
     if options.playlist_items.is_some() && !hls_plan {
         printer.warn(
             "note: --playlist-items applies to an HLS segment list; this selection is not \
@@ -862,7 +862,7 @@ fn stream_to_stdout(
 ) -> Result<Status> {
     let format =
         match plan {
-            Plan::Single(format) if format.container == Container::Hls => {
+            Plan::Single(format) | Plan::Audio(format) if format.container == Container::Hls => {
                 return Err(Error::Usage(format!(
                     "-o - writes one stream, and an HLS playlist ({}) is assembled from its \
                      segments into an MP4 first; give a file name instead",
@@ -969,16 +969,10 @@ fn fetch_plan(
     printer: &Printer,
 ) -> Result<u64> {
     match plan {
-        Plan::Single(format) if format.container == Container::Hls => {
+        Plan::Single(format) | Plan::Audio(format) if format.container == Container::Hls => {
             fetch_hls(http, format, target, options, printer)
         }
-        Plan::Single(format) => {
-            let bytes = fetch_stream(http, format, target, options, printer)?;
-            strip_meta(&part_path(target), format.container, options, printer)?;
-            commit(&part_path(target), target, options.overwrite)?;
-            Ok(bytes)
-        }
-        Plan::Audio(format) => {
+        Plan::Single(format) | Plan::Audio(format) => {
             let bytes = fetch_stream(http, format, target, options, printer)?;
             strip_meta(&part_path(target), format.container, options, printer)?;
             commit(&part_path(target), target, options.overwrite)?;
@@ -1140,6 +1134,14 @@ fn fetch_hls(
         let _ = fs::remove_file(&part);
         return Err(Error::Verify(format!(
             "{}: the assembled file has no samples",
+            part.display()
+        )));
+    }
+
+    if format.kind == crate::model::StreamKind::Audio && !verified.has_handler("soun") {
+        let _ = fs::remove_file(&part);
+        return Err(Error::Verify(format!(
+            "{}: the assembled file has no audio track",
             part.display()
         )));
     }

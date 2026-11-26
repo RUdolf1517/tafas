@@ -491,6 +491,20 @@ impl Http {
             });
         }
         let response = self.classify(label, url, response)?;
+        let mime = response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.split(';').next())
+            .map(str::trim);
+        if mime.is_some_and(|mime| {
+            mime.eq_ignore_ascii_case("text/html")
+                || mime.eq_ignore_ascii_case("application/xhtml+xml")
+        }) {
+            return Err(Error::Refused(format!(
+                "{label}: the server returned an HTML page instead of media"
+            )));
+        }
 
         let restarted = resume_from > 0 && status != StatusCode::PARTIAL_CONTENT;
         let total = if restarted {
@@ -513,7 +527,26 @@ impl Http {
             }
         }
 
-        let mut reader = response;
+        let mut response = response;
+        let mut prefix = Vec::new();
+        if status != StatusCode::PARTIAL_CONTENT || resume_from == 0 {
+            (&mut response).take(256).read_to_end(&mut prefix)?;
+            let document = prefix.strip_prefix(b"\xef\xbb\xbf").unwrap_or(&prefix);
+            let document = document.trim_ascii_start();
+            if [b"<!doctype html".as_slice(), b"<html>", b"<html "]
+                .iter()
+                .any(|tag| {
+                    document
+                        .get(..tag.len())
+                        .is_some_and(|head| head.eq_ignore_ascii_case(tag))
+                })
+            {
+                return Err(Error::Refused(format!(
+                    "{label}: the server returned an HTML page instead of media"
+                )));
+            }
+        }
+        let mut reader = std::io::Cursor::new(prefix).chain(response);
         let mut buffer = vec![0u8; 64 * 1024];
         let mut written = 0u64;
         loop {

@@ -79,7 +79,7 @@ impl Plan {
             }
             Plan::Pair { video, .. } => video.container.extension(),
             Plan::Audio(format) => match format.container {
-                Container::Mp4 => "m4a",
+                Container::Mp4 | Container::Hls => "m4a",
                 Container::Webm => "webm",
                 other => other.extension(),
             },

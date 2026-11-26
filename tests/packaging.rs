@@ -421,14 +421,20 @@ fn every_reader_is_a_feature_and_every_feature_is_a_reader() {
     let feature_table = manifest
         .split("[features]")
         .nth(1)
-        .expect("Cargo.toml has a [features] table");
+        .expect("Cargo.toml has a [features] table")
+        .split("\n[")
+        .next()
+        .unwrap_or_default();
     for site in tafas::sites::names() {
         assert!(
             default_line.contains(&format!("\"{site}\"")),
             "{site} is a reader but is not in the default feature set"
         );
         assert!(
-            feature_table.contains(&format!("\n{site} = []")),
+            feature_table.lines().any(|line| {
+                line.split_once('=')
+                    .is_some_and(|(name, _)| name.trim() == site)
+            }),
             "{site} is a reader but Cargo.toml has no `{site}` feature"
         );
     }

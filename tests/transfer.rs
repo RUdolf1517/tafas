@@ -46,6 +46,27 @@ fn a_complete_body_arrives_byte_for_byte() {
 }
 
 #[test]
+fn an_html_interstitial_is_refused_before_any_bytes_are_written() {
+    let server = TestServer::start(vec![Route::ok(
+        "/v.mp4",
+        b" \r\n<!DOCTYPE html><title>Verify your browser</title>",
+    )]);
+    let mut sink = Vec::new();
+    let error = http()
+        .download(
+            "media",
+            &server.url("/v.mp4"),
+            &[],
+            &mut sink,
+            0,
+            &mut |_| {},
+        )
+        .unwrap_err();
+    assert!(error.to_string().contains("HTML page instead of media"));
+    assert!(sink.is_empty());
+}
+
+#[test]
 fn a_resume_sends_a_range_and_appends_the_rest() {
     let payload = body(20_000);
     let server = TestServer::start(vec![Route::ok("/v.mp4", &payload)]);
